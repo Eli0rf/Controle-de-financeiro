@@ -2,22 +2,32 @@ const mysql = require('mysql2/promise');
 require('dotenv').config();
 
 // Configuração do banco para Railway ou desenvolvimento local
-const dbConfig = {
-  host: process.env.DB_HOST || 'localhost',
-  port: parseInt(process.env.DB_PORT) || 3306,
-  user: process.env.DB_USER || 'root',
-  password: process.env.DB_PASSWORD || '',
-  database: process.env.DB_NAME || 'controle_gastos',
-  waitForConnections: true,
-  connectionLimit: process.env.NODE_ENV === 'production' ? 5 : 10,
-  queueLimit: 0,
-  acquireTimeout: 60000,
-  timeout: 60000,
-  reconnect: true,
-  ssl: process.env.NODE_ENV === 'production' ? {
-    rejectUnauthorized: false
-  } : false
-};
+let dbConfig;
+
+if (process.env.DATABASE_URL) {
+  // Configuração para Railway usando DATABASE_URL
+  dbConfig = {
+    uri: process.env.DATABASE_URL,
+    waitForConnections: true,
+    connectionLimit: 5,
+    queueLimit: 0,
+    ssl: {
+      rejectUnauthorized: false
+    }
+  };
+} else {
+  // Configuração para desenvolvimento local
+  dbConfig = {
+    host: process.env.DB_HOST || 'localhost',
+    port: parseInt(process.env.DB_PORT) || 3306,
+    user: process.env.DB_USER || 'root',
+    password: process.env.DB_PASSWORD || '',
+    database: process.env.DB_NAME || 'controle_gastos',
+    waitForConnections: true,
+    connectionLimit: 10,
+    queueLimit: 0
+  };
+}
 
 // Criar pool de conexões
 const pool = mysql.createPool(dbConfig);
