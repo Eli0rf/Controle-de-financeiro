@@ -71,20 +71,7 @@ app.listen(port, host, () => {
     console.log(`🚀 Servidor rodando em http://${host}:${port}`);
 });
 
-// --- 4. CONFIGURAÇÃO DO BANCO DE DADOS ---
-try {
-        host: process.env.DB_HOST,
-        user: process.env.DB_USER,
-        password: process.env.DB_PASSWORD,
-        database: process.env.DB_NAME,
-        waitForConnections: true,
-        connectionLimit: 10,
-        queueLimit: 0
-    });
-} catch (error) {
-    console.error("ERRO CRÍTICO: Falha ao configurar o pool de conexão. Verifique as suas variáveis de ambiente.", error);
-    process.exit(1);
-}
+
 
 // --- 5. CONFIGURAÇÃO DO MULTER (UPLOAD DE FICHEIROS) ---
 const storage = multer.diskStorage({
