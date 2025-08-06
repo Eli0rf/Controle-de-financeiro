@@ -16,6 +16,9 @@ require('dotenv').config();
 // --- 2. CONFIGURAÇÕES PRINCIPAIS ---
 const app = express();
 const PORT = process.env.PORT || 3000;
+// No topo do server.js
+const { testConnection } = require('./config/database');
+const { createDatabase } = require('./migrations/migrate');
 
 // --- 3. MIDDLEWARES ---
 app.use(cors({
