@@ -18,7 +18,7 @@ async function executeSQLFile(filePath) {
     for (const command of commands) {
       if (command.trim()) {
         try {
-          await connection.execute(command);
+          await connection.query(command);
           console.log(`✓ Comando executado: ${command.substring(0, 50)}...`);
         } catch (error) {
           // Ignorar erros de "table already exists" ou similar
@@ -49,12 +49,12 @@ async function createDatabase() {
     const connection = await pool.getConnection();
     console.log('✓ Conexão com banco estabelecida');
     
-    // Criar database se não existir
-    await connection.execute(`CREATE DATABASE IF NOT EXISTS controle_gastos CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci`);
-    await connection.execute(`USE controle_gastos`);
+    // Criar database se não existir (usando query simples)
+    await connection.query(`CREATE DATABASE IF NOT EXISTS controle_gastos CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci`);
+    await connection.query(`USE controle_gastos`);
     
     // Criar tabela users
-    await connection.execute(`
+    await connection.query(`
       CREATE TABLE IF NOT EXISTS users (
         id INT(11) NOT NULL AUTO_INCREMENT,
         username VARCHAR(255) NOT NULL,
@@ -66,7 +66,7 @@ async function createDatabase() {
     `);
     
     // Criar tabela expenses
-    await connection.execute(`
+    await connection.query(`
       CREATE TABLE IF NOT EXISTS expenses (
         id INT(11) NOT NULL AUTO_INCREMENT,
         user_id INT(11) NOT NULL,
@@ -90,7 +90,7 @@ async function createDatabase() {
     `);
     
     // Criar tabela recurring_expenses
-    await connection.execute(`
+    await connection.query(`
       CREATE TABLE IF NOT EXISTS recurring_expenses (
         id INT(11) NOT NULL AUTO_INCREMENT,
         user_id INT(11) NOT NULL,
@@ -110,7 +110,7 @@ async function createDatabase() {
     `);
     
     // Criar tabela recurring_expense_processing
-    await connection.execute(`
+    await connection.query(`
       CREATE TABLE IF NOT EXISTS recurring_expense_processing (
         id INT(11) NOT NULL AUTO_INCREMENT,
         recurring_expense_id INT(11) NOT NULL,
@@ -126,16 +126,43 @@ async function createDatabase() {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
     `);
     
-    // Criar índices
+    // Criar índices (verificar se já existem primeiro)
     try {
-      await connection.execute(`CREATE INDEX IF NOT EXISTS idx_expenses_recurring ON expenses(is_recurring_expense)`);
-      await connection.execute(`CREATE INDEX IF NOT EXISTS idx_expenses_account_date ON expenses(account, transaction_date)`);
-      await connection.execute(`CREATE INDEX IF NOT EXISTS idx_recurring_active ON recurring_expenses(is_active)`);
-    } catch (error) {
-      // Ignorar erros de índices que já existem
-      if (!error.message.includes('already exists')) {
-        console.error('Erro ao criar índices:', error.message);
+      // Verificar se índices já existem
+      const [existingIndexes] = await connection.query(`
+        SELECT DISTINCT INDEX_NAME 
+        FROM INFORMATION_SCHEMA.STATISTICS 
+        WHERE TABLE_SCHEMA = DATABASE() 
+        AND TABLE_NAME = 'expenses'
+      `);
+      
+      const indexNames = existingIndexes.map(row => row.INDEX_NAME);
+      
+      if (!indexNames.includes('idx_expenses_recurring')) {
+        await connection.query(`CREATE INDEX idx_expenses_recurring ON expenses(is_recurring_expense)`);
       }
+      
+      if (!indexNames.includes('idx_expenses_account_date')) {
+        await connection.query(`CREATE INDEX idx_expenses_account_date ON expenses(account, transaction_date)`);
+      }
+      
+      // Para recurring_expenses
+      const [recurringIndexes] = await connection.query(`
+        SELECT DISTINCT INDEX_NAME 
+        FROM INFORMATION_SCHEMA.STATISTICS 
+        WHERE TABLE_SCHEMA = DATABASE() 
+        AND TABLE_NAME = 'recurring_expenses'
+      `);
+      
+      const recurringIndexNames = recurringIndexes.map(row => row.INDEX_NAME);
+      
+      if (!recurringIndexNames.includes('idx_recurring_active')) {
+        await connection.query(`CREATE INDEX idx_recurring_active ON recurring_expenses(is_active)`);
+      }
+      
+    } catch (error) {
+      // Ignorar erros de índices
+      console.log('⚠️  Aviso ao criar índices:', error.message);
     }
     
     connection.release();
@@ -151,7 +178,7 @@ async function createDatabase() {
 async function checkTables() {
   try {
     const connection = await pool.getConnection();
-    const [tables] = await connection.execute(`
+    const [tables] = await connection.query(`
       SELECT TABLE_NAME 
       FROM INFORMATION_SCHEMA.TABLES 
       WHERE TABLE_SCHEMA = DATABASE()
