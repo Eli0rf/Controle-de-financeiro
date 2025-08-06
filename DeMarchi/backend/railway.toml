@@ -5,8 +5,12 @@ builder = "NIXPACKS"
 startCommand = "npm start"
 healthcheckPath = "/health"
 healthcheckTimeout = 300
+# Adicione esta linha! Dê 60 segundos para a aplicação iniciar.
+healthcheckGracePeriod = 60 
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 3
 
 [environments.production.variables]
 NODE_ENV = "production"
+# Substitua 'mysql' pelo nome do seu serviço de banco de dados se for diferente
+DATABASE_URL = "${{ mysql.MYSQL_URL }}"
