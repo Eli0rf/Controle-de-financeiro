@@ -27,13 +27,45 @@ app.use(cors({
 app.use(express.json());
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-// Adicione um endpoint para o health check
-app.get('/health', (req, res) => {
-  res.status(200).send('OK');
+// 1. Use a porta e o host corretos!
+const port = process.env.PORT || 3000;
+const host = '0.0.0.0'; // Essencial para o Railway
+
+// 2. Crie um pool de conexões com o banco de dados
+// A biblioteca 'mysql2' usa a DATABASE_URL do Railway automaticamente
+const pool = mysql.createPool({
+    uri: process.env.DATABASE_URL,
+    waitForConnections: true,
+    connectionLimit: 10,
+    queueLimit: 0
 });
 
-app.listen(port, '0.0.0.0', () => {
-  console.log(`Servidor rodando na porta ${port}`);
+// 3. Crie o endpoint de Health Check Inteligente
+app.get('/health', async (req, res) => {
+    try {
+        // Tenta pegar uma conexão do pool e fazer uma query simples
+        const connection = await pool.getConnection();
+        await connection.ping(); // ping() é mais rápido que uma query completa
+        connection.release(); // Libera a conexão de volta para o pool
+        
+        // Se tudo deu certo, retorna 200 OK
+        res.status(200).json({ status: 'ok', db: 'connected' });
+    } catch (error) {
+        // Se a conexão com o banco falhar, o serviço não está saudável
+        console.error('Health check falhou:', error);
+        res.status(503).json({ status: 'error', db: 'disconnected', details: error.message });
+    }
+});
+
+// Endpoint de exemplo
+app.get('/', (req, res) => {
+    res.send('Aplicação rodando!');
+});
+
+
+// Inicie o servidor
+app.listen(port, host, () => {
+    console.log(`🚀 Servidor rodando em http://${host}:${port}`);
 });
 
 // --- 4. CONFIGURAÇÃO DO BANCO DE DADOS ---
