@@ -4,8 +4,23 @@ require('dotenv').config();
 // Configuração do banco para Railway ou desenvolvimento local
 let dbConfig;
 
-if (process.env.DATABASE_URL) {
-  // Configuração para Railway usando DATABASE_URL
+if (process.env.NODE_ENV === 'production') {
+  // Configuração para Railway usando variáveis específicas
+  dbConfig = {
+    host: process.env.DB_HOST,
+    port: parseInt(process.env.DB_PORT),
+    user: process.env.DB_USER,
+    password: process.env.DB_PASSWORD,
+    database: process.env.DB_DATABASE || process.env.DB_NAME,
+    waitForConnections: true,
+    connectionLimit: 5,
+    queueLimit: 0,
+    ssl: {
+      rejectUnauthorized: false
+    }
+  };
+} else if (process.env.DATABASE_URL) {
+  // Configuração alternativa usando DATABASE_URL
   dbConfig = {
     uri: process.env.DATABASE_URL,
     waitForConnections: true,
