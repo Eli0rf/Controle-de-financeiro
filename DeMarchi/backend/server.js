@@ -69,7 +69,6 @@ app.listen(port, host, () => {
 });
 
 // --- 4. CONFIGURAÇÃO DO BANCO DE DADOS ---
-let pool;
 try {
     pool = mysql.createPool({
         host: process.env.DB_HOST,
