@@ -21,32 +21,65 @@ const { testConnection } = require('./config/database');
 const { createDatabase } = require('./migrations/migrate');
 
 // --- 3. MIDDLEWARES ---
+// Configuração principal do CORS
 app.use(cors({
-    origin: [
-        'https://controle-de-financeiro-production.up.railway.app',
-        'https://controlegastos-production.up.railway.app',
-        'http://localhost:3000',
-        'http://127.0.0.1:3000'
-    ],
-    credentials: true,
+    origin: function (origin, callback) {
+        const allowedOrigins = [
+            'https://controle-de-financeiro-production.up.railway.app',
+            'http://localhost:3000',
+            'http://127.0.0.1:3000',
+            'http://localhost:8080',
+            'http://127.0.0.1:8080'
+        ];
+        
+        // Permite requisições sem origin (ex: Postman, apps mobile)
+        if (!origin) return callback(null, true);
+        
+        // Permite origens específicas
+        if (allowedOrigins.includes(origin)) {
+            return callback(null, true);
+        }
+        
+        // Em desenvolvimento, permite qualquer origin local
+        if (origin.includes('localhost') || origin.includes('127.0.0.1')) {
+            return callback(null, true);
+        }
+        
+        callback(new Error('Não permitido pelo CORS'));
+    },
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
-    exposedHeaders: ['Content-Disposition']
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
+    exposedHeaders: ['Content-Disposition'],
+    credentials: true,
+    optionsSuccessStatus: 200
 }));
+
+// Middleware adicional para garantir headers CORS em todas as respostas
+app.use((req, res, next) => {
+    const origin = req.headers.origin;
+    
+    // Define headers CORS para todas as respostas
+    if (origin) {
+        res.setHeader('Access-Control-Allow-Origin', origin);
+    } else {
+        res.setHeader('Access-Control-Allow-Origin', '*');
+    }
+    
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin');
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    
+    // Responde imediatamente para requisições OPTIONS
+    if (req.method === 'OPTIONS') {
+        res.status(200).end();
+        return;
+    }
+    
+    next();
+});
+
 app.use(express.json());
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
-
-// Servir arquivos estáticos do frontend
-app.use(express.static(path.join(__dirname, '../FrontEnd')));
-
-// Middleware adicional para CORS preflight
-app.options('*', (req, res) => {
-    res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
-    res.header('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS');
-    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Content-Length, X-Requested-With');
-    res.header('Access-Control-Allow-Credentials', true);
-    res.sendStatus(200);
-});
 
 // Usar configuração do database.js em vez de criar novo pool
 const { pool } = require('./config/database');
@@ -68,14 +101,9 @@ app.get('/health', async (req, res) => {
     }
 });
 
-// Servir o frontend - Dashboard como página principal
+// Endpoint de exemplo
 app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, '../FrontEnd/Dashboard.html'));
-});
-
-// Rota para a página de registro
-app.get('/register', (req, res) => {
-    res.sendFile(path.join(__dirname, '../FrontEnd/register.html'));
+    res.send('Aplicação rodando!');
 });
 
 

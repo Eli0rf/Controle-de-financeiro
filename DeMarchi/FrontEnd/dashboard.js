@@ -3,12 +3,12 @@
  */
 document.addEventListener('DOMContentLoaded', function() {
 
-    // Define a URL base do backend (relativa para funcionar em produção e desenvolvimento)
-    const API_BASE_URL = window.location.origin;
+    // Define a URL base do backend no Railway
+    const API_BASE_URL = 'https://controlegastos-production.up.railway.app';
 
-    const RAILWAY_BACKEND_URL = window.location.origin;
+    const RAILWAY_BACKEND_URL = 'https://controlegastos-production.up.railway.app/DeMarchi/backend';
     
-    const FILE_BASE_URL = window.location.origin;
+    const FILE_BASE_URL = 'https://controlegastos-production.up.railway.app/DeMarchi/backend';
 
     const loginSection = document.getElementById('login-section');
     const dashboardContent = document.getElementById('dashboard-content');
@@ -100,6 +100,8 @@ document.addEventListener('DOMContentLoaded', function() {
         // Não sobrescrever Content-Type se for FormData
         const headers = {
             'Authorization': `Bearer ${token}`,
+            'Accept': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest',
             ...options.headers
         };
 
@@ -113,7 +115,9 @@ document.addEventListener('DOMContentLoaded', function() {
 
         const response = await fetch(url, {
             ...options,
-            headers
+            headers,
+            mode: 'cors',
+            credentials: 'include'
         });
 
         console.log('Response status:', response.status);
@@ -169,7 +173,13 @@ document.addEventListener('DOMContentLoaded', function() {
         try {
             const response = await fetch(`${API_BASE_URL}/api/login`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                mode: 'cors',
+                credentials: 'include',
                 body: JSON.stringify({ username: usernameInput.value, password: passwordInput.value })
             });
             const data = await response.json();

@@ -5,8 +5,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const feedbackMessage = document.getElementById('feedback-message');
     const registerButton = document.getElementById('register-button');
 
-    // Define a URL base do backend (relativa para funcionar em produção e desenvolvimento)
-    const API_URL = window.location.origin;
+    // Define a URL base do backend no Railway
+    const API_URL = 'https://controlegastos-production.up.railway.app';
 
     registerForm.addEventListener('submit', async (e) => {
         e.preventDefault(); // Impede o envio padrão do formulário
@@ -25,8 +25,12 @@ document.addEventListener('DOMContentLoaded', () => {
             const response = await fetch(`${API_URL}/api/register`, {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json'
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest'
                 },
+                mode: 'cors',
+                credentials: 'include',
                 body: JSON.stringify({ username, password })
             });
 
