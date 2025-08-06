@@ -22,13 +22,31 @@ const { createDatabase } = require('./migrations/migrate');
 
 // --- 3. MIDDLEWARES ---
 app.use(cors({
-    origin: '*', // ou especifique o domínio do frontend se necessário
+    origin: [
+        'https://controle-de-financeiro-production.up.railway.app',
+        'https://controlegastos-production.up.railway.app',
+        'http://localhost:3000',
+        'http://127.0.0.1:3000'
+    ],
+    credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
     exposedHeaders: ['Content-Disposition']
 }));
 app.use(express.json());
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
+// Servir arquivos estáticos do frontend
+app.use(express.static(path.join(__dirname, '../FrontEnd')));
+
+// Middleware adicional para CORS preflight
+app.options('*', (req, res) => {
+    res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
+    res.header('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Content-Length, X-Requested-With');
+    res.header('Access-Control-Allow-Credentials', true);
+    res.sendStatus(200);
+});
 
 // Usar configuração do database.js em vez de criar novo pool
 const { pool } = require('./config/database');
@@ -50,9 +68,24 @@ app.get('/health', async (req, res) => {
     }
 });
 
-// Endpoint de exemplo
+// Servir o frontend - Dashboard como página principal
 app.get('/', (req, res) => {
-    res.send('Aplicação rodando!');
+    res.sendFile(path.join(__dirname, '../FrontEnd/Dashboard.html'));
+});
+
+// Rota para a página de registro
+app.get('/register', (req, res) => {
+    res.sendFile(path.join(__dirname, '../FrontEnd/register.html'));
+});
+
+// Rota de fallback para SPA (caso necessário)
+app.get('*', (req, res) => {
+    // Se for uma rota de API, não redirecionar
+    if (req.path.startsWith('/api/') || req.path.startsWith('/uploads/')) {
+        return res.status(404).json({ message: 'Rota não encontrada' });
+    }
+    // Para outras rotas, servir o Dashboard
+    res.sendFile(path.join(__dirname, '../FrontEnd/Dashboard.html'));
 });
 
 

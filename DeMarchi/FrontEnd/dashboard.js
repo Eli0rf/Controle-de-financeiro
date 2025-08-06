@@ -3,12 +3,12 @@
  */
 document.addEventListener('DOMContentLoaded', function() {
 
-    // Define a URL base do backend no Railway
-    const API_BASE_URL = 'https://controlegastos-production.up.railway.app';
+    // Define a URL base do backend (relativa para funcionar em produção e desenvolvimento)
+    const API_BASE_URL = window.location.origin;
 
-    const RAILWAY_BACKEND_URL = 'https://controlegastos-production.up.railway.app/DeMarchi/backend';
+    const RAILWAY_BACKEND_URL = window.location.origin;
     
-    const FILE_BASE_URL = 'https://controlegastos-production.up.railway.app/DeMarchi/backend';
+    const FILE_BASE_URL = window.location.origin;
 
     const loginSection = document.getElementById('login-section');
     const dashboardContent = document.getElementById('dashboard-content');

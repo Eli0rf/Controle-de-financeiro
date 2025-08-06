@@ -6,6 +6,7 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "node server.js",
     "dev": "node server.js",
+    "build": "echo 'Build completed'",
     "postinstall": "npm rebuild canvas || echo 'Canvas rebuild failed, continuing without it'"
   },
   "keywords": [],
