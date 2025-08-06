@@ -4,7 +4,7 @@
 		{
 			"label": "Executar Servidor Backend",
 			"type": "shell",
-			"command": "cd DeMarchi/backend && npm start",
+			"command": "cd DeMarchi/backend; npm start",
 			"group": "build",
 			"isBackground": true,
 			"problemMatcher": []

@@ -1200,14 +1200,4 @@ app.use((error, req, res, next) => {
 // --- ROTA PARA ARQUIVOS ESTÁTICOS ---
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-// --- ROTA DE FALLBACK PARA SPA (deve ser a última) ---
-app.get('*', (req, res) => {
-    // Se for uma rota de API, retornar 404
-    if (req.path.startsWith('/api/')) {
-        return res.status(404).json({ message: 'Rota de API não encontrada' });
-    }
-    // Para outras rotas, servir o Dashboard
-    res.sendFile(path.join(__dirname, '../FrontEnd/Dashboard.html'));
-});
-
 module.exports = app;
