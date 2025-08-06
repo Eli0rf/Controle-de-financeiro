@@ -27,6 +27,15 @@ app.use(cors({
 app.use(express.json());
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
+// Adicione um endpoint para o health check
+app.get('/health', (req, res) => {
+  res.status(200).send('OK');
+});
+
+app.listen(port, '0.0.0.0', () => {
+  console.log(`Servidor rodando na porta ${port}`);
+});
+
 // --- 4. CONFIGURAÇÃO DO BANCO DE DADOS ---
 let pool;
 try {
