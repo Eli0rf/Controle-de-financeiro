@@ -16,8 +16,9 @@ require('dotenv').config();
 // --- 2. CONFIGURAÇÕES PRINCIPAIS ---
 const app = express();
 const PORT = process.env.PORT || 3000;
-// No topo do server.js
-const { testConnection } = require('./config/database');
+
+// Importar configurações de banco e migrações
+const { pool, testConnection } = require('./config/database');
 const { createDatabase } = require('./migrations/migrate');
 
 // --- 3. MIDDLEWARES ---
@@ -92,9 +93,6 @@ app.use((req, res, next) => {
 
 app.use(express.json());
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
-
-// Usar configuração do database.js em vez de criar novo pool
-const { pool } = require('./config/database');
 
 // 3. Crie o endpoint de Health Check Inteligente
 app.get('/health', async (req, res) => {
