@@ -49,9 +49,11 @@ async function createDatabase() {
     const connection = await pool.getConnection();
     console.log('✓ Conexão com banco estabelecida');
     
-    // Criar database se não existir (usando query simples)
-    await connection.query(`CREATE DATABASE IF NOT EXISTS controle_gastos CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci`);
-    await connection.query(`USE controle_gastos`);
+    // Não criar database - usar o que já está configurado (Railway)
+    // await connection.query(`CREATE DATABASE IF NOT EXISTS controle_gastos CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci`);
+    // await connection.query(`USE controle_gastos`);
+    
+    console.log('📋 Usando database configurado:', connection.config.database || 'railway');
     
     // Criar tabela users
     await connection.query(`
