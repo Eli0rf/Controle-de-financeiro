@@ -5,7 +5,6 @@ const express = require('express');
 const mysql = require('mysql2/promise');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const cors = require('cors');
 const multer = require('multer');
 const { ChartJSNodeCanvas } = require('chartjs-node-canvas');
 const pdfkit = require('pdfkit');
@@ -22,54 +21,12 @@ const { pool, testConnection } = require('./config/database');
 const { createDatabase } = require('./migrations/migrate');
 
 // --- 3. MIDDLEWARES ---
-// Configuração CORS detalhada para Railway
-app.use(cors({
-    origin: function (origin, callback) {
-        const allowedOrigins = [
-            'https://controle-de-financeiro-production.up.railway.app',
-            'https://controlegastos-production.up.railway.app',
-            'http://localhost:3000',
-            'http://127.0.0.1:3000',
-            'http://localhost:8080',
-            'http://127.0.0.1:8080'
-        ];
-        
-        console.log('🔍 CORS - Origin recebida:', origin);
-        
-        // Permite requisições sem origin (ex: Postman, apps mobile)
-        if (!origin) {
-            console.log('✅ CORS - Permitindo requisição sem origin');
-            return callback(null, true);
-        }
-        
-        // Permite origens específicas
-        if (allowedOrigins.includes(origin)) {
-            console.log('✅ CORS - Origin permitida:', origin);
-            return callback(null, true);
-        }
-        
-        // Em desenvolvimento, permite qualquer origin local
-        if (origin && (origin.includes('localhost') || origin.includes('127.0.0.1'))) {
-            console.log('✅ CORS - Origin local permitida:', origin);
-            return callback(null, true);
-        }
-        
-        console.log('❌ CORS - Origem rejeitada:', origin);
-        callback(new Error('Não permitido pelo CORS'));
-    },
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
-    exposedHeaders: ['Content-Disposition'],
-    credentials: true,
-    optionsSuccessStatus: 200,
-    preflightContinue: false
-}));
-
-// Middleware adicional para garantir headers CORS em todas as respostas
+// Middleware CORS personalizado - mais confiável que o cors() do Express
 app.use((req, res, next) => {
     const origin = req.headers.origin;
     
     console.log(`🌐 ${req.method} ${req.path} - Origin: ${origin || 'sem origin'}`);
+    console.log(`📋 Headers recebidos:`, JSON.stringify(req.headers, null, 2));
     
     // Lista de origens permitidas
     const allowedOrigins = [
@@ -81,29 +38,37 @@ app.use((req, res, next) => {
         'http://127.0.0.1:8080'
     ];
     
-    // Define headers CORS para todas as respostas
+    // Sempre definir headers CORS
     if (origin && allowedOrigins.includes(origin)) {
         res.setHeader('Access-Control-Allow-Origin', origin);
-        console.log('✅ CORS Header definido para:', origin);
+        console.log('✅ CORS Origin permitida:', origin);
     } else if (!origin) {
+        // Para requisições sem origin (como Postman)
         res.setHeader('Access-Control-Allow-Origin', '*');
-        console.log('✅ CORS Header definido como *');
+        console.log('✅ CORS sem origin - permitindo *');
     } else {
-        // Para origins não permitidas, ainda definimos o header para evitar erros
+        // Para debug - ainda permite mas loga
         res.setHeader('Access-Control-Allow-Origin', origin);
-        console.log('⚠️ CORS Header definido para origin não listada:', origin);
+        console.log('⚠️ CORS Origin não listada mas permitida:', origin);
     }
     
+    // Headers CORS essenciais
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin');
     res.setHeader('Access-Control-Allow-Credentials', 'true');
     res.setHeader('Access-Control-Max-Age', '86400'); // 24 horas
+    res.setHeader('Vary', 'Origin'); // Importante para caching
     
-    // Responde imediatamente para requisições OPTIONS (preflight)
+    // Responder imediatamente para requisições OPTIONS (preflight)
     if (req.method === 'OPTIONS') {
-        console.log('✅ Respondendo a requisição OPTIONS (preflight)');
-        res.status(200).end();
-        return;
+        console.log('✅ Respondendo requisição OPTIONS (preflight)');
+        console.log('📤 Headers CORS enviados:', {
+            'Access-Control-Allow-Origin': res.getHeader('Access-Control-Allow-Origin'),
+            'Access-Control-Allow-Methods': res.getHeader('Access-Control-Allow-Methods'),
+            'Access-Control-Allow-Headers': res.getHeader('Access-Control-Allow-Headers'),
+            'Access-Control-Allow-Credentials': res.getHeader('Access-Control-Allow-Credentials')
+        });
+        return res.status(200).end();
     }
     
     next();

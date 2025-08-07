@@ -14,11 +14,10 @@ if (process.env.MYSQLHOST && process.env.MYSQLPORT && process.env.MYSQLUSER) {
     password: process.env.MYSQLPASSWORD,
     database: process.env.MYSQLDATABASE,
     waitForConnections: true,
-    connectionLimit: 8,
+    connectionLimit: 10,
     queueLimit: 0,
     acquireTimeout: 60000,
-    timeout: 60000,
-    reconnect: true,
+    idleTimeout: 60000,
     ssl: {
       rejectUnauthorized: false
     }
@@ -34,11 +33,10 @@ if (process.env.MYSQLHOST && process.env.MYSQLPORT && process.env.MYSQLUSER) {
     password: url.password,
     database: url.pathname.substring(1), // Remove a barra inicial
     waitForConnections: true,
-    connectionLimit: 8,
+    connectionLimit: 10,
     queueLimit: 0,
     acquireTimeout: 60000,
-    timeout: 60000,
-    reconnect: true,
+    idleTimeout: 60000,
     ssl: {
       rejectUnauthorized: false
     }
