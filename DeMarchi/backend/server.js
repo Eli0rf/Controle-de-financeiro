@@ -16,64 +16,45 @@ require('dotenv').config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Importar configurações de banco e migrações
-const { pool, testConnection } = require('./config/database');
-const { createDatabase } = require('./migrations/migrate');
-
-// --- 3. MIDDLEWARES ---
-// Middleware CORS personalizado - mais confiável que o cors() do Express
+// CORS PRIMEIRO - antes de qualquer outro middleware
 app.use((req, res, next) => {
     const origin = req.headers.origin;
     
-    console.log(`🌐 ${req.method} ${req.path} - Origin: ${origin || 'sem origin'}`);
-    console.log(`📋 Headers recebidos:`, JSON.stringify(req.headers, null, 2));
+    console.log(`🔍 CORS Debug - ${req.method} ${req.url}`);
+    console.log(`📍 Origin: ${origin || 'NO_ORIGIN'}`);
+    console.log(`🌐 User-Agent: ${req.headers['user-agent'] || 'NO_USER_AGENT'}`);
     
-    // Lista de origens permitidas
+    // SEMPRE permitir estas origens específicas
     const allowedOrigins = [
         'https://controle-de-financeiro-production.up.railway.app',
-        'https://controlegastos-production.up.railway.app',
-        'http://localhost:3000',
-        'http://127.0.0.1:3000',
-        'http://localhost:8080',
-        'http://127.0.0.1:8080'
+        'https://controlegastos-production.up.railway.app'
     ];
     
-    // Sempre definir headers CORS
-    if (origin && allowedOrigins.includes(origin)) {
-        res.setHeader('Access-Control-Allow-Origin', origin);
-        console.log('✅ CORS Origin permitida:', origin);
-    } else if (!origin) {
-        // Para requisições sem origin (como Postman)
-        res.setHeader('Access-Control-Allow-Origin', '*');
-        console.log('✅ CORS sem origin - permitindo *');
-    } else {
-        // Para debug - ainda permite mas loga
-        res.setHeader('Access-Control-Allow-Origin', origin);
-        console.log('⚠️ CORS Origin não listada mas permitida:', origin);
-    }
+    // Headers CORS obrigatórios - SEMPRE definir
+    res.header('Access-Control-Allow-Origin', origin && allowedOrigins.includes(origin) ? origin : '*');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+    res.header('Access-Control-Allow-Credentials', 'true');
+    res.header('Access-Control-Max-Age', '3600');
     
-    // Headers CORS essenciais
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin');
-    res.setHeader('Access-Control-Allow-Credentials', 'true');
-    res.setHeader('Access-Control-Max-Age', '86400'); // 24 horas
-    res.setHeader('Vary', 'Origin'); // Importante para caching
+    console.log(`✅ CORS Headers definidos:`);
+    console.log(`   Access-Control-Allow-Origin: ${res.getHeader('Access-Control-Allow-Origin')}`);
+    console.log(`   Access-Control-Allow-Methods: ${res.getHeader('Access-Control-Allow-Methods')}`);
     
-    // Responder imediatamente para requisições OPTIONS (preflight)
+    // Para requisições OPTIONS (preflight), responder imediatamente
     if (req.method === 'OPTIONS') {
-        console.log('✅ Respondendo requisição OPTIONS (preflight)');
-        console.log('📤 Headers CORS enviados:', {
-            'Access-Control-Allow-Origin': res.getHeader('Access-Control-Allow-Origin'),
-            'Access-Control-Allow-Methods': res.getHeader('Access-Control-Allow-Methods'),
-            'Access-Control-Allow-Headers': res.getHeader('Access-Control-Allow-Headers'),
-            'Access-Control-Allow-Credentials': res.getHeader('Access-Control-Allow-Credentials')
-        });
+        console.log('✅ Respondendo preflight OPTIONS');
         return res.status(200).end();
     }
     
     next();
 });
 
+// Importar configurações de banco e migrações
+const { pool, testConnection } = require('./config/database');
+const { createDatabase } = require('./migrations/migrate');
+
+// --- 3. MIDDLEWARES ---
 app.use(express.json());
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
@@ -97,6 +78,25 @@ app.get('/health', async (req, res) => {
 // Endpoint de exemplo
 app.get('/', (req, res) => {
     res.send('Aplicação rodando!');
+});
+
+// Endpoint de teste CORS
+app.get('/test-cors', (req, res) => {
+    res.json({ 
+        message: 'CORS funcionando!', 
+        origin: req.headers.origin,
+        timestamp: new Date().toISOString()
+    });
+});
+
+// Endpoint de teste POST para CORS
+app.post('/test-cors', (req, res) => {
+    res.json({ 
+        message: 'POST CORS funcionando!', 
+        origin: req.headers.origin,
+        body: req.body,
+        timestamp: new Date().toISOString()
+    });
 });
 
 
