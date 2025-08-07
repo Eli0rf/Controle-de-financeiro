@@ -4,7 +4,7 @@
 document.addEventListener('DOMContentLoaded', function() {
 
     // Define a URL base do backend no Railway
-    const API_BASE_URL = 'https://backend-production-a867.up.railway.app/api';
+    const API_BASE_URL = 'https://backend-production-a867.up.railway.app';
 
     const RAILWAY_BACKEND_URL = 'https://backend-production-a867.up.railway.app';
     
@@ -172,7 +172,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const passwordInput = document.getElementById('password');
         if (!usernameInput || !passwordInput) return alert("Erro de configuração do HTML.");
         try {
-            const response = await fetch(`${API_BASE_URL}/login`, {
+            const response = await fetch(`${API_BASE_URL}/api/login`, {
                 method: 'POST',
                 headers: { 
                     'Content-Type': 'application/json',
