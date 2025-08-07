@@ -34,32 +34,42 @@ app.use(cors({
             'http://127.0.0.1:8080'
         ];
         
+        console.log('🔍 CORS - Origin recebida:', origin);
+        
         // Permite requisições sem origin (ex: Postman, apps mobile)
-        if (!origin) return callback(null, true);
+        if (!origin) {
+            console.log('✅ CORS - Permitindo requisição sem origin');
+            return callback(null, true);
+        }
         
         // Permite origens específicas
         if (allowedOrigins.includes(origin)) {
+            console.log('✅ CORS - Origin permitida:', origin);
             return callback(null, true);
         }
         
         // Em desenvolvimento, permite qualquer origin local
         if (origin && (origin.includes('localhost') || origin.includes('127.0.0.1'))) {
+            console.log('✅ CORS - Origin local permitida:', origin);
             return callback(null, true);
         }
         
-        console.log('CORS: Origem rejeitada:', origin);
+        console.log('❌ CORS - Origem rejeitada:', origin);
         callback(new Error('Não permitido pelo CORS'));
     },
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
     exposedHeaders: ['Content-Disposition'],
     credentials: true,
-    optionsSuccessStatus: 200
+    optionsSuccessStatus: 200,
+    preflightContinue: false
 }));
 
 // Middleware adicional para garantir headers CORS em todas as respostas
 app.use((req, res, next) => {
     const origin = req.headers.origin;
+    
+    console.log(`🌐 ${req.method} ${req.path} - Origin: ${origin || 'sem origin'}`);
     
     // Lista de origens permitidas
     const allowedOrigins = [
@@ -74,16 +84,24 @@ app.use((req, res, next) => {
     // Define headers CORS para todas as respostas
     if (origin && allowedOrigins.includes(origin)) {
         res.setHeader('Access-Control-Allow-Origin', origin);
+        console.log('✅ CORS Header definido para:', origin);
     } else if (!origin) {
         res.setHeader('Access-Control-Allow-Origin', '*');
+        console.log('✅ CORS Header definido como *');
+    } else {
+        // Para origins não permitidas, ainda definimos o header para evitar erros
+        res.setHeader('Access-Control-Allow-Origin', origin);
+        console.log('⚠️ CORS Header definido para origin não listada:', origin);
     }
     
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin');
     res.setHeader('Access-Control-Allow-Credentials', 'true');
+    res.setHeader('Access-Control-Max-Age', '86400'); // 24 horas
     
     // Responde imediatamente para requisições OPTIONS (preflight)
     if (req.method === 'OPTIONS') {
+        console.log('✅ Respondendo a requisição OPTIONS (preflight)');
         res.status(200).end();
         return;
     }
