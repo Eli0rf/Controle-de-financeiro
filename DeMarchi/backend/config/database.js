@@ -16,8 +16,7 @@ if (process.env.MYSQLHOST && process.env.MYSQLPORT && process.env.MYSQLUSER) {
     waitForConnections: true,
     connectionLimit: 10,
     queueLimit: 0,
-    acquireTimeout: 60000,
-    idleTimeout: 60000,
+    timeout: 60000,
     ssl: {
       rejectUnauthorized: false
     }
@@ -35,8 +34,7 @@ if (process.env.MYSQLHOST && process.env.MYSQLPORT && process.env.MYSQLUSER) {
     waitForConnections: true,
     connectionLimit: 10,
     queueLimit: 0,
-    acquireTimeout: 60000,
-    idleTimeout: 60000,
+    timeout: 60000,
     ssl: {
       rejectUnauthorized: false
     }
