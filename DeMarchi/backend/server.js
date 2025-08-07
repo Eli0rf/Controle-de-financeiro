@@ -21,11 +21,12 @@ const { testConnection } = require('./config/database');
 const { createDatabase } = require('./migrations/migrate');
 
 // --- 3. MIDDLEWARES ---
-// Configuração principal do CORS
+// Configuração CORS detalhada para Railway
 app.use(cors({
     origin: function (origin, callback) {
         const allowedOrigins = [
             'https://controle-de-financeiro-production.up.railway.app',
+            'https://controlegastos-production.up.railway.app',
             'http://localhost:3000',
             'http://127.0.0.1:3000',
             'http://localhost:8080',
@@ -41,10 +42,11 @@ app.use(cors({
         }
         
         // Em desenvolvimento, permite qualquer origin local
-        if (origin.includes('localhost') || origin.includes('127.0.0.1')) {
+        if (origin && (origin.includes('localhost') || origin.includes('127.0.0.1'))) {
             return callback(null, true);
         }
         
+        console.log('CORS: Origem rejeitada:', origin);
         callback(new Error('Não permitido pelo CORS'));
     },
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
@@ -58,10 +60,20 @@ app.use(cors({
 app.use((req, res, next) => {
     const origin = req.headers.origin;
     
+    // Lista de origens permitidas
+    const allowedOrigins = [
+        'https://controle-de-financeiro-production.up.railway.app',
+        'https://controlegastos-production.up.railway.app',
+        'http://localhost:3000',
+        'http://127.0.0.1:3000',
+        'http://localhost:8080',
+        'http://127.0.0.1:8080'
+    ];
+    
     // Define headers CORS para todas as respostas
-    if (origin) {
+    if (origin && allowedOrigins.includes(origin)) {
         res.setHeader('Access-Control-Allow-Origin', origin);
-    } else {
+    } else if (!origin) {
         res.setHeader('Access-Control-Allow-Origin', '*');
     }
     
@@ -69,7 +81,7 @@ app.use((req, res, next) => {
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin');
     res.setHeader('Access-Control-Allow-Credentials', 'true');
     
-    // Responde imediatamente para requisições OPTIONS
+    // Responde imediatamente para requisições OPTIONS (preflight)
     if (req.method === 'OPTIONS') {
         res.status(200).end();
         return;

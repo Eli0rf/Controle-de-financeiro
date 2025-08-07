@@ -4,11 +4,11 @@
 document.addEventListener('DOMContentLoaded', function() {
 
     // Define a URL base do backend no Railway
-    const API_BASE_URL = 'https://controlegastos-production.up.railway.app';
+    const API_BASE_URL = 'https://controlegastos-production.up.railway.app/api';
 
-    const RAILWAY_BACKEND_URL = 'https://controlegastos-production.up.railway.app/DeMarchi/backend';
+    const RAILWAY_BACKEND_URL = 'https://controlegastos-production.up.railway.app';
     
-    const FILE_BASE_URL = 'https://controlegastos-production.up.railway.app/DeMarchi/backend';
+    const FILE_BASE_URL = 'https://controlegastos-production.up.railway.app';
 
     const loginSection = document.getElementById('login-section');
     const dashboardContent = document.getElementById('dashboard-content');
@@ -97,11 +97,12 @@ document.addEventListener('DOMContentLoaded', function() {
             throw new Error('Token não encontrado');
         }
 
-        // Não sobrescrever Content-Type se for FormData
+        // Headers CORS completos
         const headers = {
             'Authorization': `Bearer ${token}`,
             'Accept': 'application/json',
             'X-Requested-With': 'XMLHttpRequest',
+            'Origin': 'https://controle-de-financeiro-production.up.railway.app',
             ...options.headers
         };
 
@@ -171,12 +172,13 @@ document.addEventListener('DOMContentLoaded', function() {
         const passwordInput = document.getElementById('password');
         if (!usernameInput || !passwordInput) return alert("Erro de configuração do HTML.");
         try {
-            const response = await fetch(`${API_BASE_URL}/api/login`, {
+            const response = await fetch(`${API_BASE_URL}/login`, {
                 method: 'POST',
                 headers: { 
                     'Content-Type': 'application/json',
                     'Accept': 'application/json',
-                    'X-Requested-With': 'XMLHttpRequest'
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'Origin': 'https://controle-de-financeiro-production.up.railway.app'
                 },
                 mode: 'cors',
                 credentials: 'include',

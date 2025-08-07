@@ -6,7 +6,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const registerButton = document.getElementById('register-button');
 
     // Define a URL base do backend no Railway
-    const API_URL = 'https://controlegastos-production.up.railway.app';
+    const API_URL = 'https://controlegastos-production.up.railway.app/api';
 
     registerForm.addEventListener('submit', async (e) => {
         e.preventDefault(); // Impede o envio padrão do formulário
@@ -22,12 +22,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
         try {
             // Corrige o caminho da rota para o backend no Railway
-            const response = await fetch(`${API_URL}/api/register`, {
+            const response = await fetch(`${API_URL}/register`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     'Accept': 'application/json',
-                    'X-Requested-With': 'XMLHttpRequest'
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'Origin': 'https://controle-de-financeiro-production.up.railway.app'
                 },
                 mode: 'cors',
                 credentials: 'include',
