@@ -4,11 +4,11 @@
 document.addEventListener('DOMContentLoaded', function() {
 
     // Define a URL base do backend no Railway
-    const API_BASE_URL = 'https://controlegastos-production.up.railway.app/api';
+    const API_BASE_URL = 'https://backend-production-a867.up.railway.app/api';
 
-    const RAILWAY_BACKEND_URL = 'https://controlegastos-production.up.railway.app';
+    const RAILWAY_BACKEND_URL = 'https://backend-production-a867.up.railway.app';
     
-    const FILE_BASE_URL = 'https://controlegastos-production.up.railway.app';
+    const FILE_BASE_URL = 'https://backend-production-a867.up.railway.app';
 
     const loginSection = document.getElementById('login-section');
     const dashboardContent = document.getElementById('dashboard-content');

@@ -6,7 +6,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const registerButton = document.getElementById('register-button');
 
     // Define a URL base do backend no Railway
-    const API_URL = 'https://controlegastos-production.up.railway.app/api';
+    const API_URL = 'https://backend-production-a867.up.railway.app/api';
 
     registerForm.addEventListener('submit', async (e) => {
         e.preventDefault(); // Impede o envio padrão do formulário
