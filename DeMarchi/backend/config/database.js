@@ -5,8 +5,26 @@ require('dotenv').config();
 let dbConfig;
 
 // Railway fornece estas variáveis automaticamente
-if (process.env.MYSQL_HOST) {
-  // Configuração para Railway (MySQL addon)
+if (process.env.MYSQLHOST) {
+  // Configuração para Railway usando variáveis MYSQL*
+  dbConfig = {
+    host: process.env.MYSQLHOST,
+    port: parseInt(process.env.MYSQLPORT) || 3306,
+    user: process.env.MYSQLUSER,
+    password: process.env.MYSQLPASSWORD,
+    database: process.env.MYSQLDATABASE,
+    waitForConnections: true,
+    connectionLimit: 5,
+    queueLimit: 0,
+    ssl: {
+      rejectUnauthorized: false
+    },
+    reconnect: true,
+    idleTimeout: 300000,
+    acquireTimeout: 60000
+  };
+} else if (process.env.MYSQL_HOST) {
+  // Configuração alternativa para Railway (MYSQL_HOST format)
   dbConfig = {
     host: process.env.MYSQL_HOST,
     port: parseInt(process.env.MYSQL_PORT) || 3306,
@@ -23,9 +41,9 @@ if (process.env.MYSQL_HOST) {
     idleTimeout: 300000,
     acquireTimeout: 60000
   };
-} else if (process.env.DATABASE_URL) {
-  // Configuração alternativa usando DATABASE_URL (formato mysql://user:pass@host:port/db)
-  const url = new URL(process.env.DATABASE_URL);
+} else if (process.env.MYSQL_URL) {
+  // Configuração usando MYSQL_URL (formato mysql://user:pass@host:port/db)
+  const url = new URL(process.env.MYSQL_URL);
   dbConfig = {
     host: url.hostname,
     port: parseInt(url.port) || 3306,
