@@ -175,7 +175,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 a.click();
                 window.URL.revokeObjectURL(url);
                 document.body.removeChild(a);
-
+ 
                 showNotification('Fatura baixada com sucesso!', 'success');
             } else if (response.status === 404) {
                 const error = await response.json();
@@ -2805,7 +2805,6 @@ document.addEventListener('DOMContentLoaded', function() {
             console.error('Erro ao criar gráfico de evolução empresarial:', error);
             showNotification('Erro ao carregar análise de tendências', 'error');
         }
-        });
     }
 
     async function updateBusinessAccountChart(data) {
@@ -2877,7 +2876,6 @@ document.addEventListener('DOMContentLoaded', function() {
             console.error('Erro ao criar gráfico de contas empresariais:', error);
             showNotification('Erro ao carregar gráfico de contas', 'error');
         }
-        });
     }
 
     // ====== FUNÇÕES DE ANÁLISE DE TENDÊNCIAS ======
