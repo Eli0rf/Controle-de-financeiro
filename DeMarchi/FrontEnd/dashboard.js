@@ -55,7 +55,28 @@ document.addEventListener('DOMContentLoaded', function() {
     const recurringList = document.getElementById('recurring-list');
     const processRecurringBtn = document.getElementById('process-recurring-btn');
 
-    let expensesLineChart, expensesPieChart, planChart, mixedTypeChart, goalsChart, goalsPlanChart;
+    // ========== SISTEMA DE GRÁFICOS - VERSÃO COMPLETA ==========
+    
+    // Registry central de todas as instâncias de gráficos
+    const chartRegistry = {
+        // Gráficos principais do dashboard
+        expensesLineChart: null,
+        expensesPieChart: null,
+        planChart: null,
+        mixedTypeChart: null,
+        goalsChart: null,
+        goalsPlanChart: null,
+        
+        // Gráficos de análise empresarial
+        businessEvolutionChart: null,
+        businessAccountChart: null,
+        businessCategoryChart: null,
+        
+        // Gráficos de IR
+        irChart1: null,
+        irChart2: null
+    };
+    
     let allExpensesCache = [];
 
     function getToken() {
@@ -301,59 +322,188 @@ document.addEventListener('DOMContentLoaded', function() {
         businessFields.classList.toggle('hidden', !businessCheckbox.checked);
     }
 
-    // Verificar se Chart.js está carregado
+    // ========== GERENCIAMENTO DO CHART.JS ==========
+    
+    /**
+     * Verifica se o Chart.js está carregado e disponível
+     */
     function isChartJsLoaded() {
-        return typeof Chart !== 'undefined';
+        return typeof Chart !== 'undefined' && Chart.version;
     }
 
-    // Aguardar Chart.js estar disponível
+    /**
+     * Aguarda o Chart.js estar disponível com retry inteligente
+     */
     function waitForChartJs() {
         return new Promise((resolve) => {
             if (isChartJsLoaded()) {
-                resolve();
+                console.log('✅ Chart.js já carregado:', Chart.version);
+                resolve(true);
                 return;
             }
             
+            console.log('⏳ Aguardando Chart.js carregar...');
+            let attempts = 0;
+            const maxAttempts = 50; // 5 segundos máximo
+            
             const checkInterval = setInterval(() => {
+                attempts++;
+                
                 if (isChartJsLoaded()) {
                     clearInterval(checkInterval);
-                    resolve();
+                    console.log('✅ Chart.js carregado após', attempts * 100, 'ms:', Chart.version);
+                    resolve(true);
+                } else if (attempts >= maxAttempts) {
+                    clearInterval(checkInterval);
+                    console.error('❌ Chart.js não carregou após', maxAttempts * 100, 'ms');
+                    resolve(false);
                 }
             }, 100);
-            
-            // Timeout após 5 segundos
-            setTimeout(() => {
-                clearInterval(checkInterval);
-                console.error('Chart.js não foi carregado dentro do tempo limite');
-                resolve();
-            }, 5000);
         });
     }
 
+    /**
+     * Configurações responsivas e padrões para todos os gráficos
+     */
+    const defaultChartOptions = {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: {
+            intersect: false,
+            mode: 'index'
+        },
+        animation: {
+            duration: 750,
+            easing: 'easeInOutQuart'
+        },
+        elements: {
+            line: {
+                tension: 0.4
+            },
+            point: {
+                radius: 4,
+                hoverRadius: 6
+            }
+        },
+        plugins: {
+            legend: {
+                display: true,
+                position: 'top',
+                labels: {
+                    padding: 20,
+                    usePointStyle: true,
+                    font: {
+                        size: 12
+                    }
+                }
+            },
+            tooltip: {
+                backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                titleColor: '#fff',
+                bodyColor: '#fff',
+                borderColor: 'rgba(255, 255, 255, 0.1)',
+                borderWidth: 1,
+                cornerRadius: 6,
+                displayColors: true,
+                mode: 'index',
+                intersect: false,
+                callbacks: {
+                    title: function(context) {
+                        return context[0].label || '';
+                    }
+                }
+            }
+        },
+        scales: {
+            x: {
+                grid: {
+                    display: true,
+                    color: 'rgba(0, 0, 0, 0.1)'
+                },
+                ticks: {
+                    font: {
+                        size: 11
+                    }
+                }
+            },
+            y: {
+                beginAtZero: true,
+                grid: {
+                    display: true,
+                    color: 'rgba(0, 0, 0, 0.1)'
+                },
+                ticks: {
+                    font: {
+                        size: 11
+                    },
+                    callback: function(value) {
+                        return 'R$ ' + value.toLocaleString('pt-BR', {
+                            minimumFractionDigits: 0,
+                            maximumFractionDigits: 0
+                        });
+                    }
+                }
+            }
+        }
+    };
+
+    /**
+     * Mescla opções específicas com as padrões
+     */
+    function mergeChartOptions(specificOptions = {}) {
+        return {
+            ...defaultChartOptions,
+            ...specificOptions,
+            plugins: {
+                ...defaultChartOptions.plugins,
+                ...specificOptions.plugins
+            },
+            scales: {
+                ...defaultChartOptions.scales,
+                ...specificOptions.scales
+            }
+        };
+    }
+
+    /**
+     * Função principal para carregar todos os dados e gráficos do dashboard
+     */
     async function fetchAllData() {
         try {
             if (!checkAuthentication()) {
-                console.log('Autenticação falhou em fetchAllData');
+                console.log('❌ Autenticação falhou em fetchAllData');
                 return;
             }
 
-            console.log('Iniciando fetchAllData...');
+            console.log('🚀 Iniciando fetchAllData...');
             
             // Aguardar Chart.js estar disponível
-            await waitForChartJs();
+            const chartJsLoaded = await waitForChartJs();
             
-            if (!isChartJsLoaded()) {
-                console.error('Chart.js não está disponível, gráficos serão ignorados');
-                showNotification('Biblioteca de gráficos não carregada, alguns recursos podem não funcionar', 'warning');
+            if (!chartJsLoaded) {
+                console.error('❌ Chart.js não está disponível, gráficos serão ignorados');
+                showNotification('Biblioteca de gráficos não carregada - alguns recursos podem não funcionar', 'warning', 5000);
+            } else {
+                console.log('✅ Chart.js carregado, prosseguindo com gráficos');
             }
 
-            await fetchAndRenderExpenses();
-            await fetchAndRenderDashboardMetrics();
-            await fetchAndRenderGoalsChart();
-            console.log('fetchAllData concluído');
+            // Carregar dados em paralelo para melhor performance
+            const promises = [
+                fetchAndRenderExpenses(),
+                fetchAndRenderDashboardMetrics()
+            ];
+
+            // Só adicionar gráficos se Chart.js estiver disponível
+            if (chartJsLoaded) {
+                promises.push(fetchAndRenderGoalsChart());
+            }
+
+            await Promise.all(promises);
+            
+            console.log('✅ fetchAllData concluído com sucesso');
         } catch (error) {
-            console.error('Erro em fetchAllData:', error);
-            showNotification('Erro ao carregar dados do dashboard', 'error');
+            console.error('❌ Erro em fetchAllData:', error);
+            showNotification('Erro ao carregar dados do dashboard: ' + error.message, 'error');
         }
     }
 
@@ -389,197 +539,195 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-    // Configurações responsivas padrão para todos os gráficos
-    const defaultChartOptions = {
-        responsive: true,
-        maintainAspectRatio: false,
-        interaction: {
-            intersect: false,
-            mode: 'index'
-        },
-        animation: {
-            duration: 750,
-            easing: 'easeInOutQuart'
-        },
-        layout: {
-            padding: {
-                top: 10,
-                right: 10,
-                bottom: 10,
-                left: 10
-            }
-        },
-        elements: {
-            point: {
-                radius: 4,
-                hoverRadius: 6
-            },
-            line: {
-                tension: 0.2
-            }
-        }
-    };
-
-    // Função para mesclar opções padrão com específicas
-    function mergeChartOptions(specificOptions = {}) {
-        return {
-            ...defaultChartOptions,
-            ...specificOptions,
-            plugins: {
-                ...defaultChartOptions.plugins,
-                ...specificOptions.plugins
-            }
-        };
-    }
-
+    // ========== RENDERIZAÇÃO DOS GRÁFICOS PRINCIPAIS ==========
+    
+    /**
+     * Renderiza gráfico de metas/limites
+     */
     function renderGoalsChart(data = []) {
-        const ctx = document.getElementById('goals-chart')?.getContext('2d');
-        if (!ctx) {
-            console.warn('Canvas goals-chart não encontrado');
-            return;
-        }
+        const chartKey = 'goalsChart';
+        const canvasId = 'goals-chart';
         
         if (!isChartJsLoaded()) {
-            console.error('Chart.js não está carregado para renderGoalsChart');
-            showNoDataMessage('goals-chart', 'Biblioteca de gráficos não carregada');
+            console.error('❌ Chart.js não está carregado para renderGoalsChart');
+            displayChartFallback(canvasId, 'Chart.js não carregado');
             return;
         }
-        
-        goalsChart = destroyChartInstance(goalsChart, 'goals-chart');
 
         if (!data || data.length === 0) {
-            showNoDataMessage('goals-chart', 'Sem dados de limites disponíveis');
+            console.warn('⚠️ Dados vazios para Goals Chart');
+            displayChartFallback(canvasId, 'Nenhum limite de gasto configurado');
             return;
         }
 
-        const labels = data.map(item => `Plano ${item.PlanoContasID}`);
-        const values = data.map(item => Number(item.Total));
-        const tetos = data.map(item => Number(item.Teto));
-
         try {
-            goalsChart = new Chart(ctx, {
-                type: 'bar',
-                data: {
-                    labels: labels,
-                    datasets: [
-                        {
-                            label: 'Gastos Atuais',
-                            data: values,
-                            backgroundColor: 'rgba(255, 99, 132, 0.2)',
-                            borderColor: 'rgba(255, 99, 132, 1)',
-                            borderWidth: 1
-                        },
-                        {
-                            label: 'Teto de Gastos',
-                            data: tetos,
-                            type: 'line',
-                            fill: false,
-                            borderColor: 'rgba(75, 192, 192, 1)',
-                            borderWidth: 2,
-                            pointRadius: 5,
-                            pointBackgroundColor: 'rgba(75, 192, 192, 1)'
-                        }
-                    ]
-                },
-                options: mergeChartOptions({
-                    scales: {
-                        y: { 
-                            beginAtZero: true,
-                            title: {
-                                display: true,
-                                text: 'Valor (R$)'
-                            }
-                        },
-                        x: {
-                            title: {
-                                display: true,
-                                text: 'Planos de Conta'
-                            }
-                        }
-                    },
-                    plugins: {
-                        title: {
-                            display: true,
-                            text: 'Comparação: Gastos vs Limites por Plano'
-                        },
-                        legend: {
-                            display: true,
-                            position: 'top'
-                        }
-                    }
-                })
-            });
-        } catch (error) {
-            console.error('Erro ao criar gráfico de metas:', error);
-            showNoDataMessage('goals-chart', 'Erro ao carregar gráfico');
-        }
-    }
-
-    function renderGoalsPlanChart(data = []) {
-        const canvas = document.getElementById('goals-plan-chart');
-        if (!canvas) return;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return;
-        goalsPlanChart = destroyChartInstance(goalsPlanChart, 'goals-plan-chart');
-
-        const sorted = [...data].sort((a, b) => a.PlanoContasID - b.PlanoContasID);
-
-        const labels = sorted.map(item => `Plano ${item.PlanoContasID}`);
-        const tetos = sorted.map(item => Number(item.Teto));
-        const atingido = sorted.map(item => Number(item.Total));
-        const percentuais = sorted.map((item, i) =>
-            tetos[i] > 0 ? Math.round((atingido[i] / tetos[i]) * 100) : 0
-        );
-
-        goalsPlanChart = new Chart(ctx, {
-            type: 'bar',
-            data: {
-                labels: labels,
+            const chartData = {
+                labels: data.map(item => `Plano ${item.PlanoContasID || 'N/A'}`),
                 datasets: [
                     {
                         label: 'Teto de Gastos',
-                        data: tetos,
-                        backgroundColor: 'rgba(75, 192, 192, 0.4)',
-                        borderColor: 'rgba(75, 192, 192, 1)',
-                        borderWidth: 1
+                        data: data.map(item => Number(item.Teto) || 0),
+                        type: 'line',
+                        fill: false,
+                        borderColor: 'rgba(34, 197, 94, 1)',
+                        backgroundColor: 'rgba(34, 197, 94, 0.7)',
+                        borderWidth: 3,
+                        pointRadius: 6,
+                        pointBackgroundColor: 'rgba(34, 197, 94, 1)',
+                        tension: 0.1
                     },
                     {
-                        label: 'Gasto Atual',
-                        data: atingido,
-                        backgroundColor: 'rgba(255, 99, 132, 0.4)',
-                        borderColor: 'rgba(255, 99, 132, 1)',
-                        borderWidth: 1,
-                        datalabels: {
-                            anchor: 'end',
-                            align: 'start',
-                            color: '#333',
-                            font: { weight: 'bold' },
-                            formatter: function(value, context) {
-                                const i = context.dataIndex;
-                                return tetos[i] > 0 ? percentuais[i] + '%' : '';
-                            }
-                        }
+                        label: 'Gastos Atuais',
+                        data: data.map(item => Number(item.Total) || 0),
+                        backgroundColor: data.map(item => {
+                            const current = Number(item.Total) || 0;
+                            const limit = Number(item.Teto) || 0;
+                            return current > limit ? 'rgba(239, 68, 68, 0.7)' : 'rgba(59, 130, 246, 0.7)';
+                        }),
+                        borderColor: data.map(item => {
+                            const current = Number(item.Total) || 0;
+                            const limit = Number(item.Teto) || 0;
+                            return current > limit ? 'rgba(239, 68, 68, 1)' : 'rgba(59, 130, 246, 1)';
+                        }),
+                        borderWidth: 2
                     }
                 ]
-            },
-            options: {
-                responsive: true,
+            };
+
+            const options = mergeChartOptions({
                 plugins: {
-                    tooltip: { mode: 'index', intersect: false },
-                    legend: { position: 'top' },
-                    datalabels: {
-                        display: function(context) {
-                            // Só mostra percentual na barra "Gasto Atual"
-                            return context.dataset.label === 'Gasto Atual';
+                    title: {
+                        display: true,
+                        text: 'Controle de Limites de Gastos por Plano'
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                const value = context.parsed.y;
+                                const dataIndex = context.dataIndex;
+                                const item = data[dataIndex];
+                                const percentage = item.Teto > 0 ? ((item.Total / item.Teto) * 100).toFixed(1) : 0;
+                                return [
+                                    `${context.dataset.label}: R$ ${value.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`,
+                                    `Utilização: ${percentage}%`
+                                ];
+                            }
                         }
                     }
                 },
                 scales: {
-                    y: { beginAtZero: true }
+                    y: {
+                        title: {
+                            display: true,
+                            text: 'Valor (R$)'
+                        }
+                    },
+                    x: {
+                        title: {
+                            display: true,
+                            text: 'Planos de Conta'
+                        }
+                    }
                 }
-            },
-            plugins: [ChartDataLabels]
-        });
+            });
+
+            createChart(chartKey, canvasId, {
+                type: 'bar',
+                data: chartData,
+                options: options
+            });
+
+        } catch (error) {
+            console.error('❌ Erro ao renderizar Goals Chart:', error);
+            displayChartFallback(canvasId, 'Erro ao carregar gráfico de metas');
+        }
+    }
+
+    /**
+     * Renderiza gráfico de planos de metas (distribuição)
+     */
+    function renderGoalsPlanChart(data = []) {
+        const chartKey = 'goalsPlanChart';
+        const canvasId = 'goals-plan-chart';
+        
+        if (!isChartJsLoaded()) {
+            console.error('❌ Chart.js não está carregado para renderGoalsPlanChart');
+            displayChartFallback(canvasId, 'Chart.js não carregado');
+            return;
+        }
+
+        if (!data || data.length === 0) {
+            console.warn('⚠️ Dados vazios para Goals Plan Chart');
+            displayChartFallback(canvasId, 'Nenhum plano de meta encontrado');
+            return;
+        }
+
+        try {
+            const sorted = [...data].sort((a, b) => a.PlanoContasID - b.PlanoContasID);
+            
+            const chartData = {
+                labels: sorted.map(item => `Plano ${item.PlanoContasID}`),
+                datasets: [
+                    {
+                        label: 'Teto de Gastos',
+                        data: sorted.map(item => Number(item.Teto) || 0),
+                        backgroundColor: 'rgba(34, 197, 94, 0.6)',
+                        borderColor: 'rgba(34, 197, 94, 1)',
+                        borderWidth: 2
+                    },
+                    {
+                        label: 'Gasto Atual',
+                        data: sorted.map(item => Number(item.Total) || 0),
+                        backgroundColor: sorted.map(item => {
+                            const current = Number(item.Total) || 0;
+                            const limit = Number(item.Teto) || 0;
+                            return current > limit ? 'rgba(239, 68, 68, 0.6)' : 'rgba(59, 130, 246, 0.6)';
+                        }),
+                        borderColor: sorted.map(item => {
+                            const current = Number(item.Total) || 0;
+                            const limit = Number(item.Teto) || 0;
+                            return current > limit ? 'rgba(239, 68, 68, 1)' : 'rgba(59, 130, 246, 1)';
+                        }),
+                        borderWidth: 2
+                    }
+                ]
+            };
+
+            const options = mergeChartOptions({
+                plugins: {
+                    title: {
+                        display: true,
+                        text: 'Comparativo de Gastos vs Limites'
+                    },
+                    tooltip: {
+                        mode: 'index',
+                        intersect: false,
+                        callbacks: {
+                            label: function(context) {
+                                const value = context.parsed.y;
+                                const dataIndex = context.dataIndex;
+                                const item = sorted[dataIndex];
+                                const percentage = item.Teto > 0 ? Math.round((item.Total / item.Teto) * 100) : 0;
+                                return [
+                                    `${context.dataset.label}: R$ ${value.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`,
+                                    `Percentual: ${percentage}%`
+                                ];
+                            }
+                        }
+                    }
+                }
+            });
+
+            createChart(chartKey, canvasId, {
+                type: 'bar',
+                data: chartData,
+                options: options
+            });
+
+        } catch (error) {
+            console.error('❌ Erro ao renderizar Goals Plan Chart:', error);
+            displayChartFallback(canvasId, 'Erro ao carregar gráfico de planos');
+        }
     }
 
     // ====== DARK MODE (MODO ESCURO) ======
@@ -943,177 +1091,216 @@ document.addEventListener('DOMContentLoaded', function() {
         return 0;
     }
 
+    /**
+     * Renderiza gráfico de linha da evolução diária dos gastos
+     */
     function renderLineChart(data = []) {
-        const canvas = document.getElementById('expenses-line-chart');
-        if (!canvas) {
-            console.warn('Canvas expenses-line-chart não encontrado');
-            return;
-        }
-        
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return;
+        const chartKey = 'expensesLineChart';
+        const canvasId = 'expenses-line-chart';
         
         if (!isChartJsLoaded()) {
-            console.error('Chart.js não está carregado para renderLineChart');
-            showNoDataMessage('expenses-line-chart', 'Biblioteca de gráficos não carregada');
+            console.error('❌ Chart.js não disponível para renderLineChart');
+            displayChartFallback(canvasId, 'Chart.js não carregado');
             return;
         }
-        
-        expensesLineChart = destroyChartInstance(expensesLineChart, 'expenses-line-chart');
-        
+
         const year = parseInt(filterYear.value, 10);
         const month = parseInt(filterMonth.value, 10);
         const daysInMonth = new Date(year, month, 0).getDate();
-        const labels = Array.from({ length: daysInMonth }, (_, i) => i + 1);
+        const labels = Array.from({ length: daysInMonth }, (_, i) => `${i + 1}`);
         const chartData = new Array(daysInMonth).fill(0);
         
         if (!data || data.length === 0) {
-            showNoDataMessage('expenses-line-chart', 'Sem dados para este período.');
+            displayChartFallback(canvasId, 'Sem dados para este período');
             return;
         }
         
-        data.forEach(d => { chartData[d.day - 1] = d.total; });
+        // Processar dados diários
+        data.forEach(d => { 
+            if (d.day && d.day <= daysInMonth) {
+                chartData[d.day - 1] = d.total || 0; 
+            }
+        });
         
         if (chartData.every(v => v === 0)) {
-            showNoDataMessage('expenses-line-chart', 'Sem gastos registrados neste período.');
+            displayChartFallback(canvasId, 'Sem gastos registrados neste período');
             return;
         }
-        
-        const max = Math.max(...chartData);
-        const min = Math.min(...chartData.filter(v => v > 0));
 
         try {
-            expensesLineChart = new Chart(ctx, {
+            const max = Math.max(...chartData);
+            const min = Math.min(...chartData.filter(v => v > 0));
+            const monthName = filterMonth.options[filterMonth.selectedIndex].text;
+
+            const config = {
                 type: 'line',
                 data: {
                     labels: labels,
                     datasets: [{
-                        label: `Gastos Diários em ${filterMonth.options[filterMonth.selectedIndex].text}`,
+                        label: `Gastos Diários - ${monthName}/${year}`,
                         data: chartData,
-                        borderColor: getThemeColor('#3B82F6', '#60A5FA'),
-                        backgroundColor: getThemeColor('rgba(59,130,246,0.1)', 'rgba(59,130,246,0.3)'),
-                        tension: 0.2,
-                        pointBackgroundColor: chartData.map(v => v === max ? '#22c55e' : v === min ? '#ef4444' : getThemeColor('#3B82F6', '#60A5FA')),
-                        pointRadius: chartData.map(v => v === max || v === min ? 6 : 4)
+                        borderColor: 'rgba(59, 130, 246, 1)',
+                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                        borderWidth: 3,
+                        tension: 0.3,
+                        fill: true,
+                        pointBackgroundColor: chartData.map(v => {
+                            if (v === max) return '#22c55e';
+                            if (v === min && v > 0) return '#ef4444';
+                            return 'rgba(59, 130, 246, 1)';
+                        }),
+                        pointBorderColor: '#ffffff',
+                        pointBorderWidth: 2,
+                        pointRadius: chartData.map(v => (v === max || (v === min && v > 0)) ? 6 : 4),
+                        pointHoverRadius: 8
                     }]
                 },
-                options: {
-                    responsive: true,
+                options: mergeChartOptions({
                     plugins: {
                         title: {
                             display: true,
-                            text: 'Evolução dos Gastos Diários',
-                            color: getThemeColor('#222', '#fff'),
-                            font: { size: 18 }
+                            text: `Evolução dos Gastos Diários - ${monthName}/${year}`
                         },
                         subtitle: {
                             display: true,
-                            text: `Maior gasto: R$ ${max.toFixed(2)} | Menor gasto: R$ ${min ? min.toFixed(2) : '0.00'}`,
-                            color: getThemeColor('#666', '#ccc'),
-                            font: { size: 13 }
+                            text: `📈 Maior: R$ ${max.toFixed(2)} | 📉 Menor: R$ ${min ? min.toFixed(2) : '0,00'}`
                         },
-                        legend: { display: false },
+                        legend: {
+                            display: false
+                        },
                         tooltip: {
                             callbacks: {
-                                label: ctx => `Dia ${ctx.label}: R$ ${ctx.parsed.y.toFixed(2)}`
-                            }
-                        },
-                        datalabels: {
-                            color: getThemeColor('#222', '#fff'),
-                            anchor: 'end', align: 'top', font: { weight: 'bold' },
-                            formatter: v => {
-                                const val = getNumberValue(v);
-                                return val > 0 ? `R$ ${val.toFixed(2)}` : '';
+                                title: function(context) {
+                                    return `Dia ${context[0].label} de ${monthName}`;
+                                },
+                                label: function(context) {
+                                    return `Gastos: R$ ${context.parsed.y.toFixed(2)}`;
+                                }
                             }
                         }
                     },
                     scales: {
-                        x: { title: { display: true, text: 'Dia do Mês' } },
-                        y: { beginAtZero: true }
+                        x: {
+                            title: {
+                                display: true,
+                                text: 'Dia do Mês'
+                            }
+                        },
+                        y: {
+                            title: {
+                                display: true,
+                                text: 'Valor (R$)'
+                            }
+                        }
                     }
-                },
-                plugins: [ChartDataLabels]
-            });
+                })
+            };
+
+            createChart(chartKey, canvasId, config);
+
         } catch (error) {
-            console.error('Erro ao criar gráfico de linha:', error);
-            showNoDataMessage('expenses-line-chart', 'Erro ao carregar gráfico');
+            console.error('❌ Erro ao renderizar Line Chart:', error);
+            displayChartFallback(canvasId, 'Erro ao carregar gráfico de linha');
         }
     }
 
+    /**
+     * Renderiza gráfico de pizza da distribuição por conta
+     */
     function renderPieChart(data = []) {
-        const canvas = document.getElementById('expenses-pie-chart');
-        if (!canvas) {
-            console.warn('Canvas expenses-pie-chart não encontrado');
-            return;
-        }
-        
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return;
+        const chartKey = 'expensesPieChart';
+        const canvasId = 'expenses-pie-chart';
         
         if (!isChartJsLoaded()) {
-            console.error('Chart.js não está carregado para renderPieChart');
-            showNoDataMessage('expenses-pie-chart', 'Biblioteca de gráficos não carregada');
+            console.error('❌ Chart.js não disponível para renderPieChart');
+            displayChartFallback(canvasId, 'Chart.js não carregado');
             return;
         }
         
-        expensesPieChart = destroyChartInstance(expensesPieChart, 'expenses-pie-chart');
-        
-        if (!data || !data.length) {
-            showNoDataMessage('expenses-pie-chart', 'Sem dados para este período.');
+        if (!data || data.length === 0) {
+            displayChartFallback(canvasId, 'Sem dados para este período');
             return;
         }
-        
-        const total = Array.isArray(data) && data.length > 0 ? data.reduce((sum, d) => sum + (typeof d.total === 'number' ? d.total : parseFloat(d.total) || 0), 0) : 0;
-        
+
         try {
-            expensesPieChart = new Chart(ctx, {
-            type: 'pie',
-            data: {
-                labels: data.map(d => d.account),
+            const total = data.reduce((sum, d) => sum + (parseFloat(d.total) || 0), 0);
+            
+            if (total === 0) {
+                displayChartFallback(canvasId, 'Nenhum gasto registrado');
+                return;
+            }
+
+            const chartData = {
+                labels: data.map(d => d.account || 'Conta não especificada'),
                 datasets: [{
-                    data: data.map(d => d.total),
-                    backgroundColor: ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#6366F1']
+                    data: data.map(d => parseFloat(d.total) || 0),
+                    backgroundColor: [
+                        'rgba(59, 130, 246, 0.8)',
+                        'rgba(34, 197, 94, 0.8)',
+                        'rgba(245, 158, 11, 0.8)',
+                        'rgba(239, 68, 68, 0.8)',
+                        'rgba(139, 92, 246, 0.8)',
+                        'rgba(236, 72, 153, 0.8)',
+                        'rgba(14, 165, 233, 0.8)',
+                        'rgba(168, 85, 247, 0.8)',
+                        'rgba(34, 211, 238, 0.8)',
+                        'rgba(251, 146, 60, 0.8)'
+                    ],
+                    borderColor: '#ffffff',
+                    borderWidth: 2,
+                    hoverBorderWidth: 3,
+                    hoverOffset: 10
                 }]
-            },
-            options: {
-                responsive: true,
+            };
+
+            const options = mergeChartOptions({
                 plugins: {
                     title: {
                         display: true,
-                        text: 'Distribuição por Conta',
-                        color: getThemeColor('#222', '#fff'),
-                        font: { size: 18 }
+                        text: 'Distribuição de Gastos por Conta'
                     },
                     subtitle: {
                         display: true,
-                        text: `Total: R$ ${total.toFixed(2)}`,
-                        color: getThemeColor('#666', '#ccc'),
-                        font: { size: 13 }
+                        text: `💰 Total Geral: R$ ${total.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`
                     },
                     legend: {
                         position: 'bottom',
-                        labels: { color: getThemeColor('#222', '#fff') }
+                        labels: {
+                            padding: 15,
+                            usePointStyle: true,
+                            font: {
+                                size: 11
+                            }
+                        }
                     },
                     tooltip: {
                         callbacks: {
-                            label: ctx => `${ctx.label}: R$ ${ctx.parsed.toFixed(2)} (${((ctx.parsed/total)*100).toFixed(1)}%)`
-                        }
-                    },
-                    datalabels: {
-                        color: '#fff',
-                        font: { weight: 'bold' },
-                        formatter: v => {
-                            const val = getNumberValue(v);
-                            return val > 0 ? `R$ ${val.toFixed(2)}` : '';
+                            title: function(context) {
+                                return context[0].label;
+                            },
+                            label: function(context) {
+                                const value = context.parsed;
+                                const percentage = ((value / total) * 100).toFixed(1);
+                                return [
+                                    `Valor: R$ ${value.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`,
+                                    `Percentual: ${percentage}%`
+                                ];
+                            }
                         }
                     }
-                }
-            },
-            plugins: [ChartDataLabels]
-        });
+                },
+                scales: {} // Remove scales for pie chart
+            });
+
+            createChart(chartKey, canvasId, {
+                type: 'pie',
+                data: chartData,
+                options: options
+            });
+
         } catch (error) {
-            console.error('Erro ao criar gráfico de pizza:', error);
-            showNoDataMessage('expenses-pie-chart', 'Erro ao carregar gráfico');
+            console.error('❌ Erro ao renderizar Pie Chart:', error);
+            displayChartFallback(canvasId, 'Erro ao carregar gráfico de pizza');
         }
     }
 
@@ -1150,7 +1337,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     function renderMixedTypeChart(data = []) {
         return safeRenderChart('mixed-type-chart', (canvas, ctx, data) => {
-            mixedTypeChart = destroyChartInstance(mixedTypeChart, 'mixed-type-chart');
+            destroyChart('mixedTypeChart');
             
             const max = Math.max(...data.map(d => d.personal_total + d.business_total));
             mixedTypeChart = new Chart(ctx, {
@@ -1213,7 +1400,7 @@ document.addEventListener('DOMContentLoaded', function() {
         if (!canvas) return;
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
-        planChart = destroyChartInstance(planChart, 'plan-chart');
+        destroyChart('planChart');
         if (!data.length) {
             showNoDataMessage('plan-chart', 'Sem dados para este período.');
             return;
@@ -2266,93 +2453,127 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     };
 
-    // Helper melhorado para destruir Chart.js instance e evitar crescimento infinito
-    function destroyChartInstance(chartVar, canvasId) {
-        // Destruir instância existente
-        if (chartVar && typeof chartVar.destroy === 'function') {
+    // ========== SISTEMA DE GERENCIAMENTO DE GRÁFICOS ==========
+    
+    /**
+     * Destrói uma instância de gráfico de forma segura
+     */
+    function destroyChart(chartKey) {
+        if (chartRegistry[chartKey]) {
             try {
-                chartVar.destroy();
-            } catch (e) {
-                console.warn(`Erro ao destruir chart ${canvasId}:`, e);
+                console.log(`🧹 Destruindo gráfico: ${chartKey}`);
+                chartRegistry[chartKey].destroy();
+            } catch (error) {
+                console.warn(`⚠️ Erro ao destruir gráfico ${chartKey}:`, error);
             }
+            chartRegistry[chartKey] = null;
         }
-        
-        // Limpar canvas completamente
-        const canvas = document.getElementById(canvasId);
-        if (canvas) {
-            // Redefinir o tamanho do canvas para forçar limpeza completa
-            const { width, height } = canvas.getBoundingClientRect();
-            canvas.width = width;
-            canvas.height = height;
-            
-            // Limpar contexto
-            const ctx = canvas.getContext('2d');
-            if (ctx) {
-                ctx.clearRect(0, 0, canvas.width, canvas.height);
-                // Resetar transformações
-                ctx.setTransform(1, 0, 0, 1, 0, 0);
-            }
-        }
-        
-        // Remover instâncias do registro global do Chart.js
-        if (window.Chart) {
-            // Chart.js v3+
-            if (window.Chart.instances) {
-                Object.keys(window.Chart.instances).forEach(key => {
-                    const chart = window.Chart.instances[key];
-                    if (chart && chart.canvas && chart.canvas.id === canvasId) {
-                        delete window.Chart.instances[key];
-                    }
-                });
-            }
-            
-            // Chart.js v4+ (registry alternativo)
-            if (window.Chart.registry && window.Chart.registry.charts) {
-                window.Chart.registry.charts.forEach((chart, index) => {
-                    if (chart && chart.canvas && chart.canvas.id === canvasId) {
-                        window.Chart.registry.charts.splice(index, 1);
-                    }
-                });
-            }
-        }
-        
-        // Forçar garbage collection do canvas
-        if (canvas) {
-            canvas.style.display = 'none';
-            setTimeout(() => {
-                if (canvas.style) canvas.style.display = '';
-            }, 10);
-        }
-        
-        return null;
     }
 
-    // Função para limpar todos os gráficos e liberar memória
-    function clearAllCharts() {
-        const chartInstances = [
-            { instance: expensesLineChart, canvasId: 'expenses-line-chart' },
-            { instance: expensesPieChart, canvasId: 'expenses-pie-chart' },
-            { instance: planChart, canvasId: 'plan-chart' },
-            { instance: mixedTypeChart, canvasId: 'mixed-type-chart' },
-            { instance: goalsChart, canvasId: 'goals-chart' },
-            { instance: goalsPlanChart, canvasId: 'goals-plan-chart' }
-        ];
-        
-        chartInstances.forEach(({ instance, canvasId }) => {
-            if (instance) {
-                destroyChartInstance(instance, canvasId);
+    /**
+     * Limpa canvas e prepara para novo gráfico
+     */
+    function prepareCanvas(canvasId) {
+        const canvas = document.getElementById(canvasId);
+        if (!canvas) {
+            console.warn(`⚠️ Canvas ${canvasId} não encontrado`);
+            return null;
+        }
+
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.setTransform(1, 0, 0, 1, 0, 0); // Reset transformations
+        }
+
+        return ctx;
+    }
+
+    /**
+     * Cria um gráfico de forma segura
+     */
+    function createChart(chartKey, canvasId, config) {
+        try {
+            // Destruir gráfico existente
+            destroyChart(chartKey);
+
+            // Preparar canvas
+            const ctx = prepareCanvas(canvasId);
+            if (!ctx) return null;
+
+            // Verificar se Chart.js está disponível
+            if (!isChartJsLoaded()) {
+                console.error(`❌ Chart.js não disponível para criar ${chartKey}`);
+                return null;
             }
+
+            // Criar novo gráfico
+            console.log(`📊 Criando gráfico: ${chartKey}`);
+            const chart = new Chart(ctx, config);
+            chartRegistry[chartKey] = chart;
+            
+            return chart;
+        } catch (error) {
+            console.error(`❌ Erro ao criar gráfico ${chartKey}:`, error);
+            return null;
+        }
+    }
+
+    /**
+     * Limpa todos os gráficos do dashboard
+     */
+    function clearAllCharts() {
+        console.log('🧹 Limpando todos os gráficos...');
+        
+        Object.keys(chartRegistry).forEach(chartKey => {
+            destroyChart(chartKey);
         });
         
-        // Resetar variáveis globais
-        expensesLineChart = null;
-        expensesPieChart = null;
-        planChart = null;
-        mixedTypeChart = null;
-        goalsChart = null;
-        goalsPlanChart = null;
-        
-        console.log('🧹 Todos os gráficos foram limpos da memória');
+        console.log('✅ Todos os gráficos foram limpos');
+    }
+
+    /**
+     * Renderiza gráfico com tratamento de erro robusto
+     */
+    function safeRenderChart(chartKey, canvasId, renderFunction, data, fallbackMessage = 'Sem dados disponíveis') {
+        try {
+            if (!isChartJsLoaded()) {
+                console.warn(`⚠️ Chart.js não carregado para ${chartKey}`);
+                displayChartFallback(canvasId, 'Biblioteca de gráficos não carregada');
+                return;
+            }
+
+            if (!data || (Array.isArray(data) && data.length === 0)) {
+                console.warn(`⚠️ Dados vazios para ${chartKey}`);
+                displayChartFallback(canvasId, fallbackMessage);
+                return;
+            }
+
+            renderFunction(data);
+        } catch (error) {
+            console.error(`❌ Erro ao renderizar ${chartKey}:`, error);
+            displayChartFallback(canvasId, 'Erro ao carregar gráfico');
+        }
+    }
+
+    /**
+     * Exibe mensagem de fallback quando gráfico não pode ser renderizado
+     */
+    function displayChartFallback(canvasId, message) {
+        const canvas = document.getElementById(canvasId);
+        if (canvas) {
+            const parent = canvas.parentElement;
+            if (parent) {
+                parent.innerHTML = `
+                    <div class="flex items-center justify-center h-64 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
+                        <div class="text-center text-gray-500">
+                            <i class="fas fa-chart-bar text-3xl mb-2"></i>
+                            <p>${message}</p>
+                        </div>
+                    </div>
+                `;
+            }
+        }
     }
 
     // ========== FUNÇÕES PARA GASTOS RECORRENTES ==========
@@ -2719,139 +2940,156 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
+    // ========== GRÁFICOS DE ANÁLISE EMPRESARIAL ==========
+    
+    /**
+     * Atualiza o gráfico de evolução empresarial com tendências
+     */
     async function updateBusinessEvolutionChart(data) {
-        const ctx = document.getElementById('business-evolution-chart');
-        if (!ctx) return;
+        const chartKey = 'businessEvolutionChart';
+        const canvasId = 'business-evolution-chart';
 
-        // Aguardar Chart.js estar carregado
-        if (!await waitForChartJs()) {
-            console.warn('Chart.js não carregado para business evolution chart');
+        if (!isChartJsLoaded()) {
+            console.warn('❌ Chart.js não carregado para business evolution chart');
+            displayChartFallback(canvasId, 'Chart.js não carregado');
             return;
         }
-
-        // Destruir gráfico existente de forma segura
-        destroyChartInstance('businessEvolutionChart');
 
         try {
             // Obter dados de tendência dos últimos 12 meses
             const trendData = await fetchBusinessTrendData();
             
+            if (!trendData || trendData.monthlyData.length === 0) {
+                displayChartFallback(canvasId, 'Sem dados de tendência disponíveis');
+                return;
+            }
+
             const datasets = [{
                 label: 'Gastos Empresariais',
                 data: trendData.monthlyData,
                 borderColor: 'rgb(239, 68, 68)',
                 backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                borderWidth: 3,
                 tension: 0.4,
-                fill: true
+                fill: true,
+                pointRadius: 5,
+                pointHoverRadius: 8,
+                pointBackgroundColor: 'rgb(239, 68, 68)',
+                pointBorderColor: '#ffffff',
+                pointBorderWidth: 2
             }];
 
             // Adicionar linha de tendência se há dados suficientes
             if (trendData.monthlyData.filter(d => d > 0).length >= 3) {
                 const trendLine = calculateTrendLine(trendData.monthlyData);
                 datasets.push({
-                    label: 'Tendência',
+                    label: 'Linha de Tendência',
                     data: trendLine,
                     borderColor: 'rgba(59, 130, 246, 0.8)',
                     backgroundColor: 'transparent',
-                    borderDash: [5, 5],
+                    borderDash: [8, 4],
+                    borderWidth: 2,
                     tension: 0,
-                    pointRadius: 0
+                    pointRadius: 0,
+                    fill: false
                 });
             }
 
-            window.businessEvolutionChart = new Chart(ctx, {
+            const config = {
                 type: 'line',
                 data: {
                     labels: trendData.labels,
                     datasets: datasets
                 },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
+                options: mergeChartOptions({
                     plugins: {
-                        legend: { 
+                        title: {
                             display: true,
-                            position: 'top'
+                            text: 'Evolução dos Gastos Empresariais (12 meses)'
+                        },
+                        subtitle: {
+                            display: true,
+                            text: '📈 Análise de tendências com projeção matemática'
                         },
                         tooltip: {
                             callbacks: {
+                                title: function(context) {
+                                    return `Mês: ${context[0].label}`;
+                                },
                                 label: function(context) {
-                                    return `${context.dataset.label}: R$ ${context.parsed.y.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
+                                    const value = context.parsed.y;
+                                    return `${context.dataset.label}: R$ ${value.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
                                 }
                             }
                         }
-                    },
-                    scales: {
-                        y: { 
-                            beginAtZero: true,
-                            ticks: {
-                                callback: function(value) {
-                                    return 'R$ ' + value.toLocaleString('pt-BR', {minimumFractionDigits: 0});
-                                }
-                            }
-                        }
-                    },
-                    interaction: {
-                        intersect: false,
-                        mode: 'index'
                     }
-                }
-            });
+                })
+            };
+
+            createChart(chartKey, canvasId, config);
 
             // Gerar recomendações baseadas na tendência
             generateBusinessRecommendations(trendData);
 
         } catch (error) {
-            console.error('Erro ao criar gráfico de evolução empresarial:', error);
-            showNotification('Erro ao carregar análise de tendências', 'error');
+            console.error('❌ Erro ao criar gráfico de evolução empresarial:', error);
+            displayChartFallback(canvasId, 'Erro ao carregar análise de tendências');
         }
     }
 
+    /**
+     * Atualiza o gráfico de distribuição por conta empresarial
+     */
     async function updateBusinessAccountChart(data) {
-        const ctx = document.getElementById('business-account-chart');
-        if (!ctx) return;
+        const chartKey = 'businessAccountChart';
+        const canvasId = 'business-account-chart';
 
-        // Aguardar Chart.js estar carregado
-        if (!await waitForChartJs()) {
-            console.warn('Chart.js não carregado para business account chart');
+        if (!isChartJsLoaded()) {
+            console.warn('❌ Chart.js não carregado para business account chart');
+            displayChartFallback(canvasId, 'Chart.js não carregado');
             return;
         }
-
-        // Destruir gráfico existente de forma segura
-        destroyChartInstance('businessAccountChart');
 
         try {
             const accounts = Object.keys(data.byAccount || {});
             const values = Object.values(data.byAccount || {});
 
             if (accounts.length === 0) {
-                console.log('Nenhum dado de conta empresarial disponível');
+                displayChartFallback(canvasId, 'Nenhum dado de conta empresarial disponível');
                 return;
             }
 
-            window.businessAccountChart = new Chart(ctx, {
+            const chartData = {
+                labels: accounts,
+                datasets: [{
+                    data: values,
+                    backgroundColor: [
+                        'rgba(59, 130, 246, 0.8)',
+                        'rgba(34, 197, 94, 0.8)',
+                        'rgba(245, 158, 11, 0.8)',
+                        'rgba(239, 68, 68, 0.8)',
+                        'rgba(139, 92, 246, 0.8)',
+                        'rgba(236, 72, 153, 0.8)',
+                        'rgba(14, 165, 233, 0.8)',
+                        'rgba(168, 85, 247, 0.8)',
+                        'rgba(34, 211, 238, 0.8)',
+                        'rgba(251, 146, 60, 0.8)'
+                    ],
+                    borderWidth: 3,
+                    borderColor: 'rgba(255, 255, 255, 0.8)',
+                    hoverOffset: 15
+                }]
+            };
+
+            const config = {
                 type: 'doughnut',
-                data: {
-                    labels: accounts,
-                    datasets: [{
-                        data: values,
-                        backgroundColor: [
-                            'rgba(59, 130, 246, 0.8)',
-                            'rgba(16, 185, 129, 0.8)',
-                            'rgba(245, 158, 11, 0.8)',
-                            'rgba(239, 68, 68, 0.8)',
-                            'rgba(139, 92, 246, 0.8)',
-                            'rgba(236, 72, 153, 0.8)',
-                            'rgba(14, 165, 233, 0.8)'
-                        ],
-                        borderWidth: 2,
-                        borderColor: 'rgba(255, 255, 255, 0.8)'
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
+                data: chartData,
+                options: mergeChartOptions({
                     plugins: {
+                        title: {
+                            display: true,
+                            text: 'Distribuição por Conta Empresarial'
+                        },
                         legend: { 
                             position: 'bottom',
                             labels: {
@@ -2861,20 +3099,117 @@ document.addEventListener('DOMContentLoaded', function() {
                         },
                         tooltip: {
                             callbacks: {
+                                title: function(context) {
+                                    return context[0].label;
+                                },
                                 label: function(context) {
                                     const total = context.dataset.data.reduce((sum, val) => sum + val, 0);
                                     const percentage = ((context.parsed / total) * 100).toFixed(1);
-                                    return `${context.label}: R$ ${context.parsed.toLocaleString('pt-BR', {minimumFractionDigits: 2})} (${percentage}%)`;
+                                    return [
+                                        `Valor: R$ ${context.parsed.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`,
+                                        `Percentual: ${percentage}%`
+                                    ];
                                 }
                             }
                         }
-                    }
-                }
-            });
+                    },
+                    cutout: '60%', // Para fazer um doughnut
+                    scales: {} // Remove scales for doughnut chart
+                })
+            };
+
+            createChart(chartKey, canvasId, config);
 
         } catch (error) {
-            console.error('Erro ao criar gráfico de contas empresariais:', error);
-            showNotification('Erro ao carregar gráfico de contas', 'error');
+            console.error('❌ Erro ao criar gráfico de contas empresariais:', error);
+            displayChartFallback(canvasId, 'Erro ao carregar gráfico de contas');
+        }
+    }
+
+    /**
+     * Atualiza o gráfico de categorias empresariais
+     */
+    async function updateBusinessCategoryChart(data) {
+        const chartKey = 'businessCategoryChart';
+        const canvasId = 'business-category-chart';
+
+        if (!isChartJsLoaded()) {
+            console.warn('❌ Chart.js não carregado para business category chart');
+            displayChartFallback(canvasId, 'Chart.js não carregado');
+            return;
+        }
+
+        try {
+            const categories = Object.keys(data.byCategory || {});
+            const values = Object.values(data.byCategory || {});
+
+            if (categories.length === 0) {
+                displayChartFallback(canvasId, 'Nenhum dado de categoria empresarial disponível');
+                return;
+            }
+
+            const chartData = {
+                labels: categories,
+                datasets: [{
+                    label: 'Valor por Categoria',
+                    data: values,
+                    backgroundColor: 'rgba(59, 130, 246, 0.8)',
+                    borderColor: 'rgba(59, 130, 246, 1)',
+                    borderWidth: 2,
+                    borderRadius: 6,
+                    borderSkipped: false
+                }]
+            };
+
+            const config = {
+                type: 'bar',
+                data: chartData,
+                options: mergeChartOptions({
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: 'Gastos por Categoria Empresarial'
+                        },
+                        legend: { 
+                            display: false 
+                        },
+                        tooltip: {
+                            callbacks: {
+                                title: function(context) {
+                                    return `Categoria: ${context[0].label}`;
+                                },
+                                label: function(context) {
+                                    return `Valor: R$ ${context.parsed.y.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            title: {
+                                display: true,
+                                text: 'Categorias'
+                            },
+                            ticks: {
+                                maxRotation: 45,
+                                minRotation: 0
+                            }
+                        },
+                        y: {
+                            title: {
+                                display: true,
+                                text: 'Valor (R$)'
+                            }
+                        }
+                    }
+                })
+            };
+
+            createChart(chartKey, canvasId, config);
+
+        } catch (error) {
+            console.error('❌ Erro ao criar gráfico de categorias empresariais:', error);
+            displayChartFallback(canvasId, 'Erro ao carregar gráfico de categorias');
         }
     }
 
@@ -3106,7 +3441,7 @@ document.addEventListener('DOMContentLoaded', function() {
         }
 
         // Destruir gráfico existente de forma segura
-        destroyChartInstance('businessCategoryChart');
+        destroyChart('businessCategoryChart');
 
         try {
             const categories = Object.keys(data.byCategory || {});
