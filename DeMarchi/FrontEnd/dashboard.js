@@ -55,6 +55,16 @@ document.addEventListener('DOMContentLoaded', function() {
     const recurringList = document.getElementById('recurring-list');
     const processRecurringBtn = document.getElementById('process-recurring-btn');
 
+    // ========== TESTE DE GRÁFICO ==========
+    const testTrendChartBtn = document.getElementById('test-trend-chart-btn');
+
+    // ========== SISTEMA DE INSIGHTS ==========
+    const refreshInsightsBtn = document.getElementById('refresh-insights-btn');
+    const insightTabBtns = document.querySelectorAll('.insight-tab-btn');
+    const criticalAlertsContainer = document.getElementById('critical-alerts');
+    const financialStatusContainer = document.getElementById('financial-status');
+    const riskIndicatorsContainer = document.getElementById('risk-indicators');
+
     // ========== SISTEMA DE GRÁFICOS - VERSÃO COMPLETA ==========
     
     // Registry central de todas as instâncias de gráficos
@@ -247,6 +257,9 @@ document.addEventListener('DOMContentLoaded', function() {
         if (closeRecurringModalBtn) closeRecurringModalBtn.addEventListener('click', closeRecurringModal);
         if (recurringForm) recurringForm.addEventListener('submit', handleRecurringExpenseSubmit);
         if (processRecurringBtn) processRecurringBtn.addEventListener('click', processRecurringExpenses);
+        
+        // Event listener para teste do gráfico de tendências
+        if (testTrendChartBtn) testTrendChartBtn.addEventListener('click', testTrendAnalysisChart);
     }
 
     async function handleLogin(e) {
@@ -2973,6 +2986,31 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // ========== GRÁFICOS DE ANÁLISE EMPRESARIAL ==========
     
+    // Função utilitária para validar dados do gráfico
+    function validateChartData(data) {
+        if (!data || typeof data !== 'object') {
+            console.log('❌ Dados inválidos:', data);
+            return false;
+        }
+        
+        if (!Array.isArray(data.monthlyData)) {
+            console.log('❌ monthlyData não é array:', data.monthlyData);
+            return false;
+        }
+        
+        const validData = data.monthlyData.every(val => 
+            typeof val === 'number' && !isNaN(val) && isFinite(val)
+        );
+        
+        if (!validData) {
+            console.log('❌ Dados mensais contêm valores inválidos:', data.monthlyData);
+            return false;
+        }
+        
+        console.log('✅ Dados do gráfico válidos:', data);
+        return true;
+    }
+
     /**
      * Atualiza o gráfico de evolução empresarial com tendências
      */
@@ -2990,33 +3028,42 @@ document.addEventListener('DOMContentLoaded', function() {
             // Obter dados de tendência dos últimos 12 meses
             const trendData = await fetchBusinessTrendData();
             
-            if (!trendData || trendData.monthlyData.length === 0) {
+            // Validar os dados antes de usar
+            if (!validateChartData(trendData)) {
+                displayChartFallback(canvasId, 'Dados inválidos para o gráfico de tendência');
+                return;
+            }
+            
+            if (!trendData || !trendData.monthlyData || trendData.monthlyData.length === 0) {
                 displayChartFallback(canvasId, 'Sem dados de tendência disponíveis');
                 return;
             }
 
+            console.log('✅ Dados validados para gráfico de evolução:', trendData);
+
             const datasets = [{
                 label: 'Gastos Empresariais',
                 data: trendData.monthlyData,
-                borderColor: 'rgb(239, 68, 68)',
-                backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                borderColor: 'rgb(59, 130, 246)',
+                backgroundColor: 'rgba(59, 130, 246, 0.1)',
                 borderWidth: 3,
                 tension: 0.4,
                 fill: true,
-                pointRadius: 5,
-                pointHoverRadius: 8,
-                pointBackgroundColor: 'rgb(239, 68, 68)',
+                pointRadius: 4,
+                pointHoverRadius: 6,
+                pointBackgroundColor: 'rgb(59, 130, 246)',
                 pointBorderColor: '#ffffff',
                 pointBorderWidth: 2
             }];
 
             // Adicionar linha de tendência se há dados suficientes
-            if (trendData.monthlyData.filter(d => d > 0).length >= 3) {
+            const nonZeroData = trendData.monthlyData.filter(d => d > 0);
+            if (nonZeroData.length >= 3) {
                 const trendLine = calculateTrendLine(trendData.monthlyData);
                 datasets.push({
                     label: 'Linha de Tendência',
                     data: trendLine,
-                    borderColor: 'rgba(59, 130, 246, 0.8)',
+                    borderColor: 'rgba(239, 68, 68, 0.8)',
                     backgroundColor: 'transparent',
                     borderDash: [8, 4],
                     borderWidth: 2,
@@ -3033,23 +3080,66 @@ document.addEventListener('DOMContentLoaded', function() {
                     datasets: datasets
                 },
                 options: mergeChartOptions({
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    aspectRatio: 2.5,
                     plugins: {
                         title: {
                             display: true,
-                            text: 'Evolução dos Gastos Empresariais (12 meses)'
+                            text: 'Evolução dos Gastos Empresariais (12 meses)',
+                            font: {
+                                size: 16,
+                                weight: 'bold'
+                            },
+                            padding: 20
                         },
                         subtitle: {
                             display: true,
-                            text: '📈 Análise de tendências com projeção matemática'
+                            text: '📈 Análise de tendências com projeção matemática',
+                            font: {
+                                size: 12
+                            },
+                            color: '#666'
                         },
                         tooltip: {
                             callbacks: {
                                 title: function(context) {
-                                    return `Mês: ${context[0].label}`;
+                                    return `Período: ${context[0].label}`;
                                 },
                                 label: function(context) {
                                     const value = context.parsed.y;
                                     return `${context.dataset.label}: R$ ${value.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            title: {
+                                display: true,
+                                text: 'Período'
+                            },
+                            grid: {
+                                display: true,
+                                color: 'rgba(0, 0, 0, 0.1)'
+                            }
+                        },
+                        y: {
+                            title: {
+                                display: true,
+                                text: 'Valor (R$)'
+                            },
+                            beginAtZero: true,
+                            grid: {
+                                display: true,
+                                color: 'rgba(0, 0, 0, 0.1)'
+                            },
+                            ticks: {
+                                callback: function(value) {
+                                    return 'R$ ' + value.toLocaleString('pt-BR', {
+                                        minimumFractionDigits: 0,
+                                        maximumFractionDigits: 0
+                                    });
                                 }
                             }
                         }
@@ -3060,13 +3150,40 @@ document.addEventListener('DOMContentLoaded', function() {
             createChart(chartKey, canvasId, config);
 
             // Gerar recomendações baseadas na tendência
-            generateBusinessRecommendations(trendData);
+            if (nonZeroData.length > 0) {
+                generateBusinessRecommendations(trendData);
+            }
 
         } catch (error) {
             console.error('❌ Erro ao criar gráfico de evolução empresarial:', error);
             displayChartFallback(canvasId, 'Erro ao carregar análise de tendências');
         }
     }
+
+    // Função de teste específica para o gráfico de análise de tendências
+    async function testTrendAnalysisChart() {
+        console.log('🧪 Testando gráfico de análise de tendências...');
+        
+        try {
+            const trendData = await fetchBusinessTrendData();
+            console.log('📊 Dados obtidos:', trendData);
+            
+            if (validateChartData(trendData)) {
+                await updateBusinessEvolutionChart(trendData);
+                console.log('✅ Gráfico de tendências atualizado com sucesso');
+                showNotification('✅ Gráfico de análise de tendências atualizado!', 'success', 3000);
+            } else {
+                console.log('❌ Falha na validação dos dados');
+                showNotification('❌ Erro na validação dos dados do gráfico', 'error', 3000);
+            }
+        } catch (error) {
+            console.error('❌ Erro no teste do gráfico:', error);
+            showNotification('❌ Erro ao testar gráfico de tendências', 'error', 3000);
+        }
+    }
+
+    // Expor a função de teste para debug manual
+    window.testTrendChart = testTrendAnalysisChart;
 
     /**
      * Atualiza o gráfico de distribuição por conta empresarial
@@ -3248,15 +3365,40 @@ document.addEventListener('DOMContentLoaded', function() {
     
     async function fetchBusinessTrendData() {
         try {
-            const response = await fetch(`${API_BASE_URL}/api/business/trends?months=12`, {
-                headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-            });
+            // Primeiro tentar a API específica de trends
+            let response = await authenticatedFetch(`${API_BASE_URL}/api/business/trends?months=12`);
             
-            if (!response.ok) {
-                throw new Error('Erro ao buscar dados de tendência');
+            let trendsData = [];
+            
+            if (response.ok) {
+                trendsData = await response.json();
+                console.log('Dados de tendência da API:', trendsData);
+            } else {
+                console.warn('API de trends não disponível, usando método alternativo');
+                
+                // Fallback: buscar dados dos últimos 12 meses manualmente
+                const currentDate = new Date();
+                const promises = [];
+                
+                for (let i = 11; i >= 0; i--) {
+                    const date = new Date(currentDate.getFullYear(), currentDate.getMonth() - i, 1);
+                    const year = date.getFullYear();
+                    const month = date.getMonth() + 1;
+                    
+                    const promise = authenticatedFetch(`${API_BASE_URL}/api/business/summary?year=${year}&month=${month}`)
+                        .then(res => res.ok ? res.json() : null)
+                        .then(data => ({
+                            year,
+                            month,
+                            total: data ? parseFloat(data.total) || 0 : 0
+                        }))
+                        .catch(() => ({ year, month, total: 0 }));
+                    
+                    promises.push(promise);
+                }
+                
+                trendsData = await Promise.all(promises);
             }
-            
-            const trendsData = await response.json();
             
             // Criar arrays para os últimos 12 meses
             const currentDate = new Date();
@@ -3269,15 +3411,18 @@ document.addEventListener('DOMContentLoaded', function() {
                 const year = date.getFullYear();
                 const month = date.getMonth() + 1;
                 
-                labels.push(date.toLocaleDateString('pt-BR', { month: 'short' }));
+                labels.push(date.toLocaleDateString('pt-BR', { month: 'short', year: '2-digit' }));
                 
                 // Procurar dados correspondentes na resposta da API
                 const monthData = trendsData.find(item => 
                     item.year === year && item.month === month
                 );
                 
-                monthlyData.push(monthData ? monthData.total : 0);
+                const value = monthData ? parseFloat(monthData.total) || 0 : 0;
+                monthlyData.push(value);
             }
+            
+            console.log('Dados processados:', { monthlyData, labels });
             
             return { 
                 monthlyData, 
@@ -3289,10 +3434,20 @@ document.addEventListener('DOMContentLoaded', function() {
             console.error('Erro ao buscar dados de tendência:', error);
             showNotification('Erro ao carregar dados de tendência', 'warning', 3000);
             
-            // Fallback para dados vazios
+            // Fallback para dados vazios mas estruturados
+            const currentDate = new Date();
+            const labels = [];
+            const monthlyData = [];
+            
+            for (let i = 11; i >= 0; i--) {
+                const date = new Date(currentDate.getFullYear(), currentDate.getMonth() - i, 1);
+                labels.push(date.toLocaleDateString('pt-BR', { month: 'short', year: '2-digit' }));
+                monthlyData.push(0);
+            }
+            
             return {
-                monthlyData: Array(12).fill(0),
-                labels: ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'],
+                monthlyData,
+                labels,
                 rawData: []
             };
         }
@@ -3317,19 +3472,36 @@ document.addEventListener('DOMContentLoaded', function() {
     function generateBusinessRecommendations(trendData) {
         try {
             const { monthlyData, rawData } = trendData;
+            
+            if (!monthlyData || monthlyData.length === 0) {
+                console.log('Sem dados mensais para gerar recomendações');
+                return;
+            }
+            
             const recentData = monthlyData.slice(-6); // Últimos 6 meses
             const hasData = recentData.some(value => value > 0);
             
+            console.log('Dados recentes para recomendações:', recentData);
+            
             if (!hasData) {
                 console.log('Não há dados suficientes para gerar recomendações');
+                showNotification('📊 Sem dados empresariais suficientes para análise de tendências', 'info', 3000);
                 return;
             }
 
             const recommendations = [];
             const nonZeroData = recentData.filter(v => v > 0);
+            
+            if (nonZeroData.length === 0) {
+                console.log('Nenhum dado não-zero encontrado');
+                return;
+            }
+            
             const average = nonZeroData.reduce((sum, val) => sum + val, 0) / nonZeroData.length;
             const lastMonth = recentData[recentData.length - 1];
             const secondLastMonth = recentData[recentData.length - 2];
+            
+            console.log('Análise:', { average, lastMonth, secondLastMonth, nonZeroData });
             
             // Análise de crescimento mensal
             if (lastMonth > 0 && secondLastMonth > 0) {
@@ -3716,6 +3888,894 @@ document.addEventListener('DOMContentLoaded', function() {
             showLogin();
         }
     }
+
+    // ========== SISTEMA DE INSIGHTS E APOIO À DECISÃO ==========
+
+    /**
+     * Inicializa o sistema de insights
+     */
+    function initInsightSystem() {
+        const refreshBtn = document.getElementById('refresh-insights-btn');
+        const tabBtns = document.querySelectorAll('.insight-tab-btn');
+        
+        if (refreshBtn) {
+            refreshBtn.addEventListener('click', refreshAllInsights);
+        }
+        
+        // Event listeners para as abas
+        tabBtns.forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const targetTab = e.target.getAttribute('data-tab');
+                switchInsightTab(targetTab);
+            });
+        });
+        
+        // Carregar insights iniciais
+        refreshAllInsights();
+    }
+
+    /**
+     * Alterna entre as abas do sistema de insights
+     */
+    function switchInsightTab(targetTab) {
+        // Atualizar botões das abas
+        document.querySelectorAll('.insight-tab-btn').forEach(btn => {
+            btn.classList.remove('active');
+            if (btn.getAttribute('data-tab') === targetTab) {
+                btn.classList.add('active');
+            }
+        });
+        
+        // Atualizar conteúdo das abas
+        document.querySelectorAll('.insight-content').forEach(content => {
+            content.classList.add('hidden');
+        });
+        
+        const targetContent = document.getElementById(`${targetTab}-content`);
+        if (targetContent) {
+            targetContent.classList.remove('hidden');
+            
+            // Carregar conteúdo específico da aba
+            switch(targetTab) {
+                case 'alerts':
+                    loadCriticalAlerts();
+                    break;
+                case 'recommendations':
+                    loadRecommendations();
+                    break;
+                case 'decisions':
+                    loadDecisionSupport();
+                    break;
+                case 'actions':
+                    loadActionPlan();
+                    break;
+            }
+        }
+    }
+
+    /**
+     * Atualiza todos os insights
+     */
+    async function refreshAllInsights() {
+        try {
+            showNotification('🔄 Atualizando insights...', 'info', 2000);
+            
+            await Promise.all([
+                loadCriticalAlerts(),
+                loadRecommendations(),
+                loadDecisionSupport(),
+                loadActionPlan()
+            ]);
+            
+            showNotification('✅ Insights atualizados com sucesso!', 'success', 3000);
+        } catch (error) {
+            console.error('Erro ao atualizar insights:', error);
+            showNotification('❌ Erro ao atualizar insights', 'error', 3000);
+        }
+    }
+
+    /**
+     * Carrega alertas críticos
+     */
+    async function loadCriticalAlerts() {
+        try {
+            const data = await fetchDashboardData();
+            const alertsContainer = document.getElementById('critical-alerts');
+            const statusContainer = document.getElementById('financial-status');
+            const riskContainer = document.getElementById('risk-indicators');
+            
+            if (!alertsContainer) return;
+            
+            // Analisar dados e gerar alertas
+            const alerts = analyzeFinancialAlerts(data);
+            const status = calculateFinancialStatus(data);
+            const risks = calculateRiskIndicators(data);
+            
+            // Renderizar alertas críticos
+            alertsContainer.innerHTML = alerts.map(alert => `
+                <div class="alert-${alert.type} p-4 rounded-lg">
+                    <div class="flex items-start space-x-3">
+                        <div class="text-2xl">${alert.icon}</div>
+                        <div class="flex-1">
+                            <h5 class="font-semibold text-gray-800">${alert.title}</h5>
+                            <p class="text-sm text-gray-600 mt-1">${alert.message}</p>
+                            ${alert.action ? `<button class="mt-2 text-sm bg-white px-3 py-1 rounded border hover:bg-gray-50" onclick="${alert.action}">${alert.actionText}</button>` : ''}
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+            
+            // Renderizar status financeiro
+            if (statusContainer) {
+                statusContainer.innerHTML = `
+                    <div class="flex justify-between items-center">
+                        <span class="text-sm text-gray-600">Saúde Financeira</span>
+                        <span class="font-semibold text-${status.health.color}-600">${status.health.label}</span>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <span class="text-sm text-gray-600">Tendência</span>
+                        <span class="font-semibold text-${status.trend.color}-600">${status.trend.icon} ${status.trend.label}</span>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <span class="text-sm text-gray-600">Liquidez</span>
+                        <span class="font-semibold text-${status.liquidity.color}-600">${status.liquidity.label}</span>
+                    </div>
+                `;
+            }
+            
+            // Renderizar indicadores de risco
+            if (riskContainer) {
+                riskContainer.innerHTML = risks.map(risk => `
+                    <div class="flex justify-between items-center">
+                        <span class="text-sm text-gray-600">${risk.name}</span>
+                        <div class="flex items-center space-x-2">
+                            <div class="w-16 h-2 bg-gray-200 rounded">
+                                <div class="h-full bg-${risk.color}-500 rounded" style="width: ${risk.value}%"></div>
+                            </div>
+                            <span class="text-xs font-medium text-${risk.color}-600">${risk.value}%</span>
+                        </div>
+                    </div>
+                `).join('');
+            }
+            
+        } catch (error) {
+            console.error('Erro ao carregar alertas críticos:', error);
+        }
+    }
+
+    /**
+     * Analisa dados financeiros e gera alertas
+     */
+    function analyzeFinancialAlerts(data) {
+        const alerts = [];
+        
+        if (!data || !data.expenses) return alerts;
+        
+        const currentMonth = new Date().getMonth();
+        const currentExpenses = data.expenses.filter(exp => {
+            const expDate = new Date(exp.data);
+            return expDate.getMonth() === currentMonth;
+        });
+        
+        const totalCurrent = currentExpenses.reduce((sum, exp) => sum + exp.valor, 0);
+        const averageExpense = data.monthlyAverage || 0;
+        
+        // Alerta de gastos elevados
+        if (totalCurrent > averageExpense * 1.2) {
+            alerts.push({
+                type: 'critical',
+                icon: '🚨',
+                title: 'Gastos Acima da Média',
+                message: `Gastos deste mês estão ${((totalCurrent / averageExpense - 1) * 100).toFixed(1)}% acima da média histórica.`,
+                action: 'showExpenseBreakdown()',
+                actionText: 'Ver Detalhes'
+            });
+        }
+        
+        // Alerta de tendência de crescimento
+        if (data.growthRate && data.growthRate > 15) {
+            alerts.push({
+                type: 'warning',
+                icon: '📈',
+                title: 'Tendência de Crescimento',
+                message: `Gastos crescendo ${data.growthRate.toFixed(1)}% ao mês. Revisar orçamento.`,
+                action: 'createBudgetPlan()',
+                actionText: 'Criar Plano'
+            });
+        }
+        
+        // Alerta de concentração de gastos
+        const businessExpenses = currentExpenses.filter(exp => exp.empresarial);
+        if (businessExpenses.length > 0) {
+            const businessTotal = businessExpenses.reduce((sum, exp) => sum + exp.valor, 0);
+            const businessRatio = (businessTotal / totalCurrent) * 100;
+            
+            if (businessRatio > 70) {
+                alerts.push({
+                    type: 'info',
+                    icon: '🏢',
+                    title: 'Alta Concentração Empresarial',
+                    message: `${businessRatio.toFixed(1)}% dos gastos são empresariais. Considere diversificar.`,
+                    action: 'analyzeCategoryDistribution()',
+                    actionText: 'Analisar'
+                });
+            }
+        }
+        
+        return alerts;
+    }
+
+    /**
+     * Calcula status financeiro geral
+     */
+    function calculateFinancialStatus(data) {
+        if (!data || !data.expenses) {
+            return {
+                health: { label: 'Sem Dados', color: 'gray' },
+                trend: { label: 'Indefinida', icon: '➖', color: 'gray' },
+                liquidity: { label: 'Indefinida', color: 'gray' }
+            };
+        }
+        
+        const growthRate = data.growthRate || 0;
+        const variationCoeff = data.variationCoefficient || 0;
+        
+        // Calcular saúde financeira
+        let health;
+        if (growthRate < 5 && variationCoeff < 20) {
+            health = { label: 'Excelente', color: 'green' };
+        } else if (growthRate < 15 && variationCoeff < 35) {
+            health = { label: 'Boa', color: 'blue' };
+        } else if (growthRate < 25 && variationCoeff < 50) {
+            health = { label: 'Atenção', color: 'yellow' };
+        } else {
+            health = { label: 'Crítica', color: 'red' };
+        }
+        
+        // Calcular tendência
+        let trend;
+        if (growthRate > 10) {
+            trend = { label: 'Crescente', icon: '📈', color: 'red' };
+        } else if (growthRate < -5) {
+            trend = { label: 'Decrescente', icon: '📉', color: 'green' };
+        } else {
+            trend = { label: 'Estável', icon: '➖', color: 'blue' };
+        }
+        
+        // Calcular liquidez (baseado na variação)
+        let liquidity;
+        if (variationCoeff < 20) {
+            liquidity = { label: 'Alta', color: 'green' };
+        } else if (variationCoeff < 40) {
+            liquidity = { label: 'Média', color: 'yellow' };
+        } else {
+            liquidity = { label: 'Baixa', color: 'red' };
+        }
+        
+        return { health, trend, liquidity };
+    }
+
+    /**
+     * Calcula indicadores de risco
+     */
+    function calculateRiskIndicators(data) {
+        const risks = [];
+        
+        if (!data || !data.expenses) {
+            return [
+                { name: 'Volatilidade', value: 0, color: 'gray' },
+                { name: 'Concentração', value: 0, color: 'gray' },
+                { name: 'Crescimento', value: 0, color: 'gray' },
+                { name: 'Previsibilidade', value: 0, color: 'gray' }
+            ];
+        }
+        
+        const growthRate = Math.abs(data.growthRate || 0);
+        const variationCoeff = data.variationCoefficient || 0;
+        
+        // Risco de volatilidade
+        const volatilityRisk = Math.min(variationCoeff * 2, 100);
+        risks.push({
+            name: 'Volatilidade',
+            value: Math.round(volatilityRisk),
+            color: volatilityRisk > 60 ? 'red' : volatilityRisk > 30 ? 'yellow' : 'green'
+        });
+        
+        // Risco de crescimento
+        const growthRisk = Math.min(growthRate * 4, 100);
+        risks.push({
+            name: 'Crescimento',
+            value: Math.round(growthRisk),
+            color: growthRisk > 60 ? 'red' : growthRisk > 30 ? 'yellow' : 'green'
+        });
+        
+        // Risco de concentração (empresarial vs pessoal)
+        const businessExpenses = data.expenses.filter(exp => exp.empresarial);
+        const concentrationRatio = businessExpenses.length / data.expenses.length * 100;
+        const concentrationRisk = Math.abs(concentrationRatio - 50) * 2; // Risco quando muito concentrado em um tipo
+        risks.push({
+            name: 'Concentração',
+            value: Math.round(Math.min(concentrationRisk, 100)),
+            color: concentrationRisk > 60 ? 'red' : concentrationRisk > 30 ? 'yellow' : 'green'
+        });
+        
+        // Risco de previsibilidade
+        const predictabilityRisk = 100 - Math.min(variationCoeff * 3, 100);
+        risks.push({
+            name: 'Previsibilidade',
+            value: Math.round(predictabilityRisk),
+            color: predictabilityRisk < 40 ? 'red' : predictabilityRisk < 70 ? 'yellow' : 'green'
+        });
+        
+        return risks;
+    }
+
+    /**
+     * Carrega recomendações inteligentes
+     */
+    async function loadRecommendations() {
+        try {
+            const data = await fetchDashboardData();
+            const savingsContainer = document.getElementById('savings-recommendations');
+            const investmentContainer = document.getElementById('investment-recommendations');
+            const patternContainer = document.getElementById('pattern-analysis');
+            
+            if (!data || !data.expenses) return;
+            
+            // Gerar recomendações de economia
+            const savingsRecs = generateSavingsRecommendations(data);
+            if (savingsContainer) {
+                savingsContainer.innerHTML = savingsRecs.map(rec => `
+                    <div class="flex items-start space-x-3 p-3 bg-white rounded border">
+                        <div class="text-lg">${rec.icon}</div>
+                        <div class="flex-1">
+                            <h6 class="font-medium text-green-800">${rec.title}</h6>
+                            <p class="text-sm text-green-600">${rec.description}</p>
+                            <div class="text-xs text-green-500 mt-1">Economia estimada: ${rec.savings}</div>
+                        </div>
+                    </div>
+                `).join('');
+            }
+            
+            // Gerar recomendações de investimento
+            const investmentRecs = generateInvestmentRecommendations(data);
+            if (investmentContainer) {
+                investmentContainer.innerHTML = investmentRecs.map(rec => `
+                    <div class="flex items-start space-x-3 p-3 bg-white rounded border">
+                        <div class="text-lg">${rec.icon}</div>
+                        <div class="flex-1">
+                            <h6 class="font-medium text-blue-800">${rec.title}</h6>
+                            <p class="text-sm text-blue-600">${rec.description}</p>
+                            <div class="text-xs text-blue-500 mt-1">Potencial: ${rec.potential}</div>
+                        </div>
+                    </div>
+                `).join('');
+            }
+            
+            // Análise de padrões
+            const patterns = analyzeSpendingPatterns(data);
+            if (patternContainer) {
+                patternContainer.innerHTML = patterns.map(pattern => `
+                    <div class="text-center p-3 bg-white rounded border">
+                        <div class="text-2xl mb-2">${pattern.icon}</div>
+                        <div class="font-medium text-purple-800">${pattern.title}</div>
+                        <div class="text-sm text-purple-600">${pattern.value}</div>
+                    </div>
+                `).join('');
+            }
+            
+        } catch (error) {
+            console.error('Erro ao carregar recomendações:', error);
+        }
+    }
+
+    /**
+     * Gera recomendações de economia
+     */
+    function generateSavingsRecommendations(data) {
+        const recommendations = [];
+        
+        if (!data.expenses || data.expenses.length === 0) return recommendations;
+        
+        // Analisar gastos por categoria
+        const categories = {};
+        data.expenses.forEach(exp => {
+            const category = exp.descricao_conta || 'Outros';
+            categories[category] = (categories[category] || 0) + exp.valor;
+        });
+        
+        // Encontrar categoria com maior gasto
+        const topCategory = Object.entries(categories).sort((a, b) => b[1] - a[1])[0];
+        if (topCategory) {
+            recommendations.push({
+                icon: '🎯',
+                title: 'Otimizar Categoria Principal',
+                description: `Revisar gastos em "${topCategory[0]}" - sua categoria de maior impacto`,
+                savings: `R$ ${(topCategory[1] * 0.15).toLocaleString('pt-BR', {minimumFractionDigits: 2})}`
+            });
+        }
+        
+        // Recomendação baseada na frequência
+        const frequentExpenses = data.expenses.filter(exp => {
+            const count = data.expenses.filter(e => e.descricao_conta === exp.descricao_conta).length;
+            return count > 3;
+        });
+        
+        if (frequentExpenses.length > 0) {
+            const avgFrequent = frequentExpenses.reduce((sum, exp) => sum + exp.valor, 0) / frequentExpenses.length;
+            recommendations.push({
+                icon: '🔄',
+                title: 'Negociar Gastos Recorrentes',
+                description: 'Renegociar contratos e serviços recorrentes para obter melhores condições',
+                savings: `R$ ${(avgFrequent * 0.2).toLocaleString('pt-BR', {minimumFractionDigits: 2})}/mês`
+            });
+        }
+        
+        // Recomendação baseada em gastos empresariais
+        const businessExpenses = data.expenses.filter(exp => exp.empresarial);
+        if (businessExpenses.length > 0) {
+            const businessTotal = businessExpenses.reduce((sum, exp) => sum + exp.valor, 0);
+            recommendations.push({
+                icon: '🏢',
+                title: 'Otimização Fiscal',
+                description: 'Revisar classificação de gastos empresariais para benefícios fiscais',
+                savings: `R$ ${(businessTotal * 0.1).toLocaleString('pt-BR', {minimumFractionDigits: 2})}`
+            });
+        }
+        
+        return recommendations;
+    }
+
+    /**
+     * Gera recomendações de investimento
+     */
+    function generateInvestmentRecommendations(data) {
+        const recommendations = [];
+        
+        if (!data.expenses || data.expenses.length === 0) return recommendations;
+        
+        const monthlyTotal = data.monthlyAverage || 0;
+        const variationCoeff = data.variationCoefficient || 0;
+        
+        // Recomendação de reserva de emergência
+        recommendations.push({
+            icon: '🛡️',
+            title: 'Reserva de Emergência',
+            description: 'Mantenha 6 meses de gastos como reserva de emergência',
+            potential: `R$ ${(monthlyTotal * 6).toLocaleString('pt-BR', {minimumFractionDigits: 2})}`
+        });
+        
+        // Recomendação baseada na estabilidade
+        if (variationCoeff < 30) {
+            recommendations.push({
+                icon: '📈',
+                title: 'Investimentos de Longo Prazo',
+                description: 'Gastos estáveis permitem investimentos de maior prazo e rentabilidade',
+                potential: 'CDI + 2% a.a.'
+            });
+        } else {
+            recommendations.push({
+                icon: '💰',
+                title: 'Investimentos Líquidos',
+                description: 'Variação alta nos gastos sugere investimentos mais líquidos',
+                potential: '100% CDI'
+            });
+        }
+        
+        // Recomendação de diversificação
+        recommendations.push({
+            icon: '🌟',
+            title: 'Diversificação',
+            description: 'Distribua investimentos entre diferentes classes de ativos',
+            potential: 'Risco otimizado'
+        });
+        
+        return recommendations;
+    }
+
+    /**
+     * Analisa padrões de gastos
+     */
+    function analyzeSpendingPatterns(data) {
+        const patterns = [];
+        
+        if (!data.expenses || data.expenses.length === 0) return patterns;
+        
+        // Padrão de sazonalidade
+        const monthlyData = Array(12).fill(0);
+        data.expenses.forEach(exp => {
+            const month = new Date(exp.data).getMonth();
+            monthlyData[month] += exp.valor;
+        });
+        
+        const maxMonth = monthlyData.indexOf(Math.max(...monthlyData));
+        const minMonth = monthlyData.indexOf(Math.min(...monthlyData));
+        const monthNames = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+        
+        patterns.push({
+            icon: '📅',
+            title: 'Pico Sazonal',
+            value: monthNames[maxMonth]
+        });
+        
+        patterns.push({
+            icon: '📉',
+            title: 'Menor Gasto',
+            value: monthNames[minMonth]
+        });
+        
+        // Padrão de crescimento
+        const growthRate = data.growthRate || 0;
+        patterns.push({
+            icon: growthRate > 0 ? '📈' : '📉',
+            title: 'Tendência',
+            value: `${growthRate > 0 ? '+' : ''}${growthRate.toFixed(1)}%/mês`
+        });
+        
+        return patterns;
+    }
+
+    /**
+     * Carrega suporte à decisão
+     */
+    async function loadDecisionSupport() {
+        try {
+            const data = await fetchDashboardData();
+            await createScenarioChart(data);
+            createDecisionMatrix(data);
+        } catch (error) {
+            console.error('Erro ao carregar suporte à decisão:', error);
+        }
+    }
+
+    /**
+     * Cria gráfico de cenários
+     */
+    async function createScenarioChart(data) {
+        const canvas = document.getElementById('scenario-chart');
+        if (!canvas || !data || !data.expenses) return;
+        
+        const ctx = canvas.getContext('2d');
+        
+        // Preparar dados dos cenários
+        const currentAverage = data.monthlyAverage || 0;
+        const optimistic = currentAverage * 0.85; // 15% de redução
+        const realistic = currentAverage;
+        const pessimistic = currentAverage * 1.2; // 20% de aumento
+        
+        // Atualizar valores nos elementos
+        document.getElementById('optimistic-scenario').textContent = 
+            `R$ ${optimistic.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
+        document.getElementById('realistic-scenario').textContent = 
+            `R$ ${realistic.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
+        document.getElementById('pessimistic-scenario').textContent = 
+            `R$ ${pessimistic.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
+        
+        // Criar gráfico de projeção
+        const months = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun'];
+        const optimisticData = months.map((_, i) => optimistic * (1 + (i * 0.02)));
+        const realisticData = months.map((_, i) => realistic * (1 + (i * 0.03)));
+        const pessimisticData = months.map((_, i) => pessimistic * (1 + (i * 0.05)));
+        
+        const config = {
+            type: 'line',
+            data: {
+                labels: months,
+                datasets: [
+                    {
+                        label: 'Cenário Otimista',
+                        data: optimisticData,
+                        borderColor: 'rgb(34, 197, 94)',
+                        backgroundColor: 'rgba(34, 197, 94, 0.1)',
+                        borderWidth: 2
+                    },
+                    {
+                        label: 'Cenário Realista',
+                        data: realisticData,
+                        borderColor: 'rgb(251, 191, 36)',
+                        backgroundColor: 'rgba(251, 191, 36, 0.1)',
+                        borderWidth: 2
+                    },
+                    {
+                        label: 'Cenário Pessimista',
+                        data: pessimisticData,
+                        borderColor: 'rgb(239, 68, 68)',
+                        backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                        borderWidth: 2
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: true,
+                aspectRatio: 2.5,
+                plugins: {
+                    legend: {
+                        position: 'top'
+                    },
+                    title: {
+                        display: true,
+                        text: 'Projeção de Gastos - Próximos 6 Meses'
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            callback: function(value) {
+                                return 'R$ ' + value.toLocaleString('pt-BR', {
+                                    minimumFractionDigits: 0,
+                                    maximumFractionDigits: 0
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        };
+        
+        createChart('scenarioChart', 'scenario-chart', config);
+    }
+
+    /**
+     * Cria matriz de decisão
+     */
+    function createDecisionMatrix(data) {
+        const matrixContainer = document.getElementById('decision-matrix');
+        if (!matrixContainer || !data || !data.expenses) return;
+        
+        // Analisar categorias de gastos
+        const categories = {};
+        data.expenses.forEach(exp => {
+            const category = exp.descricao_conta || 'Outros';
+            if (!categories[category]) {
+                categories[category] = { total: 0, count: 0 };
+            }
+            categories[category].total += exp.valor;
+            categories[category].count++;
+        });
+        
+        // Criar matriz de prioridades
+        const decisions = Object.entries(categories).map(([name, cat]) => {
+            const average = cat.total / cat.count;
+            const frequency = cat.count;
+            const impact = cat.total;
+            
+            // Calcular prioridade (alta frequência + alto impacto = alta prioridade)
+            let priority = 'low';
+            if (frequency > 5 && impact > data.monthlyAverage * 0.2) {
+                priority = 'high';
+            } else if (frequency > 3 || impact > data.monthlyAverage * 0.1) {
+                priority = 'medium';
+            }
+            
+            return { name, average, frequency, impact, priority };
+        }).sort((a, b) => b.impact - a.impact);
+        
+        const matrixHTML = `
+            <table class="decision-matrix">
+                <thead>
+                    <tr>
+                        <th>Categoria</th>
+                        <th>Impacto Total</th>
+                        <th>Frequência</th>
+                        <th>Valor Médio</th>
+                        <th>Prioridade</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${decisions.map(decision => `
+                        <tr class="priority-${decision.priority}">
+                            <td class="text-left font-medium">${decision.name}</td>
+                            <td>R$ ${decision.impact.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</td>
+                            <td>${decision.frequency}x</td>
+                            <td>R$ ${decision.average.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</td>
+                            <td class="font-semibold">${decision.priority.toUpperCase()}</td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        `;
+        
+        matrixContainer.innerHTML = matrixHTML;
+    }
+
+    /**
+     * Carrega plano de ação
+     */
+    async function loadActionPlan() {
+        try {
+            const data = await fetchDashboardData();
+            const priorityContainer = document.getElementById('priority-actions');
+            const timelineContainer = document.getElementById('implementation-timeline');
+            const metricsContainer = document.getElementById('tracking-metrics');
+            
+            // Gerar ações prioritárias
+            const actions = generatePriorityActions(data);
+            if (priorityContainer) {
+                priorityContainer.innerHTML = actions.map((action, index) => `
+                    <div class="action-item bg-white p-4 rounded-lg border-l-4 border-orange-500">
+                        <div class="flex items-start justify-between">
+                            <div class="flex-1">
+                                <h6 class="font-semibold text-orange-800">${action.title}</h6>
+                                <p class="text-sm text-orange-600 mt-1">${action.description}</p>
+                                <div class="text-xs text-gray-500 mt-2">Prazo: ${action.deadline}</div>
+                            </div>
+                            <div class="flex items-center space-x-2">
+                                <button class="text-sm bg-orange-100 text-orange-800 px-2 py-1 rounded hover:bg-orange-200" 
+                                        onclick="markActionCompleted(${index})">
+                                    ✓ Concluir
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `).join('');
+            }
+            
+            // Timeline de implementação
+            if (timelineContainer) {
+                const timeline = generateImplementationTimeline(actions);
+                timelineContainer.innerHTML = timeline.map(item => `
+                    <div class="flex items-center space-x-4 p-3 bg-white rounded border">
+                        <div class="w-4 h-4 bg-blue-500 rounded-full flex-shrink-0"></div>
+                        <div class="flex-1">
+                            <div class="font-medium text-gray-800">${item.title}</div>
+                            <div class="text-sm text-gray-600">${item.period}</div>
+                        </div>
+                        <div class="text-xs text-blue-600 font-medium">${item.status}</div>
+                    </div>
+                `).join('');
+            }
+            
+            // Métricas de acompanhamento
+            if (metricsContainer) {
+                const metrics = generateTrackingMetrics(data);
+                metricsContainer.innerHTML = metrics.map(metric => `
+                    <div class="metric-card p-4 rounded-lg text-center">
+                        <div class="text-2xl mb-2">${metric.icon}</div>
+                        <div class="text-lg font-bold text-blue-600">${metric.value}</div>
+                        <div class="text-sm text-gray-600">${metric.label}</div>
+                        <div class="progress-bar mt-2">
+                            <div class="progress-fill" style="width: ${metric.progress}%"></div>
+                        </div>
+                    </div>
+                `).join('');
+            }
+            
+        } catch (error) {
+            console.error('Erro ao carregar plano de ação:', error);
+        }
+    }
+
+    /**
+     * Gera ações prioritárias
+     */
+    function generatePriorityActions(data) {
+        const actions = [];
+        
+        if (!data || !data.expenses) return actions;
+        
+        // Ação 1: Revisar categoria de maior gasto
+        const categories = {};
+        data.expenses.forEach(exp => {
+            const category = exp.descricao_conta || 'Outros';
+            categories[category] = (categories[category] || 0) + exp.valor;
+        });
+        
+        const topCategory = Object.entries(categories).sort((a, b) => b[1] - a[1])[0];
+        if (topCategory) {
+            actions.push({
+                title: `Revisar gastos em ${topCategory[0]}`,
+                description: `Analisar e otimizar a categoria de maior impacto financeiro`,
+                deadline: '7 dias'
+            });
+        }
+        
+        // Ação 2: Implementar controle de gastos recorrentes
+        const recurringCount = data.expenses.filter(exp => {
+            const count = data.expenses.filter(e => e.descricao_conta === exp.descricao_conta).length;
+            return count > 3;
+        }).length;
+        
+        if (recurringCount > 0) {
+            actions.push({
+                title: 'Automatizar gastos recorrentes',
+                description: `Configurar ${recurringCount} gastos recorrentes identificados`,
+                deadline: '14 dias'
+            });
+        }
+        
+        // Ação 3: Criar orçamento mensal
+        actions.push({
+            title: 'Estabelecer orçamento mensal',
+            description: 'Definir limites de gastos por categoria baseado no histórico',
+            deadline: '21 dias'
+        });
+        
+        // Ação 4: Revisar classificação empresarial
+        const businessExpenses = data.expenses.filter(exp => exp.empresarial);
+        if (businessExpenses.length > 0) {
+            actions.push({
+                title: 'Otimizar classificação empresarial',
+                description: 'Revisar e ajustar classificação de gastos para benefícios fiscais',
+                deadline: '30 dias'
+            });
+        }
+        
+        return actions;
+    }
+
+    /**
+     * Gera timeline de implementação
+     */
+    function generateImplementationTimeline(actions) {
+        return [
+            { title: 'Análise inicial completa', period: 'Semana 1', status: 'Em andamento' },
+            { title: 'Implementação de controles básicos', period: 'Semana 2-3', status: 'Planejado' },
+            { title: 'Otimização de categorias', period: 'Semana 4', status: 'Planejado' },
+            { title: 'Revisão e ajustes', period: 'Mês 2', status: 'Futuro' }
+        ];
+    }
+
+    /**
+     * Gera métricas de acompanhamento
+     */
+    function generateTrackingMetrics(data) {
+        const currentMonth = new Date().getMonth();
+        const currentExpenses = data.expenses?.filter(exp => {
+            return new Date(exp.data).getMonth() === currentMonth;
+        }) || [];
+        
+        const currentTotal = currentExpenses.reduce((sum, exp) => sum + exp.valor, 0);
+        const target = data.monthlyAverage * 0.9; // Meta: 10% de redução
+        const progress = Math.min((target / currentTotal) * 100, 100);
+        
+        return [
+            {
+                icon: '🎯',
+                value: `${Math.round(progress)}%`,
+                label: 'Meta do Mês',
+                progress: progress
+            },
+            {
+                icon: '📊',
+                value: currentExpenses.length,
+                label: 'Gastos Registrados',
+                progress: 75
+            },
+            {
+                icon: '💰',
+                value: `R$ ${(data.monthlyAverage - currentTotal).toLocaleString('pt-BR', {minimumFractionDigits: 2})}`,
+                label: 'Economia Atual',
+                progress: currentTotal < data.monthlyAverage ? 80 : 20
+            },
+            {
+                icon: '📈',
+                value: `${Math.abs(data.growthRate || 0).toFixed(1)}%`,
+                label: 'Variação Mensal',
+                progress: Math.max(100 - Math.abs(data.growthRate || 0) * 5, 0)
+            }
+        ];
+    }
+
+    /**
+     * Marca ação como concluída
+     */
+    window.markActionCompleted = function(actionIndex) {
+        const actionElements = document.querySelectorAll('.action-item');
+        if (actionElements[actionIndex]) {
+            actionElements[actionIndex].classList.add('action-completed');
+            showNotification('✅ Ação marcada como concluída!', 'success', 2000);
+        }
+    };
+
+    // Inicializar sistema de insights quando carregar a página
+    document.addEventListener('DOMContentLoaded', function() {
+        // Aguardar um pouco para garantir que outros sistemas foram inicializados
+        setTimeout(initInsightSystem, 1000);
+    });
+
+    // ========== FIM SISTEMA DE INSIGHTS ==========
 
     // Chamar inicialização
     init();

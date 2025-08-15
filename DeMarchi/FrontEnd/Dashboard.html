@@ -107,6 +107,105 @@
             max-height: 400px !important;
         }
         
+        /* Insight System Styles */
+        .insight-tab-btn {
+            border-bottom: 2px solid transparent;
+            transition: all 0.3s ease;
+        }
+        .insight-tab-btn.active {
+            border-bottom-color: #3b82f6;
+            color: #3b82f6;
+        }
+        .insight-tab-btn:hover:not(.active) {
+            border-bottom-color: #d1d5db;
+            color: #4b5563;
+        }
+        .insight-content {
+            animation: slideIn 0.3s ease-out;
+        }
+        .insight-content.hidden {
+            display: none;
+        }
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateX(20px); }
+            to { opacity: 1; transform: translateX(0); }
+        }
+        
+        /* Alert Styles */
+        .alert-critical {
+            background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%);
+            border-left: 4px solid #ef4444;
+        }
+        .alert-warning {
+            background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+            border-left: 4px solid #f59e0b;
+        }
+        .alert-info {
+            background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%);
+            border-left: 4px solid #3b82f6;
+        }
+        .alert-success {
+            background: linear-gradient(135deg, #dcfce7 0%, #bbf7d0 100%);
+            border-left: 4px solid #10b981;
+        }
+        
+        /* Action Item Styles */
+        .action-item {
+            transition: all 0.2s ease;
+            cursor: pointer;
+        }
+        .action-item:hover {
+            transform: translateX(5px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+        .action-completed {
+            opacity: 0.6;
+            text-decoration: line-through;
+        }
+        
+        /* Progress Bar Styles */
+        .progress-bar {
+            height: 8px;
+            background: #e5e7eb;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #10b981 0%, #059669 100%);
+            transition: width 0.8s ease;
+        }
+        
+        /* Metric Card Styles */
+        .metric-card {
+            background: linear-gradient(135deg, #ffffff 0%, #f9fafb 100%);
+            border: 1px solid #e5e7eb;
+            transition: all 0.2s ease;
+        }
+        .metric-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+        }
+        
+        /* Decision Matrix Styles */
+        .decision-matrix {
+            border-collapse: collapse;
+            width: 100%;
+        }
+        .decision-matrix th,
+        .decision-matrix td {
+            border: 1px solid #d1d5db;
+            padding: 12px;
+            text-align: center;
+        }
+        .decision-matrix th {
+            background: #f3f4f6;
+            font-weight: 600;
+        }
+        .priority-high { background: #fee2e2; color: #991b1b; }
+        .priority-medium { background: #fef3c7; color: #92400e; }
+        .priority-low { background: #dcfce7; color: #166534; }
+        
         /* PIX/Boleto specific styles */
         .pix-row { background: rgba(34, 197, 94, 0.05); }
         .boleto-row { background: rgba(59, 130, 246, 0.05); }
@@ -219,6 +318,9 @@
                 </button>
                 <button id="recurring-expenses-btn" class="bg-orange-500 text-white px-4 py-2 rounded-lg d-flex align-items-center gap-2">
                     <i class="fas fa-sync-alt me-2"></i>🔄 Gastos Recorrentes
+                </button>
+                <button id="test-trend-chart-btn" class="bg-yellow-500 text-white px-4 py-2 rounded-lg d-flex align-items-center gap-2" title="Testar Gráfico de Tendências">
+                    <i class="fas fa-chart-line me-2"></i>🧪 Teste Gráfico
                 </button>
                 <button id="logout-button" class="bg-red-500 text-white px-4 py-2 rounded-lg d-flex align-items-center gap-2">
                     <i class="bi bi-box-arrow-right"></i> Sair
@@ -749,11 +851,147 @@
                     </div>
                 </div>
 
-                <!-- Alertas e Recomendações -->
+                <!-- Alertas e Recomendações Inteligentes -->
                 <div class="bg-white p-6 rounded-lg shadow-md">
-                    <h3 class="text-xl font-semibold text-gray-700 mb-4">⚠️ Alertas e Recomendações</h3>
-                    <div id="business-alerts" class="space-y-4">
-                        <!-- Alertas serão preenchidos dinamicamente -->
+                    <div class="flex items-center justify-between mb-6">
+                        <h3 class="text-xl font-semibold text-gray-700">🎯 Centro de Inteligência Financeira</h3>
+                        <button id="refresh-insights-btn" class="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 transition-colors">
+                            <i class="fas fa-sync-alt mr-2"></i>Atualizar
+                        </button>
+                    </div>
+                    
+                    <!-- Navegação por Abas -->
+                    <div class="flex border-b border-gray-200 mb-6">
+                        <button class="insight-tab-btn active px-4 py-2 text-sm font-medium text-blue-600 border-b-2 border-blue-600" data-tab="alerts">
+                            🚨 Alertas Críticos
+                        </button>
+                        <button class="insight-tab-btn px-4 py-2 text-sm font-medium text-gray-500 hover:text-gray-700" data-tab="recommendations">
+                            💡 Recomendações
+                        </button>
+                        <button class="insight-tab-btn px-4 py-2 text-sm font-medium text-gray-500 hover:text-gray-700" data-tab="decisions">
+                            📊 Apoio à Decisão
+                        </button>
+                        <button class="insight-tab-btn px-4 py-2 text-sm font-medium text-gray-500 hover:text-gray-700" data-tab="actions">
+                            ✅ Plano de Ação
+                        </button>
+                    </div>
+
+                    <!-- Aba: Alertas Críticos -->
+                    <div id="alerts-content" class="insight-content">
+                        <div id="critical-alerts" class="space-y-4 mb-6">
+                            <!-- Alertas críticos serão preenchidos dinamicamente -->
+                        </div>
+                        
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <!-- Status Geral -->
+                            <div class="bg-gray-50 p-4 rounded-lg">
+                                <h4 class="font-semibold text-gray-700 mb-3">📈 Status Financeiro</h4>
+                                <div id="financial-status" class="space-y-2">
+                                    <!-- Status será preenchido dinamicamente -->
+                                </div>
+                            </div>
+                            
+                            <!-- Métricas de Risco -->
+                            <div class="bg-gray-50 p-4 rounded-lg">
+                                <h4 class="font-semibold text-gray-700 mb-3">⚠️ Indicadores de Risco</h4>
+                                <div id="risk-indicators" class="space-y-2">
+                                    <!-- Indicadores serão preenchidos dinamicamente -->
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Aba: Recomendações -->
+                    <div id="recommendations-content" class="insight-content hidden">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <!-- Recomendações de Economia -->
+                            <div class="bg-green-50 p-4 rounded-lg border-l-4 border-green-500">
+                                <h4 class="font-semibold text-green-800 mb-3">💰 Oportunidades de Economia</h4>
+                                <div id="savings-recommendations" class="space-y-3">
+                                    <!-- Recomendações serão preenchidas dinamicamente -->
+                                </div>
+                            </div>
+                            
+                            <!-- Recomendações de Investimento -->
+                            <div class="bg-blue-50 p-4 rounded-lg border-l-4 border-blue-500">
+                                <h4 class="font-semibold text-blue-800 mb-3">📈 Sugestões de Investimento</h4>
+                                <div id="investment-recommendations" class="space-y-3">
+                                    <!-- Recomendações serão preenchidas dinamicamente -->
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Tendências e Padrões -->
+                        <div class="mt-6 bg-purple-50 p-4 rounded-lg border-l-4 border-purple-500">
+                            <h4 class="font-semibold text-purple-800 mb-3">🔍 Análise de Padrões</h4>
+                            <div id="pattern-analysis" class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <!-- Análise será preenchida dinamicamente -->
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Aba: Apoio à Decisão -->
+                    <div id="decisions-content" class="insight-content hidden">
+                        <div class="space-y-6">
+                            <!-- Gráfico de Cenários -->
+                            <div class="bg-gray-50 p-4 rounded-lg">
+                                <h4 class="font-semibold text-gray-700 mb-3">📊 Simulação de Cenários</h4>
+                                <div class="h-64 mb-4">
+                                    <canvas id="scenario-chart"></canvas>
+                                </div>
+                                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                    <div class="text-center p-3 bg-green-100 rounded-lg">
+                                        <div class="text-green-800 font-bold text-lg" id="optimistic-scenario">R$ 0</div>
+                                        <div class="text-sm text-green-600">Cenário Otimista</div>
+                                    </div>
+                                    <div class="text-center p-3 bg-yellow-100 rounded-lg">
+                                        <div class="text-yellow-800 font-bold text-lg" id="realistic-scenario">R$ 0</div>
+                                        <div class="text-sm text-yellow-600">Cenário Realista</div>
+                                    </div>
+                                    <div class="text-center p-3 bg-red-100 rounded-lg">
+                                        <div class="text-red-800 font-bold text-lg" id="pessimistic-scenario">R$ 0</div>
+                                        <div class="text-sm text-red-600">Cenário Pessimista</div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Matriz de Decisão -->
+                            <div class="bg-gray-50 p-4 rounded-lg">
+                                <h4 class="font-semibold text-gray-700 mb-3">🎯 Matriz de Prioridades</h4>
+                                <div id="decision-matrix" class="overflow-x-auto">
+                                    <!-- Matriz será preenchida dinamicamente -->
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Aba: Plano de Ação -->
+                    <div id="actions-content" class="insight-content hidden">
+                        <div class="space-y-6">
+                            <!-- Ações Prioritárias -->
+                            <div class="bg-orange-50 p-4 rounded-lg border-l-4 border-orange-500">
+                                <h4 class="font-semibold text-orange-800 mb-3">🔥 Ações Prioritárias</h4>
+                                <div id="priority-actions" class="space-y-3">
+                                    <!-- Ações serão preenchidas dinamicamente -->
+                                </div>
+                            </div>
+                            
+                            <!-- Timeline de Implementação -->
+                            <div class="bg-gray-50 p-4 rounded-lg">
+                                <h4 class="font-semibold text-gray-700 mb-3">📅 Cronograma de Implementação</h4>
+                                <div id="implementation-timeline" class="space-y-4">
+                                    <!-- Timeline será preenchida dinamicamente -->
+                                </div>
+                            </div>
+                            
+                            <!-- Métricas de Acompanhamento -->
+                            <div class="bg-blue-50 p-4 rounded-lg border-l-4 border-blue-500">
+                                <h4 class="font-semibold text-blue-800 mb-3">📊 Métricas de Acompanhamento</h4>
+                                <div id="tracking-metrics" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                                    <!-- Métricas serão preenchidas dinamicamente -->
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
