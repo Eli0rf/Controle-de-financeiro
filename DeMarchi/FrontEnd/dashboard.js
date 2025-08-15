@@ -301,6 +301,35 @@ document.addEventListener('DOMContentLoaded', function() {
         businessFields.classList.toggle('hidden', !businessCheckbox.checked);
     }
 
+    // Verificar se Chart.js está carregado
+    function isChartJsLoaded() {
+        return typeof Chart !== 'undefined';
+    }
+
+    // Aguardar Chart.js estar disponível
+    function waitForChartJs() {
+        return new Promise((resolve) => {
+            if (isChartJsLoaded()) {
+                resolve();
+                return;
+            }
+            
+            const checkInterval = setInterval(() => {
+                if (isChartJsLoaded()) {
+                    clearInterval(checkInterval);
+                    resolve();
+                }
+            }, 100);
+            
+            // Timeout após 5 segundos
+            setTimeout(() => {
+                clearInterval(checkInterval);
+                console.error('Chart.js não foi carregado dentro do tempo limite');
+                resolve();
+            }, 5000);
+        });
+    }
+
     async function fetchAllData() {
         try {
             if (!checkAuthentication()) {
@@ -309,6 +338,15 @@ document.addEventListener('DOMContentLoaded', function() {
             }
 
             console.log('Iniciando fetchAllData...');
+            
+            // Aguardar Chart.js estar disponível
+            await waitForChartJs();
+            
+            if (!isChartJsLoaded()) {
+                console.error('Chart.js não está disponível, gráficos serão ignorados');
+                showNotification('Biblioteca de gráficos não carregada, alguns recursos podem não funcionar', 'warning');
+            }
+
             await fetchAndRenderExpenses();
             await fetchAndRenderDashboardMetrics();
             await fetchAndRenderGoalsChart();
@@ -356,42 +394,87 @@ document.addEventListener('DOMContentLoaded', function() {
 
     function renderGoalsChart(data = []) {
         const ctx = document.getElementById('goals-chart')?.getContext('2d');
-        if (!ctx) return;
+        if (!ctx) {
+            console.warn('Canvas goals-chart não encontrado');
+            return;
+        }
+        
+        if (!isChartJsLoaded()) {
+            console.error('Chart.js não está carregado para renderGoalsChart');
+            showNoDataMessage('goals-chart', 'Biblioteca de gráficos não carregada');
+            return;
+        }
+        
         if (goalsChart) goalsChart.destroy();
+
+        if (!data || data.length === 0) {
+            showNoDataMessage('goals-chart', 'Sem dados de limites disponíveis');
+            return;
+        }
 
         const labels = data.map(item => `Plano ${item.PlanoContasID}`);
         const values = data.map(item => Number(item.Total));
         const tetos = data.map(item => Number(item.Teto));
 
-        goalsChart = new Chart(ctx, {
-            type: 'bar',
-            data: {
-                labels: labels,
-                datasets: [
-                    {
-                        label: 'Gastos Atuais',
-                        data: values,
-                        backgroundColor: 'rgba(255, 99, 132, 0.2)',
-                        borderColor: 'rgba(255, 99, 132, 1)',
-                        borderWidth: 1
+        try {
+            goalsChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        {
+                            label: 'Gastos Atuais',
+                            data: values,
+                            backgroundColor: 'rgba(255, 99, 132, 0.2)',
+                            borderColor: 'rgba(255, 99, 132, 1)',
+                            borderWidth: 1
+                        },
+                        {
+                            label: 'Teto de Gastos',
+                            data: tetos,
+                            type: 'line',
+                            fill: false,
+                            borderColor: 'rgba(75, 192, 192, 1)',
+                            borderWidth: 2,
+                            pointRadius: 5,
+                            pointBackgroundColor: 'rgba(75, 192, 192, 1)'
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: { 
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: 'Valor (R$)'
+                            }
+                        },
+                        x: {
+                            title: {
+                                display: true,
+                                text: 'Planos de Conta'
+                            }
+                        }
                     },
-                    {
-                        label: 'Teto de Gastos',
-                        data: tetos,
-                        type: 'line',
-                        fill: false,
-                        borderColor: 'rgba(75, 192, 192, 1)',
-                        borderWidth: 2,
-                        pointRadius: 0
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: 'Comparação: Gastos vs Limites por Plano'
+                        },
+                        legend: {
+                            display: true,
+                            position: 'top'
+                        }
                     }
-                ]
-            },
-            options: {
-                scales: {
-                    y: { beginAtZero: true }
                 }
-            }
-        });
+            });
+        } catch (error) {
+            console.error('Erro ao criar gráfico de metas:', error);
+            showNoDataMessage('goals-chart', 'Erro ao carregar gráfico');
+        }
     }
 
     function renderGoalsPlanChart(data = []) {
@@ -695,87 +778,128 @@ document.addEventListener('DOMContentLoaded', function() {
 
     function renderLineChart(data = []) {
         const canvas = document.getElementById('expenses-line-chart');
-        if (!canvas) return;
+        if (!canvas) {
+            console.warn('Canvas expenses-line-chart não encontrado');
+            return;
+        }
+        
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
+        
+        if (!isChartJsLoaded()) {
+            console.error('Chart.js não está carregado para renderLineChart');
+            showNoDataMessage('expenses-line-chart', 'Biblioteca de gráficos não carregada');
+            return;
+        }
+        
         expensesLineChart = destroyChartInstance(expensesLineChart, 'expenses-line-chart');
+        
         const year = parseInt(filterYear.value, 10);
         const month = parseInt(filterMonth.value, 10);
         const daysInMonth = new Date(year, month, 0).getDate();
         const labels = Array.from({ length: daysInMonth }, (_, i) => i + 1);
         const chartData = new Array(daysInMonth).fill(0);
-        data.forEach(d => { chartData[d.day - 1] = d.total; });
-        if (chartData.every(v => v === 0)) {
+        
+        if (!data || data.length === 0) {
             showNoDataMessage('expenses-line-chart', 'Sem dados para este período.');
             return;
         }
+        
+        data.forEach(d => { chartData[d.day - 1] = d.total; });
+        
+        if (chartData.every(v => v === 0)) {
+            showNoDataMessage('expenses-line-chart', 'Sem gastos registrados neste período.');
+            return;
+        }
+        
         const max = Math.max(...chartData);
         const min = Math.min(...chartData.filter(v => v > 0));
-        expensesLineChart = new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels: labels,
-                datasets: [{
-                    label: `Gastos Diários em ${filterMonth.options[filterMonth.selectedIndex].text}`,
-                    data: chartData,
-                    borderColor: getThemeColor('#3B82F6', '#60A5FA'),
-                    backgroundColor: getThemeColor('rgba(59,130,246,0.1)', 'rgba(59,130,246,0.3)'),
-                    tension: 0.2,
-                    pointBackgroundColor: chartData.map(v => v === max ? '#22c55e' : v === min ? '#ef4444' : getThemeColor('#3B82F6', '#60A5FA')),
-                    pointRadius: chartData.map(v => v === max || v === min ? 6 : 4)
-                }]
-            },
-            options: {
-                responsive: true,
-                plugins: {
-                    title: {
-                        display: true,
-                        text: 'Evolução dos Gastos Diários',
-                        color: getThemeColor('#222', '#fff'),
-                        font: { size: 18 }
-                    },
-                    subtitle: {
-                        display: true,
-                        text: `Maior gasto: R$ ${max.toFixed(2)} | Menor gasto: R$ ${min ? min.toFixed(2) : '0.00'}`,
-                        color: getThemeColor('#666', '#ccc'),
-                        font: { size: 13 }
-                    },
-                    legend: { display: false },
-                    tooltip: {
-                        callbacks: {
-                            label: ctx => `Dia ${ctx.label}: R$ ${ctx.parsed.y.toFixed(2)}`
+
+        try {
+            expensesLineChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: `Gastos Diários em ${filterMonth.options[filterMonth.selectedIndex].text}`,
+                        data: chartData,
+                        borderColor: getThemeColor('#3B82F6', '#60A5FA'),
+                        backgroundColor: getThemeColor('rgba(59,130,246,0.1)', 'rgba(59,130,246,0.3)'),
+                        tension: 0.2,
+                        pointBackgroundColor: chartData.map(v => v === max ? '#22c55e' : v === min ? '#ef4444' : getThemeColor('#3B82F6', '#60A5FA')),
+                        pointRadius: chartData.map(v => v === max || v === min ? 6 : 4)
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: 'Evolução dos Gastos Diários',
+                            color: getThemeColor('#222', '#fff'),
+                            font: { size: 18 }
+                        },
+                        subtitle: {
+                            display: true,
+                            text: `Maior gasto: R$ ${max.toFixed(2)} | Menor gasto: R$ ${min ? min.toFixed(2) : '0.00'}`,
+                            color: getThemeColor('#666', '#ccc'),
+                            font: { size: 13 }
+                        },
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                label: ctx => `Dia ${ctx.label}: R$ ${ctx.parsed.y.toFixed(2)}`
+                            }
+                        },
+                        datalabels: {
+                            color: getThemeColor('#222', '#fff'),
+                            anchor: 'end', align: 'top', font: { weight: 'bold' },
+                            formatter: v => {
+                                const val = getNumberValue(v);
+                                return val > 0 ? `R$ ${val.toFixed(2)}` : '';
+                            }
                         }
                     },
-                    datalabels: {
-                        color: getThemeColor('#222', '#fff'),
-                        anchor: 'end', align: 'top', font: { weight: 'bold' },
-                        formatter: v => {
-                            const val = getNumberValue(v);
-                            return val > 0 ? `R$ ${val.toFixed(2)}` : '';
-                        }
+                    scales: {
+                        x: { title: { display: true, text: 'Dia do Mês' } },
+                        y: { beginAtZero: true }
                     }
                 },
-                scales: {
-                    x: { title: { display: true, text: 'Dia do Mês' } },
-                    y: { beginAtZero: true }
-                }
-            },
-            plugins: [ChartDataLabels]
-        });
+                plugins: [ChartDataLabels]
+            });
+        } catch (error) {
+            console.error('Erro ao criar gráfico de linha:', error);
+            showNoDataMessage('expenses-line-chart', 'Erro ao carregar gráfico');
+        }
     }
 
     function renderPieChart(data = []) {
         const canvas = document.getElementById('expenses-pie-chart');
-        if (!canvas) return;
+        if (!canvas) {
+            console.warn('Canvas expenses-pie-chart não encontrado');
+            return;
+        }
+        
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
+        
+        if (!isChartJsLoaded()) {
+            console.error('Chart.js não está carregado para renderPieChart');
+            showNoDataMessage('expenses-pie-chart', 'Biblioteca de gráficos não carregada');
+            return;
+        }
+        
         expensesPieChart = destroyChartInstance(expensesPieChart, 'expenses-pie-chart');
-        if (!data.length) {
+        
+        if (!data || !data.length) {
             showNoDataMessage('expenses-pie-chart', 'Sem dados para este período.');
             return;
         }
+        
         const total = Array.isArray(data) && data.length > 0 ? data.reduce((sum, d) => sum + (typeof d.total === 'number' ? d.total : parseFloat(d.total) || 0), 0) : 0;
-        expensesPieChart = new Chart(ctx, {
+        
+        try {
+            expensesPieChart = new Chart(ctx, {
             type: 'pie',
             data: {
                 labels: data.map(d => d.account),
@@ -820,45 +944,74 @@ document.addEventListener('DOMContentLoaded', function() {
             },
             plugins: [ChartDataLabels]
         });
+        } catch (error) {
+            console.error('Erro ao criar gráfico de pizza:', error);
+            showNoDataMessage('expenses-pie-chart', 'Erro ao carregar gráfico');
+        }
+    }
+
+    // Função auxiliar para renderização segura de gráficos
+    function safeRenderChart(canvasId, renderFunction, data, fallbackMessage = 'Sem dados disponíveis') {
+        const canvas = document.getElementById(canvasId);
+        if (!canvas) {
+            console.warn(`Canvas ${canvasId} não encontrado`);
+            return false;
+        }
+        
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return false;
+        
+        if (!isChartJsLoaded()) {
+            console.error(`Chart.js não está carregado para ${canvasId}`);
+            showNoDataMessage(canvasId, 'Biblioteca de gráficos não carregada');
+            return false;
+        }
+        
+        if (!data || (Array.isArray(data) && data.length === 0)) {
+            showNoDataMessage(canvasId, fallbackMessage);
+            return false;
+        }
+        
+        try {
+            return renderFunction(canvas, ctx, data);
+        } catch (error) {
+            console.error(`Erro ao criar gráfico ${canvasId}:`, error);
+            showNoDataMessage(canvasId, 'Erro ao carregar gráfico');
+            return false;
+        }
     }
 
     function renderMixedTypeChart(data = []) {
-        const canvas = document.getElementById('mixed-type-chart');
-        if (!canvas) return;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return;
-        mixedTypeChart = destroyChartInstance(mixedTypeChart, 'mixed-type-chart');
-        if (!data.length) {
-            showNoDataMessage('mixed-type-chart', 'Sem dados para este período.');
-            return;
-        }
-        const max = Math.max(...data.map(d => d.personal_total + d.business_total));
-        mixedTypeChart = new Chart(ctx, {
-            type: 'bar',
-            data: {
-                labels: data.map(d => d.account),
-                datasets: [
-                    { label: 'Gastos Pessoais', data: data.map(d => d.personal_total), backgroundColor: 'rgba(59, 130, 246, 0.7)' },
-                    { label: 'Gastos Empresariais', data: data.map(d => d.business_total), backgroundColor: 'rgba(239, 68, 68, 0.7)' }
-                ]
-            },
-            options: {
-                responsive: true,
-                plugins: {
-                    title: {
-                        display: true,
-                        text: 'Comparação: Pessoal vs. Empresarial por Conta',
-                        color: getThemeColor('#222', '#fff'),
-                        font: { size: 18 }
-                    },
-                    subtitle: {
-                        display: true,
-                        text: `Conta com maior gasto: ${data.find(d => d.personal_total + d.business_total === max)?.account || '-'}`,
-                        color: getThemeColor('#666', '#ccc'),
-                        font: { size: 13 }
-                    },
-                    legend: {
-                        position: 'bottom',
+        return safeRenderChart('mixed-type-chart', (canvas, ctx, data) => {
+            mixedTypeChart = destroyChartInstance(mixedTypeChart, 'mixed-type-chart');
+            
+            const max = Math.max(...data.map(d => d.personal_total + d.business_total));
+            mixedTypeChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: data.map(d => d.account),
+                    datasets: [
+                        { label: 'Gastos Pessoais', data: data.map(d => d.personal_total), backgroundColor: 'rgba(59, 130, 246, 0.7)' },
+                        { label: 'Gastos Empresariais', data: data.map(d => d.business_total), backgroundColor: 'rgba(239, 68, 68, 0.7)' }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: 'Comparação: Pessoal vs. Empresarial por Conta',
+                            color: getThemeColor('#222', '#fff'),
+                            font: { size: 18 }
+                        },
+                        subtitle: {
+                            display: true,
+                            text: `Conta com maior gasto: ${data.find(d => d.personal_total + d.business_total === max)?.account || '-'}`,
+                            color: getThemeColor('#666', '#ccc'),
+                            font: { size: 13 }
+                        },
+                        legend: {
+                            position: 'bottom',
                         labels: { color: getThemeColor('#222', '#fff') }
                     },
                     tooltip: {
@@ -879,9 +1032,16 @@ document.addEventListener('DOMContentLoaded', function() {
             },
             plugins: [ChartDataLabels]
         });
+            return true;
+        }, data, 'Sem dados para comparação pessoal vs empresarial.');
     }
 
     function renderPlanChart(data = []) {
+        if (!isChartJsLoaded()) {
+            showNoDataMessage('plan-chart', 'Biblioteca de gráficos não carregada');
+            return;
+        }
+        
         const canvas = document.getElementById('plan-chart');
         if (!canvas) return;
         const ctx = canvas.getContext('2d');
@@ -891,8 +1051,10 @@ document.addEventListener('DOMContentLoaded', function() {
             showNoDataMessage('plan-chart', 'Sem dados para este período.');
             return;
         }
-        const max = Math.max(...data.map(d => d.total));
-        planChart = new Chart(ctx, {
+        
+        try {
+            const max = Math.max(...data.map(d => d.total));
+            planChart = new Chart(ctx, {
             type: 'bar',
             data: {
                 labels: data.map(d => `Plano ${d.account_plan_code}`),
@@ -936,6 +1098,10 @@ document.addEventListener('DOMContentLoaded', function() {
             },
             plugins: [ChartDataLabels]
         });
+        } catch (error) {
+            console.error('Erro ao criar gráfico de planos:', error);
+            showNoDataMessage('plan-chart', 'Erro ao carregar gráfico');
+        }
     }
 
     async function handleAddExpense(e) {
@@ -2465,7 +2631,22 @@ document.addEventListener('DOMContentLoaded', function() {
     // ========== INICIALIZAÇÃO AUTOMÁTICA ==========
     // Verificar se o usuário já está logado quando a página carrega
     async function init() {
+        console.log('🚀 Iniciando aplicação...');
+        
+        // Aguardar Chart.js estar disponível
+        await waitForChartJs();
+        
+        if (!isChartJsLoaded()) {
+            console.warn('⚠️ Chart.js não carregado - gráficos podem não funcionar');
+            showNotification('Biblioteca de gráficos não carregada - alguns recursos podem não funcionar', 'warning');
+        } else {
+            console.log('✅ Chart.js carregado com sucesso');
+        }
+        
         addEventListeners();
+        populateYearAndMonthFilters();
+        populateAccountFilter();
+        checkMonthlyReportReminder();
         
         const token = getToken();
         if (token) {
@@ -2477,6 +2658,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (response.ok) {
                     console.log('Token válido, mostrando dashboard');
                     showDashboard();
+                    await fetchAllData();
                 } else {
                     console.log('Token inválido, limpando e mostrando login');
                     // Token inválido, limpar e mostrar login

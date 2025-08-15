@@ -868,12 +868,25 @@
             <div id="reports-tab" class="tab-content hidden">
                 <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
                     <div class="bg-white p-6 rounded-lg shadow-md">
-                        <h3 class="text-xl font-semibold text-gray-700 mb-4">🎯 Teto de Gastos</h3>
-                        <canvas id="goals-plan-chart"></canvas>
+                        <h3 class="text-xl font-semibold text-gray-700 mb-4">🎯 Limites vs Gastos</h3>
+                        <canvas id="goals-chart"></canvas>
                     </div>
                     <div class="bg-white p-6 rounded-lg shadow-md">
-                        <h3 class="text-xl font-semibold text-gray-700 mb-4">📊 Gastos por Plano</h3>
+                        <h3 class="text-xl font-semibold text-gray-700 mb-4">📊 Teto de Gastos por Plano</h3>
+                        <canvas id="goals-plan-chart"></canvas>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+                    <div class="bg-white p-6 rounded-lg shadow-md">
+                        <h3 class="text-xl font-semibold text-gray-700 mb-4">� Gastos por Plano de Contas</h3>
                         <canvas id="plan-chart"></canvas>
+                    </div>
+                    <div class="bg-white p-6 rounded-lg shadow-md">
+                        <h3 class="text-xl font-semibold text-gray-700 mb-4">📊 Análise Empresarial</h3>
+                        <div id="business-analysis-content">
+                            <p class="text-gray-600 text-center">Aguardando dados...</p>
+                        </div>
                     </div>
                 </div>
 
