@@ -367,7 +367,8 @@ document.addEventListener('DOMContentLoaded', function() {
      */
     const defaultChartOptions = {
         responsive: true,
-        maintainAspectRatio: false,
+        maintainAspectRatio: true,
+        aspectRatio: 2,
         interaction: {
             intersect: false,
             mode: 'index'
@@ -2480,6 +2481,20 @@ document.addEventListener('DOMContentLoaded', function() {
             return null;
         }
 
+        // Definir dimensões padrão se não estiverem definidas
+        const parent = canvas.parentElement;
+        if (parent) {
+            const parentWidth = parent.clientWidth || 400;
+            const parentHeight = parent.clientHeight || 300;
+            
+            // Garantir que o canvas tenha dimensões adequadas
+            canvas.style.width = '100%';
+            canvas.style.height = '300px';
+            canvas.style.maxHeight = '400px';
+            canvas.width = parentWidth;
+            canvas.height = Math.min(300, parentHeight);
+        }
+
         const ctx = canvas.getContext('2d');
         if (ctx) {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -2505,6 +2520,22 @@ document.addEventListener('DOMContentLoaded', function() {
             if (!isChartJsLoaded()) {
                 console.error(`❌ Chart.js não disponível para criar ${chartKey}`);
                 return null;
+            }
+
+            // Verificar dimensões do container antes de criar o gráfico
+            const canvas = document.getElementById(canvasId);
+            if (canvas) {
+                const parent = canvas.parentElement;
+                if (parent && (parent.clientWidth === 0 || parent.clientHeight === 0)) {
+                    console.warn(`⚠️ Container do gráfico ${chartKey} tem dimensões zero`);
+                    // Dar um tempo para o DOM se estabilizar
+                    setTimeout(() => {
+                        if (parent.clientWidth > 0) {
+                            createChart(chartKey, canvasId, config);
+                        }
+                    }, 100);
+                    return null;
+                }
             }
 
             // Criar novo gráfico
@@ -3466,7 +3497,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 },
                 options: {
                     responsive: true,
-                    maintainAspectRatio: false,
+                    maintainAspectRatio: true,
+                    aspectRatio: 2,
                     plugins: {
                         legend: { display: false },
                         tooltip: {
