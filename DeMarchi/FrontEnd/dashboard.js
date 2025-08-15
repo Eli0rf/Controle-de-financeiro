@@ -376,13 +376,10 @@ document.addEventListener('DOMContentLoaded', function() {
             
             const data = await response.json();
 
-            // Notificações de limites (alertas)
-            data.forEach(item => {
-                if (item.Alerta && !sessionStorage.getItem(`alerta_${item.PlanoContasID}_${item.Alerta.percentual}_${filterYear.value}_${filterMonth.value}`)) {
-                    showNotification(item.Alerta.mensagem);
-                    sessionStorage.setItem(`alerta_${item.PlanoContasID}_${item.Alerta.percentual}_${filterYear.value}_${filterMonth.value}`, 'true');
-                }
-            });
+            // Processar e exibir alertas de limites de gastos
+            if (data && data.length > 0) {
+                processLimitAlerts(data);
+            }
 
             renderGoalsChart(data);
             renderGoalsPlanChart(data);
@@ -390,6 +387,49 @@ document.addEventListener('DOMContentLoaded', function() {
             console.error('Erro ao buscar limites:', error);
             showNotification('Erro ao carregar limites de gastos', 'error');
         }
+    }
+
+    // Configurações responsivas padrão para todos os gráficos
+    const defaultChartOptions = {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: {
+            intersect: false,
+            mode: 'index'
+        },
+        animation: {
+            duration: 750,
+            easing: 'easeInOutQuart'
+        },
+        layout: {
+            padding: {
+                top: 10,
+                right: 10,
+                bottom: 10,
+                left: 10
+            }
+        },
+        elements: {
+            point: {
+                radius: 4,
+                hoverRadius: 6
+            },
+            line: {
+                tension: 0.2
+            }
+        }
+    };
+
+    // Função para mesclar opções padrão com específicas
+    function mergeChartOptions(specificOptions = {}) {
+        return {
+            ...defaultChartOptions,
+            ...specificOptions,
+            plugins: {
+                ...defaultChartOptions.plugins,
+                ...specificOptions.plugins
+            }
+        };
     }
 
     function renderGoalsChart(data = []) {
@@ -405,7 +445,7 @@ document.addEventListener('DOMContentLoaded', function() {
             return;
         }
         
-        if (goalsChart) goalsChart.destroy();
+        goalsChart = destroyChartInstance(goalsChart, 'goals-chart');
 
         if (!data || data.length === 0) {
             showNoDataMessage('goals-chart', 'Sem dados de limites disponíveis');
@@ -441,9 +481,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         }
                     ]
                 },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
+                options: mergeChartOptions({
                     scales: {
                         y: { 
                             beginAtZero: true,
@@ -469,7 +507,7 @@ document.addEventListener('DOMContentLoaded', function() {
                             position: 'top'
                         }
                     }
-                }
+                })
             });
         } catch (error) {
             console.error('Erro ao criar gráfico de metas:', error);
@@ -580,29 +618,155 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     // ====== SWEETALERT2 PARA NOTIFICAÇÕES ======
-    function showNotification(message, type = 'info') {
-        if (window.Swal) {
+    function showNotification(message, type = 'info', duration = 4000) {
+        // Controlar número máximo de notificações simultâneas
+        const maxNotifications = 3;
+        const existingToasts = document.querySelectorAll('.notification-toast').length;
+        
+        if (existingToasts >= maxNotifications) {
+            // Remover a mais antiga se exceder o limite
+            const oldestToast = document.querySelector('.notification-toast');
+            if (oldestToast) {
+                oldestToast.remove();
+            }
+        }
+        
+        if (window.Swal && type !== 'info') {
+            // Usar SweetAlert2 para alertas importantes (warning/error)
             Swal.fire({
                 toast: true,
                 position: 'top-end',
-                icon: type === 'error' ? 'error' : type === 'success' ? 'success' : 'info',
+                icon: type === 'error' ? 'error' : type === 'success' ? 'success' : type === 'warning' ? 'warning' : 'info',
                 title: message,
                 showConfirmButton: false,
-                timer: 3500,
-                timerProgressBar: true
+                timer: duration,
+                timerProgressBar: true,
+                customClass: {
+                    popup: 'notification-toast'
+                }
             });
         } else {
-            // fallback para toast antigo
-            const toastContainer = document.getElementById('toast-container');
-            if (!toastContainer) return;
-            const toast = document.createElement('div');
-            toast.className = `px-4 py-3 rounded shadow-lg text-white mb-2 animate-fade-in ${type === 'error' ? 'bg-red-600' : type === 'success' ? 'bg-green-600' : 'bg-blue-600'}`;
-            toast.textContent = message;
-            toastContainer.appendChild(toast);
-            setTimeout(() => {
-                toast.classList.add('opacity-0');
-                setTimeout(() => toast.remove(), 500);
-            }, 3500);
+            // Usar toast customizado para info e fallback
+            createCustomToast(message, type, duration);
+        }
+    }
+
+    function createCustomToast(message, type, duration) {
+        let toastContainer = document.getElementById('toast-container');
+        if (!toastContainer) {
+            // Criar container de toast se não existir
+            toastContainer = document.createElement('div');
+            toastContainer.id = 'toast-container';
+            toastContainer.className = 'fixed top-4 right-4 z-50 space-y-2';
+            document.body.appendChild(toastContainer);
+        }
+        
+        const toast = document.createElement('div');
+        toast.className = `notification-toast px-4 py-3 rounded-lg shadow-lg text-white mb-2 animate-fade-in max-w-sm transform transition-all duration-300 ${
+            type === 'error' ? 'bg-red-600' : 
+            type === 'success' ? 'bg-green-600' : 
+            type === 'warning' ? 'bg-yellow-600' :
+            'bg-blue-600'
+        }`;
+        
+        // Adicionar ícone baseado no tipo
+        const icon = type === 'error' ? '❌' : 
+                    type === 'success' ? '✅' : 
+                    type === 'warning' ? '⚠️' : 'ℹ️';
+        
+        toast.innerHTML = `
+            <div class="flex items-start space-x-2">
+                <span class="text-lg">${icon}</span>
+                <div class="flex-1">
+                    <p class="text-sm font-medium">${message}</p>
+                </div>
+                <button class="text-white hover:text-gray-200 font-bold" onclick="this.parentElement.parentElement.remove()">×</button>
+            </div>
+        `;
+        
+        toastContainer.appendChild(toast);
+        
+        // Auto-remover após duração especificada
+        setTimeout(() => {
+            if (toast.parentElement) {
+                toast.classList.add('opacity-0', 'scale-95');
+                setTimeout(() => {
+                    if (toast.parentElement) {
+                        toast.remove();
+                    }
+                }, 300);
+            }
+        }, duration);
+    }
+
+    // Processar e exibir alertas de limites de gastos de forma inteligente
+    function processLimitAlerts(data) {
+        const currentDate = new Date();
+        const currentPeriod = `${filterYear.value}-${filterMonth.value}`;
+        const alerts = [];
+        
+        data.forEach(item => {
+            if (item.Alerta) {
+                const alertKey = `alerta_${item.PlanoContasID}_${item.Alerta.percentual}_${currentPeriod}`;
+                const lastShown = sessionStorage.getItem(`${alertKey}_timestamp`);
+                const lastShownDate = lastShown ? new Date(parseInt(lastShown)) : null;
+                
+                // Exibir alerta se:
+                // 1. Nunca foi exibido para este período
+                // 2. Ou se foi exibido há mais de 24 horas
+                const shouldShow = !lastShown || 
+                    (lastShownDate && (currentDate.getTime() - lastShownDate.getTime()) > 24 * 60 * 60 * 1000);
+                
+                if (shouldShow) {
+                    alerts.push({
+                        planoId: item.PlanoContasID,
+                        percentual: item.Alerta.percentual,
+                        mensagem: item.Alerta.mensagem,
+                        valor: item.Total,
+                        limite: item.Teto,
+                        alertKey: alertKey
+                    });
+                }
+            }
+        });
+        
+        // Exibir alertas de forma escalonada (não todos de uma vez)
+        if (alerts.length > 0) {
+            showLimitAlertsSequentially(alerts);
+        }
+    }
+
+    // Exibir alertas de forma sequencial para não sobrecarregar o usuário
+    async function showLimitAlertsSequentially(alerts) {
+        for (let i = 0; i < alerts.length; i++) {
+            const alert = alerts[i];
+            
+            // Determinar tipo de alerta baseado no percentual
+            let alertType = 'warning';
+            let icon = '⚠️';
+            if (alert.percentual >= 90) {
+                alertType = 'error';
+                icon = '🚨';
+            } else if (alert.percentual >= 75) {
+                alertType = 'warning';
+                icon = '⚠️';
+            } else {
+                alertType = 'info';
+                icon = '💡';
+            }
+            
+            // Melhorar a mensagem do alerta
+            const improvedMessage = `${icon} Plano ${alert.planoId}: ${alert.percentual}% do limite atingido (R$ ${alert.valor.toFixed(2)} de R$ ${alert.limite.toFixed(2)})`;
+            
+            showNotification(improvedMessage, alertType);
+            
+            // Marcar como exibido
+            sessionStorage.setItem(`${alert.alertKey}_timestamp`, Date.now().toString());
+            
+            // Pequeno delay entre alertas (apenas se houver múltiplos)
+            if (i < alerts.length - 1) {
+                await new Promise(resolve => setTimeout(resolve, 1500));
+            }
         }
     }
 
@@ -697,6 +861,9 @@ document.addEventListener('DOMContentLoaded', function() {
             if (projectionEl) {
                 projectionEl.textContent = `R$ ${data.projection?.nextMonthEstimate || '0.00'}`;
             }
+
+            // Limpar gráficos existentes antes de renderizar novos
+            console.log('🔄 Atualizando gráficos do dashboard...');
 
             renderLineChart(data.lineChartData);
             renderPieChart(data.pieChartData);
@@ -2099,30 +2266,93 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     };
 
-    // Helper to destroy Chart.js instance safely and clear Chart registry
+    // Helper melhorado para destruir Chart.js instance e evitar crescimento infinito
     function destroyChartInstance(chartVar, canvasId) {
+        // Destruir instância existente
         if (chartVar && typeof chartVar.destroy === 'function') {
             try {
                 chartVar.destroy();
             } catch (e) {
-                // fallback: forcibly clear the canvas if Chart.js fails
-                const canvas = document.getElementById(canvasId);
-                if (canvas && canvas.getContext) {
-                    const ctx = canvas.getContext('2d');
-                    ctx && ctx.clearRect(0, 0, canvas.width, canvas.height);
-                }
+                console.warn(`Erro ao destruir chart ${canvasId}:`, e);
             }
         }
-        // Remove lingering Chart.js reference from Chart registry (Chart 3+)
-        if (window.Chart && window.Chart.instances) {
-            Object.keys(window.Chart.instances).forEach(key => {
-                const chart = window.Chart.instances[key];
-                if (chart && chart.canvas && chart.canvas.id === canvasId) {
-                    delete window.Chart.instances[key];
-                }
-            });
+        
+        // Limpar canvas completamente
+        const canvas = document.getElementById(canvasId);
+        if (canvas) {
+            // Redefinir o tamanho do canvas para forçar limpeza completa
+            const { width, height } = canvas.getBoundingClientRect();
+            canvas.width = width;
+            canvas.height = height;
+            
+            // Limpar contexto
+            const ctx = canvas.getContext('2d');
+            if (ctx) {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                // Resetar transformações
+                ctx.setTransform(1, 0, 0, 1, 0, 0);
+            }
         }
+        
+        // Remover instâncias do registro global do Chart.js
+        if (window.Chart) {
+            // Chart.js v3+
+            if (window.Chart.instances) {
+                Object.keys(window.Chart.instances).forEach(key => {
+                    const chart = window.Chart.instances[key];
+                    if (chart && chart.canvas && chart.canvas.id === canvasId) {
+                        delete window.Chart.instances[key];
+                    }
+                });
+            }
+            
+            // Chart.js v4+ (registry alternativo)
+            if (window.Chart.registry && window.Chart.registry.charts) {
+                window.Chart.registry.charts.forEach((chart, index) => {
+                    if (chart && chart.canvas && chart.canvas.id === canvasId) {
+                        window.Chart.registry.charts.splice(index, 1);
+                    }
+                });
+            }
+        }
+        
+        // Forçar garbage collection do canvas
+        if (canvas) {
+            canvas.style.display = 'none';
+            setTimeout(() => {
+                if (canvas.style) canvas.style.display = '';
+            }, 10);
+        }
+        
         return null;
+    }
+
+    // Função para limpar todos os gráficos e liberar memória
+    function clearAllCharts() {
+        const chartInstances = [
+            { instance: expensesLineChart, canvasId: 'expenses-line-chart' },
+            { instance: expensesPieChart, canvasId: 'expenses-pie-chart' },
+            { instance: planChart, canvasId: 'plan-chart' },
+            { instance: mixedTypeChart, canvasId: 'mixed-type-chart' },
+            { instance: goalsChart, canvasId: 'goals-chart' },
+            { instance: goalsPlanChart, canvasId: 'goals-plan-chart' }
+        ];
+        
+        chartInstances.forEach(({ instance, canvasId }) => {
+            if (instance) {
+                destroyChartInstance(instance, canvasId);
+            }
+        });
+        
+        // Resetar variáveis globais
+        expensesLineChart = null;
+        expensesPieChart = null;
+        planChart = null;
+        mixedTypeChart = null;
+        goalsChart = null;
+        goalsPlanChart = null;
+        
+        console.log('🧹 Todos os gráficos foram limpos da memória');
     }
 
     // ========== FUNÇÕES PARA GASTOS RECORRENTES ==========
