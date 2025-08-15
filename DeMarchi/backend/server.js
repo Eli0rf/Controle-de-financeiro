@@ -1112,7 +1112,8 @@ app.get('/api/business/summary', authenticateToken, async (req, res) => {
         const userId = req.user.id;
         const { year, month } = req.query;
         
-        const [summary] = await pool.query(`
+        // Query principal para resumo
+        let summaryQuery = `
             SELECT 
                 SUM(amount) as total,
                 COUNT(*) as count,
@@ -1123,18 +1124,126 @@ app.get('/api/business/summary', authenticateToken, async (req, res) => {
                 COUNT(CASE WHEN invoice_path IS NULL THEN 1 END) as non_invoiced_count
             FROM expenses 
             WHERE user_id = ? AND is_business_expense = 1
-            ${year ? 'AND YEAR(transaction_date) = ?' : ''}
-            ${month ? 'AND MONTH(transaction_date) = ?' : ''}
-        `, [userId, year, month].filter(Boolean));
+        `;
         
-        res.json(summary[0] || {
-            total: 0, count: 0, average: 0, 
-            invoiced_total: 0, non_invoiced_total: 0,
-            invoiced_count: 0, non_invoiced_count: 0
+        const queryParams = [userId];
+        
+        if (year) {
+            summaryQuery += ' AND YEAR(transaction_date) = ?';
+            queryParams.push(year);
+        }
+        if (month) {
+            summaryQuery += ' AND MONTH(transaction_date) = ?';
+            queryParams.push(month);
+        }
+        
+        const [summary] = await pool.query(summaryQuery, queryParams);
+        
+        // Query para dados por conta
+        let accountQuery = `
+            SELECT account, SUM(amount) as total
+            FROM expenses 
+            WHERE user_id = ? AND is_business_expense = 1
+        `;
+        
+        const accountParams = [userId];
+        if (year) {
+            accountQuery += ' AND YEAR(transaction_date) = ?';
+            accountParams.push(year);
+        }
+        if (month) {
+            accountQuery += ' AND MONTH(transaction_date) = ?';
+            accountParams.push(month);
+        }
+        
+        accountQuery += ' GROUP BY account ORDER BY total DESC';
+        const [accountData] = await pool.query(accountQuery, accountParams);
+        
+        // Query para dados por categoria
+        let categoryQuery = `
+            SELECT description as category, SUM(amount) as total
+            FROM expenses 
+            WHERE user_id = ? AND is_business_expense = 1
+        `;
+        
+        const categoryParams = [userId];
+        if (year) {
+            categoryQuery += ' AND YEAR(transaction_date) = ?';
+            categoryParams.push(year);
+        }
+        if (month) {
+            categoryQuery += ' AND MONTH(transaction_date) = ?';
+            categoryParams.push(month);
+        }
+        
+        categoryQuery += ' GROUP BY description ORDER BY total DESC LIMIT 10';
+        const [categoryData] = await pool.query(categoryQuery, categoryParams);
+        
+        // Organizar dados
+        const byAccount = {};
+        accountData.forEach(item => {
+            byAccount[item.account] = parseFloat(item.total);
         });
+        
+        const byCategory = {};
+        categoryData.forEach(item => {
+            byCategory[item.category] = parseFloat(item.total);
+        });
+        
+        const result = {
+            ...summary[0],
+            total: parseFloat(summary[0]?.total) || 0,
+            count: parseInt(summary[0]?.count) || 0,
+            average: parseFloat(summary[0]?.average) || 0,
+            invoiced_total: parseFloat(summary[0]?.invoiced_total) || 0,
+            non_invoiced_total: parseFloat(summary[0]?.non_invoiced_total) || 0,
+            invoiced_count: parseInt(summary[0]?.invoiced_count) || 0,
+            non_invoiced_count: parseInt(summary[0]?.non_invoiced_count) || 0,
+            byAccount,
+            byCategory
+        };
+        
+        res.json(result);
     } catch (error) {
         console.error('Erro ao buscar resumo empresarial:', error);
         res.status(500).json({ message: 'Erro ao buscar resumo empresarial.' });
+    }
+});
+
+// Nova rota para análise de tendências empresariais
+app.get('/api/business/trends', authenticateToken, async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const { months = 12 } = req.query;
+        
+        // Buscar dados dos últimos N meses
+        const trendsQuery = `
+            SELECT 
+                YEAR(transaction_date) as year,
+                MONTH(transaction_date) as month,
+                SUM(amount) as total,
+                COUNT(*) as count,
+                AVG(amount) as average
+            FROM expenses 
+            WHERE user_id = ? AND is_business_expense = 1
+            AND transaction_date >= DATE_SUB(CURDATE(), INTERVAL ? MONTH)
+            GROUP BY YEAR(transaction_date), MONTH(transaction_date)
+            ORDER BY year, month
+        `;
+        
+        const [trendsData] = await pool.query(trendsQuery, [userId, parseInt(months)]);
+        
+        res.json(trendsData.map(item => ({
+            year: item.year,
+            month: item.month,
+            total: parseFloat(item.total),
+            count: parseInt(item.count),
+            average: parseFloat(item.average)
+        })));
+        
+    } catch (error) {
+        console.error('Erro ao buscar tendências empresariais:', error);
+        res.status(500).json({ message: 'Erro ao buscar tendências empresariais.' });
     }
 });
 

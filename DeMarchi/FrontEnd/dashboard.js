@@ -2560,168 +2560,613 @@ document.addEventListener('DOMContentLoaded', function() {
             const token = getToken();
             if (!token) return;
 
+            showNotification('Carregando análise empresarial...', 'info', 2000);
+
             const year = filterYear.value;
             const month = filterMonth.value;
 
             // Carregar dados empresariais
             const businessData = await fetchBusinessData(year, month);
-            updateBusinessMetrics(businessData);
-            updateBusinessCharts(businessData);
+            
+            console.log('Dados empresariais carregados:', businessData);
+            
+            await updateBusinessMetrics(businessData);
+            await updateBusinessCharts(businessData);
             populateBusinessFilters();
-            loadBusinessExpensesList();
+            await loadBusinessExpensesList();
+
+            showNotification('Análise empresarial carregada com sucesso!', 'success', 3000);
 
         } catch (error) {
             console.error('Erro ao carregar análise empresarial:', error);
-            showNotification('Erro ao carregar dados empresariais', 'error');
+            showNotification('Erro ao carregar dados empresariais: ' + error.message, 'error');
         }
     }
 
     async function fetchBusinessData(year, month) {
-        const response = await authenticatedFetch(`${API_BASE_URL}/api/expenses?year=${year}&month=${month}`);
-        
-        if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.message || 'Erro ao buscar dados');
+        try {
+            // Usar a nova API de resumo empresarial
+            const response = await authenticatedFetch(`${API_BASE_URL}/api/business/summary?year=${year}&month=${month}`);
+            
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.message || 'Erro ao buscar dados empresariais');
+            }
+            
+            const businessSummary = await response.json();
+            
+            console.log('Resumo empresarial da API:', businessSummary);
+            
+            return {
+                total: parseFloat(businessSummary.total) || 0,
+                count: parseInt(businessSummary.count) || 0,
+                average: parseFloat(businessSummary.average) || 0,
+                invoiced: parseFloat(businessSummary.invoiced_total) || 0,
+                nonInvoiced: parseFloat(businessSummary.non_invoiced_total) || 0,
+                invoiced_count: parseInt(businessSummary.invoiced_count) || 0,
+                non_invoiced_count: parseInt(businessSummary.non_invoiced_count) || 0,
+                byAccount: businessSummary.byAccount || {},
+                byCategory: businessSummary.byCategory || {}
+            };
+        } catch (error) {
+            console.error('Erro ao buscar dados empresariais:', error);
+            
+            // Fallback para o método antigo se a nova API falhar
+            console.log('Tentando método alternativo...');
+            
+            const response = await authenticatedFetch(`${API_BASE_URL}/api/expenses?year=${year}&month=${month}`);
+            
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.message || 'Erro ao buscar dados');
+            }
+            
+            const allExpenses = await response.json();
+            const businessExpenses = allExpenses.filter(expense => expense.is_business_expense);
+            
+            return {
+                total: businessExpenses.reduce((sum, exp) => sum + parseFloat(exp.amount), 0),
+                count: businessExpenses.length,
+                average: businessExpenses.length > 0 ? businessExpenses.reduce((sum, exp) => sum + parseFloat(exp.amount), 0) / businessExpenses.length : 0,
+                invoiced: businessExpenses.filter(exp => exp.invoice_path).reduce((sum, exp) => sum + parseFloat(exp.amount), 0),
+                nonInvoiced: businessExpenses.filter(exp => !exp.invoice_path).reduce((sum, exp) => sum + parseFloat(exp.amount), 0),
+                invoiced_count: businessExpenses.filter(exp => exp.invoice_path).length,
+                non_invoiced_count: businessExpenses.filter(exp => !exp.invoice_path).length,
+                byAccount: groupByAccount(businessExpenses),
+                byCategory: groupByCategory(businessExpenses)
+            };
         }
-        
-        const allExpenses = await response.json();
-        const businessExpenses = allExpenses.filter(expense => expense.is_business_expense);
-        
-        return {
-            total: businessExpenses.reduce((sum, exp) => sum + parseFloat(exp.amount), 0),
-            expenses: businessExpenses,
-            invoiced: businessExpenses.filter(exp => exp.invoice_path).reduce((sum, exp) => sum + parseFloat(exp.amount), 0),
-            nonInvoiced: businessExpenses.filter(exp => !exp.invoice_path).reduce((sum, exp) => sum + parseFloat(exp.amount), 0),
-            byAccount: groupByAccount(businessExpenses),
-            byCategory: groupByCategory(businessExpenses)
-        };
     }
 
-    function updateBusinessMetrics(data) {
+    async function updateBusinessMetrics(data) {
         const businessTotal = document.getElementById('business-total');
         const businessGrowth = document.getElementById('business-growth');
         const businessInvoiced = document.getElementById('business-invoiced');
         const businessNonInvoiced = document.getElementById('business-non-invoiced');
 
-        if (businessTotal) businessTotal.textContent = `R$ ${data.total.toFixed(2)}`;
-        if (businessInvoiced) businessInvoiced.textContent = `R$ ${data.invoiced.toFixed(2)}`;
-        if (businessNonInvoiced) businessNonInvoiced.textContent = `R$ ${data.nonInvoiced.toFixed(2)}`;
+        if (businessTotal) businessTotal.textContent = `R$ ${data.total.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
+        if (businessInvoiced) businessInvoiced.textContent = `R$ ${data.invoiced.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
+        if (businessNonInvoiced) businessNonInvoiced.textContent = `R$ ${data.nonInvoiced.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
         
-        // Calcular crescimento (exemplo básico)
-        if (businessGrowth) businessGrowth.textContent = '+0%'; // Implementar cálculo de crescimento
+        // Calcular crescimento comparando com mês anterior
+        try {
+            const currentDate = new Date();
+            const lastMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1);
+            const year = lastMonth.getFullYear();
+            const month = lastMonth.getMonth() + 1;
+            
+            const response = await authenticatedFetch(`${API_BASE_URL}/api/business/summary?year=${year}&month=${month}`);
+            
+            if (response.ok) {
+                const lastMonthData = await response.json();
+                const lastMonthTotal = parseFloat(lastMonthData.total) || 0;
+                
+                if (lastMonthTotal > 0) {
+                    const growthRate = ((data.total - lastMonthTotal) / lastMonthTotal * 100);
+                    const growthText = growthRate >= 0 ? `+${growthRate.toFixed(1)}%` : `${growthRate.toFixed(1)}%`;
+                    const growthColor = growthRate >= 0 ? 'text-green-600' : 'text-red-600';
+                    
+                    if (businessGrowth) {
+                        businessGrowth.textContent = growthText;
+                        businessGrowth.className = `font-semibold ${growthColor}`;
+                    }
+                } else {
+                    if (businessGrowth) {
+                        businessGrowth.textContent = 'N/A';
+                        businessGrowth.className = 'font-semibold text-gray-500';
+                    }
+                }
+            } else {
+                if (businessGrowth) {
+                    businessGrowth.textContent = 'N/A';
+                    businessGrowth.className = 'font-semibold text-gray-500';
+                }
+            }
+        } catch (error) {
+            console.warn('Erro ao calcular crescimento:', error);
+            if (businessGrowth) {
+                businessGrowth.textContent = 'N/A';
+                businessGrowth.className = 'font-semibold text-gray-500';
+            }
+        }
     }
 
-    function updateBusinessCharts(data) {
-        // Chart de evolução mensal
-        updateBusinessEvolutionChart(data);
-        
-        // Chart por conta
-        updateBusinessAccountChart(data);
-        
-        // Chart por categoria
-        updateBusinessCategoryChart(data);
+    async function updateBusinessCharts(data) {
+        try {
+            // Aguardar Chart.js estar carregado antes de criar gráficos
+            if (!await waitForChartJs()) {
+                console.warn('Chart.js não carregado para gráficos empresariais');
+                showNotification('Carregando biblioteca de gráficos...', 'info', 3000);
+                return;
+            }
+
+            console.log('Atualizando gráficos empresariais com dados:', data);
+
+            // Chart de evolução mensal com análise de tendências
+            await updateBusinessEvolutionChart(data);
+            
+            // Chart por conta
+            await updateBusinessAccountChart(data);
+            
+            // Chart por categoria
+            await updateBusinessCategoryChart(data);
+
+            console.log('Gráficos empresariais atualizados com sucesso');
+
+        } catch (error) {
+            console.error('Erro ao atualizar gráficos empresariais:', error);
+            showNotification('Erro ao carregar análise empresarial', 'error');
+        }
     }
 
-    function updateBusinessEvolutionChart(data) {
+    async function updateBusinessEvolutionChart(data) {
         const ctx = document.getElementById('business-evolution-chart');
         if (!ctx) return;
 
-        if (window.businessEvolutionChart) {
-            window.businessEvolutionChart.destroy();
+        // Aguardar Chart.js estar carregado
+        if (!await waitForChartJs()) {
+            console.warn('Chart.js não carregado para business evolution chart');
+            return;
         }
 
-        window.businessEvolutionChart = new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels: ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'],
-                datasets: [{
-                    label: 'Gastos Empresariais',
-                    data: [data.total, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], // Implementar dados reais
-                    borderColor: 'rgb(239, 68, 68)',
-                    backgroundColor: 'rgba(239, 68, 68, 0.1)',
-                    tension: 0.4
-                }]
-            },
-            options: {
-                responsive: true,
-                plugins: {
-                    legend: { display: true }
-                },
-                scales: {
-                    y: { beginAtZero: true }
-                }
+        // Destruir gráfico existente de forma segura
+        destroyChartInstance('businessEvolutionChart');
+
+        try {
+            // Obter dados de tendência dos últimos 12 meses
+            const trendData = await fetchBusinessTrendData();
+            
+            const datasets = [{
+                label: 'Gastos Empresariais',
+                data: trendData.monthlyData,
+                borderColor: 'rgb(239, 68, 68)',
+                backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                tension: 0.4,
+                fill: true
+            }];
+
+            // Adicionar linha de tendência se há dados suficientes
+            if (trendData.monthlyData.filter(d => d > 0).length >= 3) {
+                const trendLine = calculateTrendLine(trendData.monthlyData);
+                datasets.push({
+                    label: 'Tendência',
+                    data: trendLine,
+                    borderColor: 'rgba(59, 130, 246, 0.8)',
+                    backgroundColor: 'transparent',
+                    borderDash: [5, 5],
+                    tension: 0,
+                    pointRadius: 0
+                });
             }
+
+            window.businessEvolutionChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: trendData.labels,
+                    datasets: datasets
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { 
+                            display: true,
+                            position: 'top'
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return `${context.dataset.label}: R$ ${context.parsed.y.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        y: { 
+                            beginAtZero: true,
+                            ticks: {
+                                callback: function(value) {
+                                    return 'R$ ' + value.toLocaleString('pt-BR', {minimumFractionDigits: 0});
+                                }
+                            }
+                        }
+                    },
+                    interaction: {
+                        intersect: false,
+                        mode: 'index'
+                    }
+                }
+            });
+
+            // Gerar recomendações baseadas na tendência
+            generateBusinessRecommendations(trendData);
+
+        } catch (error) {
+            console.error('Erro ao criar gráfico de evolução empresarial:', error);
+            showNotification('Erro ao carregar análise de tendências', 'error');
+        }
         });
     }
 
-    function updateBusinessAccountChart(data) {
+    async function updateBusinessAccountChart(data) {
         const ctx = document.getElementById('business-account-chart');
         if (!ctx) return;
 
-        if (window.businessAccountChart) {
-            window.businessAccountChart.destroy();
+        // Aguardar Chart.js estar carregado
+        if (!await waitForChartJs()) {
+            console.warn('Chart.js não carregado para business account chart');
+            return;
         }
 
-        const accounts = Object.keys(data.byAccount);
-        const values = Object.values(data.byAccount);
+        // Destruir gráfico existente de forma segura
+        destroyChartInstance('businessAccountChart');
 
-        window.businessAccountChart = new Chart(ctx, {
-            type: 'doughnut',
-            data: {
-                labels: accounts,
-                datasets: [{
-                    data: values,
-                    backgroundColor: [
-                        'rgba(59, 130, 246, 0.8)',
-                        'rgba(16, 185, 129, 0.8)',
-                        'rgba(245, 158, 11, 0.8)',
-                        'rgba(239, 68, 68, 0.8)',
-                        'rgba(139, 92, 246, 0.8)'
-                    ]
-                }]
-            },
-            options: {
-                responsive: true,
-                plugins: {
-                    legend: { position: 'bottom' }
-                }
+        try {
+            const accounts = Object.keys(data.byAccount || {});
+            const values = Object.values(data.byAccount || {});
+
+            if (accounts.length === 0) {
+                console.log('Nenhum dado de conta empresarial disponível');
+                return;
             }
+
+            window.businessAccountChart = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: accounts,
+                    datasets: [{
+                        data: values,
+                        backgroundColor: [
+                            'rgba(59, 130, 246, 0.8)',
+                            'rgba(16, 185, 129, 0.8)',
+                            'rgba(245, 158, 11, 0.8)',
+                            'rgba(239, 68, 68, 0.8)',
+                            'rgba(139, 92, 246, 0.8)',
+                            'rgba(236, 72, 153, 0.8)',
+                            'rgba(14, 165, 233, 0.8)'
+                        ],
+                        borderWidth: 2,
+                        borderColor: 'rgba(255, 255, 255, 0.8)'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { 
+                            position: 'bottom',
+                            labels: {
+                                padding: 20,
+                                usePointStyle: true
+                            }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    const total = context.dataset.data.reduce((sum, val) => sum + val, 0);
+                                    const percentage = ((context.parsed / total) * 100).toFixed(1);
+                                    return `${context.label}: R$ ${context.parsed.toLocaleString('pt-BR', {minimumFractionDigits: 2})} (${percentage}%)`;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+
+        } catch (error) {
+            console.error('Erro ao criar gráfico de contas empresariais:', error);
+            showNotification('Erro ao carregar gráfico de contas', 'error');
+        }
         });
     }
 
-    function updateBusinessCategoryChart(data) {
+    // ====== FUNÇÕES DE ANÁLISE DE TENDÊNCIAS ======
+    
+    async function fetchBusinessTrendData() {
+        try {
+            const response = await fetch(`${API_BASE_URL}/api/business/trends?months=12`, {
+                headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+            });
+            
+            if (!response.ok) {
+                throw new Error('Erro ao buscar dados de tendência');
+            }
+            
+            const trendsData = await response.json();
+            
+            // Criar arrays para os últimos 12 meses
+            const currentDate = new Date();
+            const monthlyData = [];
+            const labels = [];
+            
+            // Gerar labels e dados para os últimos 12 meses
+            for (let i = 11; i >= 0; i--) {
+                const date = new Date(currentDate.getFullYear(), currentDate.getMonth() - i, 1);
+                const year = date.getFullYear();
+                const month = date.getMonth() + 1;
+                
+                labels.push(date.toLocaleDateString('pt-BR', { month: 'short' }));
+                
+                // Procurar dados correspondentes na resposta da API
+                const monthData = trendsData.find(item => 
+                    item.year === year && item.month === month
+                );
+                
+                monthlyData.push(monthData ? monthData.total : 0);
+            }
+            
+            return { 
+                monthlyData, 
+                labels,
+                rawData: trendsData 
+            };
+            
+        } catch (error) {
+            console.error('Erro ao buscar dados de tendência:', error);
+            showNotification('Erro ao carregar dados de tendência', 'warning', 3000);
+            
+            // Fallback para dados vazios
+            return {
+                monthlyData: Array(12).fill(0),
+                labels: ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'],
+                rawData: []
+            };
+        }
+    }
+
+    function calculateTrendLine(data) {
+        const n = data.length;
+        const x = Array.from({length: n}, (_, i) => i);
+        const y = data;
+        
+        const sumX = x.reduce((a, b) => a + b, 0);
+        const sumY = y.reduce((a, b) => a + b, 0);
+        const sumXY = x.reduce((sum, xi, i) => sum + xi * y[i], 0);
+        const sumXX = x.reduce((sum, xi) => sum + xi * xi, 0);
+        
+        const slope = (n * sumXY - sumX * sumY) / (n * sumXX - sumX * sumX);
+        const intercept = (sumY - slope * sumX) / n;
+        
+        return x.map(xi => slope * xi + intercept);
+    }
+
+    function generateBusinessRecommendations(trendData) {
+        try {
+            const { monthlyData, rawData } = trendData;
+            const recentData = monthlyData.slice(-6); // Últimos 6 meses
+            const hasData = recentData.some(value => value > 0);
+            
+            if (!hasData) {
+                console.log('Não há dados suficientes para gerar recomendações');
+                return;
+            }
+
+            const recommendations = [];
+            const nonZeroData = recentData.filter(v => v > 0);
+            const average = nonZeroData.reduce((sum, val) => sum + val, 0) / nonZeroData.length;
+            const lastMonth = recentData[recentData.length - 1];
+            const secondLastMonth = recentData[recentData.length - 2];
+            
+            // Análise de crescimento mensal
+            if (lastMonth > 0 && secondLastMonth > 0) {
+                const growthRate = ((lastMonth / secondLastMonth - 1) * 100);
+                if (growthRate > 20) {
+                    recommendations.push({
+                        type: 'warning',
+                        title: '📈 Crescimento Significativo',
+                        message: `Gastos empresariais aumentaram ${growthRate.toFixed(1)}% no último mês. Revisar orçamento e categorias.`,
+                        priority: 'high'
+                    });
+                } else if (growthRate < -20) {
+                    recommendations.push({
+                        type: 'success',
+                        title: '📉 Redução Significativa',
+                        message: `Excelente! Gastos empresariais reduziram ${Math.abs(growthRate).toFixed(1)}% no último mês.`,
+                        priority: 'low'
+                    });
+                }
+            }
+            
+            // Análise de variabilidade
+            if (nonZeroData.length >= 3) {
+                const variance = nonZeroData.reduce((sum, val) => sum + Math.pow(val - average, 2), 0) / nonZeroData.length;
+                const stdDev = Math.sqrt(variance);
+                const coefficientOfVariation = stdDev / average;
+                
+                if (coefficientOfVariation > 0.4) {
+                    recommendations.push({
+                        type: 'info',
+                        title: '📊 Gastos Inconsistentes',
+                        message: `Variabilidade alta nos gastos (${(coefficientOfVariation * 100).toFixed(1)}%). Considere um planejamento mais regular.`,
+                        priority: 'medium'
+                    });
+                }
+            }
+            
+            // Análise de tendência
+            const firstHalf = recentData.slice(0, 3).filter(v => v > 0);
+            const secondHalf = recentData.slice(3).filter(v => v > 0);
+            
+            if (firstHalf.length > 0 && secondHalf.length > 0) {
+                const firstAvg = firstHalf.reduce((sum, val) => sum + val, 0) / firstHalf.length;
+                const secondAvg = secondHalf.reduce((sum, val) => sum + val, 0) / secondHalf.length;
+                
+                if (secondAvg > firstAvg * 1.15) {
+                    recommendations.push({
+                        type: 'warning',
+                        title: '⚠️ Tendência Crescente',
+                        message: `Gastos aumentaram ${((secondAvg / firstAvg - 1) * 100).toFixed(1)}% nos últimos 3 meses. Monitorar de perto.`,
+                        priority: 'high'
+                    });
+                } else if (secondAvg < firstAvg * 0.85) {
+                    recommendations.push({
+                        type: 'success',
+                        title: '✅ Otimização Bem-sucedida',
+                        message: `Gastos reduziram ${((1 - secondAvg / firstAvg) * 100).toFixed(1)}% nos últimos 3 meses. Continue assim!`,
+                        priority: 'low'
+                    });
+                }
+            }
+            
+            // Análise sazonal (se há dados de mais de 6 meses)
+            if (rawData && rawData.length >= 6) {
+                const monthlyTotals = rawData.reduce((acc, item) => {
+                    const monthKey = item.month;
+                    if (!acc[monthKey]) acc[monthKey] = [];
+                    acc[monthKey].push(item.total);
+                    return acc;
+                }, {});
+                
+                // Identificar meses com gastos consistentemente altos
+                const highSpendingMonths = Object.entries(monthlyTotals)
+                    .filter(([month, totals]) => totals.length > 1)
+                    .filter(([month, totals]) => {
+                        const avg = totals.reduce((sum, val) => sum + val, 0) / totals.length;
+                        return avg > average * 1.2;
+                    })
+                    .map(([month]) => {
+                        const monthNames = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+                        return monthNames[parseInt(month) - 1];
+                    });
+                
+                if (highSpendingMonths.length > 0) {
+                    recommendations.push({
+                        type: 'info',
+                        title: '📅 Padrão Sazonal',
+                        message: `Meses com gastos tradicionalmente altos: ${highSpendingMonths.join(', ')}. Planeje com antecedência.`,
+                        priority: 'medium'
+                    });
+                }
+            }
+            
+            // Recomendação de meta baseada na média
+            if (average > 0) {
+                const suggestedLimit = average * 1.1; // 10% acima da média
+                recommendations.push({
+                    type: 'info',
+                    title: '💡 Sugestão de Meta',
+                    message: `Com base no histórico, considere uma meta mensal de R$ ${suggestedLimit.toLocaleString('pt-BR', {minimumFractionDigits: 2})}.`,
+                    priority: 'low'
+                });
+            }
+            
+            // Exibir recomendações
+            displayBusinessRecommendations(recommendations);
+            
+        } catch (error) {
+            console.error('Erro ao gerar recomendações:', error);
+        }
+    }
+
+    function displayBusinessRecommendations(recommendations) {
+        // Filtrar por prioridade e limitar quantidade
+        const highPriority = recommendations.filter(r => r.priority === 'high').slice(0, 2);
+        const mediumPriority = recommendations.filter(r => r.priority === 'medium').slice(0, 1);
+        const lowPriority = recommendations.filter(r => r.priority === 'low').slice(0, 1);
+        
+        const toShow = [...highPriority, ...mediumPriority, ...lowPriority];
+        
+        toShow.forEach((rec, index) => {
+            setTimeout(() => {
+                showNotification(
+                    `${rec.title}: ${rec.message}`,
+                    rec.type,
+                    rec.priority === 'high' ? 8000 : 5000
+                );
+            }, index * 2000); // Espaçar notificações
+        });
+    }
+
+    async function updateBusinessCategoryChart(data) {
         const ctx = document.getElementById('business-category-chart');
         if (!ctx) return;
 
-        if (window.businessCategoryChart) {
-            window.businessCategoryChart.destroy();
+        // Aguardar Chart.js estar carregado
+        if (!await waitForChartJs()) {
+            console.warn('Chart.js não carregado para business category chart');
+            return;
         }
 
-        const categories = Object.keys(data.byCategory);
-        const values = Object.values(data.byCategory);
+        // Destruir gráfico existente de forma segura
+        destroyChartInstance('businessCategoryChart');
 
-        window.businessCategoryChart = new Chart(ctx, {
-            type: 'bar',
-            data: {
-                labels: categories,
-                datasets: [{
-                    label: 'Valor por Categoria',
-                    data: values,
-                    backgroundColor: 'rgba(59, 130, 246, 0.8)',
-                    borderColor: 'rgba(59, 130, 246, 1)',
-                    borderWidth: 1
-                }]
-            },
-            options: {
-                responsive: true,
-                plugins: {
-                    legend: { display: false }
-                },
-                scales: {
-                    y: { beginAtZero: true }
-                }
+        try {
+            const categories = Object.keys(data.byCategory || {});
+            const values = Object.values(data.byCategory || {});
+
+            if (categories.length === 0) {
+                console.log('Nenhum dado de categoria empresarial disponível');
+                return;
             }
-        });
+
+            window.businessCategoryChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: categories,
+                    datasets: [{
+                        label: 'Valor por Categoria',
+                        data: values,
+                        backgroundColor: 'rgba(59, 130, 246, 0.8)',
+                        borderColor: 'rgba(59, 130, 246, 1)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return `${context.dataset.label}: R$ ${context.parsed.y.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        y: { 
+                            beginAtZero: true,
+                            ticks: {
+                                callback: function(value) {
+                                    return 'R$ ' + value.toLocaleString('pt-BR', {minimumFractionDigits: 0});
+                                }
+                            }
+                        },
+                        x: {
+                            ticks: {
+                                maxRotation: 45,
+                                minRotation: 0
+                            }
+                        }
+                    }
+                }
+            });
+
+        } catch (error) {
+            console.error('Erro ao criar gráfico de categorias empresariais:', error);
+            showNotification('Erro ao carregar gráfico de categorias', 'error');
+        }
     }
 
     function populateBusinessFilters() {
