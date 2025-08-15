@@ -131,6 +131,68 @@ document.addEventListener('DOMContentLoaded', function() {
         return response;
     }
 
+    // Função para download autenticado de faturas
+    window.downloadInvoice = async function(expenseId) {
+        try {
+            const token = localStorage.getItem('token');
+            if (!token) {
+                showNotification('Você precisa estar logado para baixar faturas', 'error');
+                return;
+            }
+
+            // Mostrar loading
+            showNotification('Baixando fatura...', 'info');
+
+            const response = await fetch(`${API_BASE_URL}/api/invoice/${expenseId}`, {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Accept': '*/*'
+                },
+                mode: 'cors',
+                credentials: 'include'
+            });
+
+            if (response.ok) {
+                // Obter o nome do arquivo dos headers
+                const contentDisposition = response.headers.get('Content-Disposition');
+                let filename = 'fatura.pdf';
+                if (contentDisposition) {
+                    const filenameMatch = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
+                    if (filenameMatch) {
+                        filename = filenameMatch[1].replace(/['"]/g, '');
+                    }
+                }
+
+                // Criar blob e fazer download
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.style.display = 'none';
+                a.href = url;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                document.body.removeChild(a);
+
+                showNotification('Fatura baixada com sucesso!', 'success');
+            } else if (response.status === 404) {
+                const error = await response.json();
+                showNotification(error.message || 'Fatura não encontrada', 'error');
+            } else if (response.status === 401 || response.status === 403) {
+                showNotification('Acesso negado. Faça login novamente.', 'error');
+                handleAuthError(response);
+            } else {
+                const error = await response.json();
+                showNotification(error.message || 'Erro ao baixar fatura', 'error');
+            }
+        } catch (error) {
+            console.error('Erro ao baixar fatura:', error);
+            showNotification('Erro de conexão ao baixar fatura', 'error');
+        }
+    }
+
     function addEventListeners() {
         if (loginForm) loginForm.addEventListener('submit', handleLogin);
         if (logoutButton) logoutButton.addEventListener('click', handleLogout);
@@ -571,7 +633,10 @@ document.addEventListener('DOMContentLoaded', function() {
         if (expenses.length > 0) {
             expenses.forEach(expense => {
                 totalSpent += parseFloat(expense.amount);
-                const invoiceLink = expense.invoice_path ? `<a href="${FILE_BASE_URL}/${expense.invoice_path}" target="_blank" class="text-blue-600"><i class="fas fa-file-invoice"></i></a>` : 'N/A';
+                const invoiceLink = expense.invoice_path ? 
+                    `<button onclick="downloadInvoice(${expense.id})" class="text-blue-600 hover:text-blue-800" title="Baixar fatura">
+                        <i class="fas fa-file-invoice"></i>
+                    </button>` : 'N/A';
                 // Corrigido: mostra plano de conta corretamente, inclusive string vazia ou null
                 let planCode = '-';
                 if (expense.account_plan_code !== null && expense.account_plan_code !== undefined && expense.account_plan_code !== '') {
@@ -1300,151 +1365,573 @@ document.addEventListener('DOMContentLoaded', function() {
         irDetails.scrollIntoView({ behavior: 'smooth' });
     }
 
-    // ========== NOVO CÓDIGO PARA CONSULTA DE FATURAMENTO =========
+    // ========== SISTEMA DE CONSULTA DE FATURAMENTO APRIMORADO =========
     const billingForm = document.getElementById('billing-period-form');
     const billingResults = document.getElementById('billing-results');
 
-    // Definição dos períodos de fatura para cada conta
+    // Definição aprimorada dos períodos de fatura para cada conta
     const billingPeriods = {
-        'Nu Bank Ketlyn': { startDay: 2, endDay: 1 },
-        'Nu Vainer': { startDay: 2, endDay: 1 },
-        'Ourocard Ketlyn': { startDay: 17, endDay: 16 },
-        'PicPay Vainer': { startDay: 1, endDay: 30 },
-        'Ducatto': { startDay: 1, endDay: 30 },
-        'Master': { startDay: 1, endDay: 30 }
+        'Nu Bank Ketlyn': { 
+            type: 'credit_card',
+            startDay: 2, 
+            endDay: 1,
+            description: 'Cartão de Crédito Nubank'
+        },
+        'Nu Vainer': { 
+            type: 'credit_card',
+            startDay: 2, 
+            endDay: 1,
+            description: 'Cartão de Crédito Nubank'
+        },
+        'Ourocard Ketlyn': { 
+            type: 'credit_card',
+            startDay: 17, 
+            endDay: 16,
+            description: 'Cartão de Crédito Ourocard'
+        },
+        'PicPay Vainer': { 
+            type: 'debit_account',
+            startDay: 1, 
+            endDay: 'last_day',
+            description: 'Conta Digital PicPay'
+        },
+        'Ducatto': { 
+            type: 'debit_account',
+            startDay: 1, 
+            endDay: 'last_day',
+            description: 'Conta Ducatto'
+        },
+        'Master': { 
+            type: 'credit_card',
+            startDay: 1, 
+            endDay: 'last_day',
+            description: 'Cartão Master'
+        }
     };
 
-    billingForm.addEventListener('submit', async function(e) {
-        e.preventDefault();
-
-        // Use o ano e mês dos filtros principais do histórico de despesas
-        const filterYearEl = document.getElementById('filter-year');
-        const filterMonthEl = document.getElementById('filter-month');
-        const year = filterYearEl && filterYearEl.value ? parseInt(filterYearEl.value, 10) : new Date().getFullYear();
-        const month = filterMonthEl && filterMonthEl.value ? parseInt(filterMonthEl.value, 10) : (new Date().getMonth() + 1);
-
-        // Alternativamente, se quiser usar o mês do select do quadro de fatura:
-        // const month = parseInt(document.getElementById('billing-month').value, 10);
-
-        if (!month) {
-            alert('Por favor, selecione um mês.');
-            return;
+    /**
+     * Calcula as datas de início e fim do período de fatura
+     * @param {string} account - Nome da conta
+     * @param {number} year - Ano de referência
+     * @param {number} month - Mês de referência (1-12)
+     * @returns {Object} Objeto com startDate e endDate
+     */
+    function calculateBillingPeriod(account, year, month) {
+        const period = billingPeriods[account];
+        if (!period) {
+            throw new Error(`Período de fatura não definido para a conta: ${account}`);
         }
 
-        // Lista das contas exatamente como no banco de dados
-        const accounts = [
-            'Nu Bank Ketlyn',
-            'Nu Vainer',
-            'Ourocard Ketlyn',
-            'PicPay Vainer',
-            'Ducatto',
-            'Master'
-        ];
+        let startDate, endDate;
 
-        billingResults.innerHTML = '<div class="text-gray-500 mb-2">Buscando dados...</div>';
-
-        // Busca e exibe resultados para cada conta
-        const allResults = await Promise.all(accounts.map(async (account) => {
-            const period = billingPeriods[account];
-            if (!period) return { account, error: 'Conta inválida.' };
-
-            // Calcula o intervalo de datas para o período vigente
-            let startDate, endDate;
-            if (account === 'Nu Bank Ketlyn' || account === 'Nu Vainer') {
-                // Nubank: do dia 2 do mês até dia 1 do mês seguinte (inclusive)
-                startDate = new Date(year, month - 1, 2);
-                endDate = new Date(year, month, 1);
-            } else if (account === 'Ourocard Ketlyn') {
-                // Ourocard: do dia 17 do mês até dia 16 do mês seguinte (inclusive)
-                startDate = new Date(year, month - 1, 17);
-                endDate = new Date(year, month, 16);
-            } else {
-                // fallback
+        if (period.type === 'credit_card') {
+            // Para cartões de crédito, o período vai do dia X do mês anterior até o dia Y do mês atual
+            if (period.endDay === 'last_day') {
+                // Do primeiro dia do mês até o último dia do mês
                 startDate = new Date(year, month - 1, 1);
-                endDate = new Date(year, month, 0);
+                endDate = new Date(year, month, 0); // Último dia do mês
+            } else {
+                // Período personalizado (ex: dia 2 até dia 1 do mês seguinte)
+                startDate = new Date(year, month - 1, period.startDay);
+                endDate = new Date(year, month, period.endDay);
             }
-
-            try {
-                const response = await authenticatedFetch(
-                    `${API_BASE_URL}/api/expenses?account=${encodeURIComponent(account)}&start_date=${startDate.toISOString().slice(0, 10)}&end_date=${endDate.toISOString().slice(0, 10)}`
-                );
-                if (!response.ok) throw new Error('Erro ao buscar dados.');
-                const expenses = await response.json();
-
-                // Filtra os gastos para garantir que estejam dentro do intervalo
-                const filteredExpenses = expenses.filter(expense => {
-                    const expenseDate = new Date(expense.transaction_date);
-                    return expenseDate >= startDate && expenseDate <= endDate;
-                });
-
-                return { account, startDate, endDate, expenses: filteredExpenses };
-            } catch (error) {
-                return { account, error: error.message };
+        } else {
+            // Para contas de débito, normalmente é o mês completo
+            startDate = new Date(year, month - 1, period.startDay);
+            if (period.endDay === 'last_day') {
+                endDate = new Date(year, month, 0); // Último dia do mês
+            } else {
+                endDate = new Date(year, month - 1, period.endDay);
             }
-        }));
-
-        // Renderiza os resultados de todas as contas
-        billingResults.innerHTML = '';
-        allResults.forEach(result => {
-            if (result.error) {
-                billingResults.innerHTML += `<div class="mb-6"><h4 class="text-lg font-semibold text-gray-700 mb-2">${result.account}</h4><p class="text-red-600">${result.error}</p></div>`;
-                return;
-            }
-            billingResults.innerHTML += renderBillingResultsBlock(result.expenses, result.account, result.startDate, result.endDate);
-        });
-    });
-
-    // Função para renderizar o bloco de resultados de uma conta
-    function renderBillingResultsBlock(expenses, account, startDate, endDate) {
-        let html = `
-            <div class="mb-8">
-                <h4 class="text-lg font-semibold text-gray-700 mb-2">Resultados para ${account}</h4>
-                <p class="text-sm text-gray-500 mb-2">Período: ${startDate.toLocaleDateString('pt-BR')} a ${endDate.toLocaleDateString('pt-BR')}</p>
-        `;
-
-        if (!expenses || expenses.length === 0) {
-            html += `<p class="text-gray-500">Nenhum gasto encontrado neste período.</p></div>`;
-            return html;
         }
 
-        const groupedByDay = groupExpensesByDay(expenses);
+        // Ajustar para timezone UTC para evitar problemas
+        startDate.setUTCHours(0, 0, 0, 0);
+        endDate.setUTCHours(23, 59, 59, 999);
 
-        html += `
-            <div class="overflow-x-auto">
-            <table class="table table-bordered w-full text-sm">
-                <thead>
-                    <tr>
-                        <th>Dia</th>
-                        <th>Descrição</th>
-                        <th>Valor</th>
-                        <th>Conta</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    ${Object.keys(groupedByDay).map(day => `
-                        <tr>
-                            <td>${day}</td>
-                            <td>${groupedByDay[day].map(expense => expense.description).join(', ')}</td>
-                            <td>R$ ${groupedByDay[day].reduce((sum, expense) => sum + parseFloat(expense.amount), 0).toFixed(2)}</td>
-                            <td>${groupedByDay[day][0].account}</td>
-                        </tr>
-                    `).join('')}
-                </tbody>
-            </table>
-            </div>
-        </div>
-        `;
-        return html;
+        return { startDate, endDate };
     }
 
+    /**
+     * Busca gastos otimizada que usa parâmetros de data no servidor
+     */
+    async function fetchExpensesForBillingPeriod(account, startDate, endDate) {
+        try {
+            const params = new URLSearchParams({
+                account: account,
+                start_date: startDate.toISOString().slice(0, 10),
+                end_date: endDate.toISOString().slice(0, 10)
+            });
+
+            const response = await authenticatedFetch(`${API_BASE_URL}/api/expenses?${params.toString()}`);
+            
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({ message: 'Erro desconhecido' }));
+                throw new Error(errorData.message || `Erro ${response.status}: ${response.statusText}`);
+            }
+            
+            const expenses = await response.json();
+            
+            // Filtro adicional no frontend para garantir precisão (com timezone)
+            return expenses.filter(expense => {
+                const expenseDate = new Date(expense.transaction_date + 'T00:00:00.000Z'); // Forçar UTC
+                return expenseDate >= startDate && expenseDate <= endDate;
+            });
+
+        } catch (error) {
+            console.error(`Erro ao buscar gastos para ${account}:`, error);
+            throw error;
+        }
+    }
+
+    // Event listener aprimorado para o formulário de faturamento
+    if (billingForm) {
+        billingForm.addEventListener('submit', async function(e) {
+            e.preventDefault();
+
+            // Pegar ano e mês dos filtros principais
+            const filterYearEl = document.getElementById('filter-year');
+            const filterMonthEl = document.getElementById('filter-month');
+            
+            const year = filterYearEl && filterYearEl.value ? 
+                parseInt(filterYearEl.value, 10) : new Date().getFullYear();
+            const month = filterMonthEl && filterMonthEl.value ? 
+                parseInt(filterMonthEl.value, 10) : (new Date().getMonth() + 1);
+
+            if (!year || !month || month < 1 || month > 12) {
+                showNotification('Por favor, selecione um ano e mês válidos.', 'error');
+                return;
+            }
+
+            // Lista de contas disponíveis
+            const accounts = Object.keys(billingPeriods);
+            
+            // Mostrar loading
+            billingResults.innerHTML = `
+                <div class="flex items-center justify-center p-8">
+                    <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                    <span class="ml-3 text-gray-600">Buscando dados de faturamento...</span>
+                </div>
+            `;
+
+            try {
+                // Processar cada conta em paralelo com limite de concorrência
+                const accountPromises = accounts.map(async (account) => {
+                    try {
+                        const { startDate, endDate } = calculateBillingPeriod(account, year, month);
+                        const expenses = await fetchExpensesForBillingPeriod(account, startDate, endDate);
+                        
+                        return {
+                            account,
+                            startDate,
+                            endDate,
+                            expenses,
+                            success: true,
+                            period: billingPeriods[account]
+                        };
+                    } catch (error) {
+                        return {
+                            account,
+                            error: error.message,
+                            success: false,
+                            period: billingPeriods[account]
+                        };
+                    }
+                });
+
+                const results = await Promise.all(accountPromises);
+                
+                // Renderizar resultados
+                renderBillingResults(results, year, month);
+
+            } catch (error) {
+                console.error('Erro geral na consulta de faturamento:', error);
+                billingResults.innerHTML = `
+                    <div class="bg-red-50 border border-red-200 rounded-lg p-4">
+                        <div class="flex">
+                            <i class="fas fa-exclamation-triangle text-red-400 mr-3 mt-1"></i>
+                            <div>
+                                <h3 class="text-red-800 font-medium">Erro na Consulta</h3>
+                                <p class="text-red-700 mt-1">${error.message}</p>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+        });
+    }
+
+    /**
+     * Renderiza os resultados de faturamento de forma organizada
+     */
+    function renderBillingResults(results, year, month) {
+        if (!billingResults) return;
+
+        // Calcular estatísticas gerais
+        const totalExpenses = results
+            .filter(r => r.success)
+            .reduce((sum, r) => sum + r.expenses.reduce((acc, exp) => acc + parseFloat(exp.amount), 0), 0);
+        
+        const totalTransactions = results
+            .filter(r => r.success)
+            .reduce((sum, r) => sum + r.expenses.length, 0);
+
+        let html = `
+            <div class="mb-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <h3 class="text-lg font-semibold text-blue-800 mb-2">
+                    <i class="fas fa-calendar-alt mr-2"></i>
+                    Resumo do Período - ${getMonthName(month)}/${year}
+                </h3>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                    <div class="bg-white rounded p-3 border">
+                        <div class="text-gray-600">Total Gasto</div>
+                        <div class="text-xl font-bold text-blue-600">R$ ${totalExpenses.toFixed(2)}</div>
+                    </div>
+                    <div class="bg-white rounded p-3 border">
+                        <div class="text-gray-600">Transações</div>
+                        <div class="text-xl font-bold text-green-600">${totalTransactions}</div>
+                    </div>
+                    <div class="bg-white rounded p-3 border">
+                        <div class="text-gray-600">Contas Ativas</div>
+                        <div class="text-xl font-bold text-purple-600">${results.filter(r => r.success && r.expenses.length > 0).length}</div>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        // Renderizar cada conta
+        results.forEach(result => {
+            if (!result.success) {
+                html += renderBillingErrorBlock(result);
+            } else {
+                html += renderBillingAccountBlock(result);
+            }
+        });
+
+        billingResults.innerHTML = html;
+    }
+
+    /**
+     * Renderiza bloco de erro para uma conta
+     */
+    function renderBillingErrorBlock(result) {
+        return `
+            <div class="mb-6 bg-red-50 border border-red-200 rounded-lg p-4">
+                <div class="flex items-start">
+                    <i class="fas fa-exclamation-triangle text-red-500 mr-3 mt-1"></i>
+                    <div>
+                        <h4 class="text-lg font-semibold text-red-800">${result.account}</h4>
+                        <p class="text-sm text-gray-600 mb-2">${result.period?.description || 'Conta não identificada'}</p>
+                        <p class="text-red-700">${result.error}</p>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    /**
+     * Renderiza bloco de dados para uma conta específica
+     */
+    function renderBillingAccountBlock(result) {
+        const { account, expenses, startDate, endDate, period } = result;
+        
+        if (!expenses || expenses.length === 0) {
+            return `
+                <div class="mb-6 bg-gray-50 border border-gray-200 rounded-lg p-4">
+                    <div class="flex items-center">
+                        <i class="fas fa-info-circle text-gray-400 mr-3"></i>
+                        <div>
+                            <h4 class="text-lg font-semibold text-gray-700">${account}</h4>
+                            <p class="text-sm text-gray-600 mb-1">${period.description}</p>
+                            <p class="text-sm text-gray-500">
+                                Período: ${formatDateForDisplay(startDate)} a ${formatDateForDisplay(endDate)}
+                            </p>
+                            <p class="text-gray-600 mt-2">Nenhum gasto encontrado neste período.</p>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        // Calcular totais
+        const total = expenses.reduce((sum, exp) => sum + parseFloat(exp.amount), 0);
+        const avgTransaction = total / expenses.length;
+        
+        // Agrupar por dia para melhor visualização
+        const groupedByDay = groupExpensesByDay(expenses);
+        const sortedDays = Object.keys(groupedByDay).sort((a, b) => {
+            const [dayA, monthA, yearA] = a.split('/');
+            const [dayB, monthB, yearB] = b.split('/');
+            const dateA = new Date(yearA, monthA - 1, dayA);
+            const dateB = new Date(yearB, monthB - 1, dayB);
+            return dateA - dateB;
+        });
+
+        return `
+            <div class="mb-6 bg-white border border-gray-200 rounded-lg shadow-sm">
+                <!-- Header da Conta -->
+                <div class="bg-gradient-to-r from-blue-500 to-blue-600 text-white p-4 rounded-t-lg">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <h4 class="text-lg font-semibold">${account}</h4>
+                            <p class="text-blue-100 text-sm">${period.description}</p>
+                            <p class="text-blue-100 text-sm">
+                                📅 ${formatDateForDisplay(startDate)} a ${formatDateForDisplay(endDate)}
+                            </p>
+                        </div>
+                        <div class="text-right">
+                            <div class="text-2xl font-bold">R$ ${total.toFixed(2)}</div>
+                            <div class="text-blue-100 text-sm">${expenses.length} transação${expenses.length !== 1 ? 'ões' : ''}</div>
+                            <div class="text-blue-100 text-sm">Média: R$ ${avgTransaction.toFixed(2)}</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Conteúdo da Conta -->
+                <div class="p-4">
+                    <!-- Botões de Ação -->
+                    <div class="mb-4 flex gap-2 flex-wrap">
+                        <button onclick="exportBillingToCSV('${account}', ${JSON.stringify(expenses).replace(/"/g, '&quot;')})" 
+                                class="bg-green-500 hover:bg-green-600 text-white px-3 py-1 rounded text-sm transition-colors">
+                            <i class="fas fa-file-csv mr-1"></i> Exportar CSV
+                        </button>
+                        <button onclick="printBillingReport('${account}', ${JSON.stringify(result).replace(/"/g, '&quot;')})"
+                                class="bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded text-sm transition-colors">
+                            <i class="fas fa-print mr-1"></i> Imprimir
+                        </button>
+                        <button onclick="toggleBillingDetails('billing-details-${account.replace(/\s+/g, '-')}')"
+                                class="bg-gray-500 hover:bg-gray-600 text-white px-3 py-1 rounded text-sm transition-colors">
+                            <i class="fas fa-eye mr-1"></i> Ver Detalhes
+                        </button>
+                    </div>
+
+                    <!-- Resumo por Dia -->
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-sm border-collapse border border-gray-300">
+                            <thead>
+                                <tr class="bg-gray-100">
+                                    <th class="border border-gray-300 px-3 py-2 text-left">Data</th>
+                                    <th class="border border-gray-300 px-3 py-2 text-left">Descrições</th>
+                                    <th class="border border-gray-300 px-3 py-2 text-right">Valor Total</th>
+                                    <th class="border border-gray-300 px-3 py-2 text-center">Qtd</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${sortedDays.map(day => {
+                                    const dayExpenses = groupedByDay[day];
+                                    const dayTotal = dayExpenses.reduce((sum, exp) => sum + parseFloat(exp.amount), 0);
+                                    return `
+                                        <tr class="hover:bg-gray-50">
+                                            <td class="border border-gray-300 px-3 py-2 font-medium">${day}</td>
+                                            <td class="border border-gray-300 px-3 py-2">
+                                                ${dayExpenses.slice(0, 2).map(exp => exp.description).join(', ')}
+                                                ${dayExpenses.length > 2 ? ` +${dayExpenses.length - 2} mais` : ''}
+                                            </td>
+                                            <td class="border border-gray-300 px-3 py-2 text-right font-medium text-green-600">
+                                                R$ ${dayTotal.toFixed(2)}
+                                            </td>
+                                            <td class="border border-gray-300 px-3 py-2 text-center">
+                                                <span class="bg-blue-100 text-blue-800 px-2 py-1 rounded-full text-xs">
+                                                    ${dayExpenses.length}
+                                                </span>
+                                            </td>
+                                        </tr>
+                                    `;
+                                }).join('')}
+                            </tbody>
+                            <tfoot>
+                                <tr class="bg-gray-100 font-bold">
+                                    <td class="border border-gray-300 px-3 py-2">TOTAL</td>
+                                    <td class="border border-gray-300 px-3 py-2">${expenses.length} transação${expenses.length !== 1 ? 'ões' : ''}</td>
+                                    <td class="border border-gray-300 px-3 py-2 text-right text-green-700">R$ ${total.toFixed(2)}</td>
+                                    <td class="border border-gray-300 px-3 py-2 text-center">${sortedDays.length} dias</td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+
+                    <!-- Detalhes Expansíveis -->
+                    <div id="billing-details-${account.replace(/\s+/g, '-')}" class="hidden mt-4 border-t pt-4">
+                        <h5 class="font-semibold mb-3 text-gray-700">Detalhes de Todas as Transações</h5>
+                        <div class="overflow-x-auto max-h-96">
+                            <table class="w-full text-xs border-collapse border border-gray-300">
+                                <thead class="sticky top-0 bg-white">
+                                    <tr class="bg-gray-200">
+                                        <th class="border border-gray-300 px-2 py-1 text-left">Data</th>
+                                        <th class="border border-gray-300 px-2 py-1 text-left">Descrição</th>
+                                        <th class="border border-gray-300 px-2 py-1 text-right">Valor</th>
+                                        <th class="border border-gray-300 px-2 py-1 text-center">Tipo</th>
+                                        <th class="border border-gray-300 px-2 py-1 text-center">NF</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${expenses.map(expense => `
+                                        <tr class="hover:bg-gray-50">
+                                            <td class="border border-gray-300 px-2 py-1">
+                                                ${formatDateForDisplay(new Date(expense.transaction_date))}
+                                            </td>
+                                            <td class="border border-gray-300 px-2 py-1">${expense.description}</td>
+                                            <td class="border border-gray-300 px-2 py-1 text-right">R$ ${parseFloat(expense.amount).toFixed(2)}</td>
+                                            <td class="border border-gray-300 px-2 py-1 text-center">
+                                                <span class="px-1 py-0.5 rounded text-xs ${expense.is_business_expense ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800'}">
+                                                    ${expense.is_business_expense ? 'Empresarial' : 'Pessoal'}
+                                                </span>
+                                            </td>
+                                            <td class="border border-gray-300 px-2 py-1 text-center">
+                                                ${expense.invoice_path ? 
+                                                    '<i class="fas fa-check text-green-500" title="Com Nota Fiscal"></i>' : 
+                                                    '<i class="fas fa-times text-red-500" title="Sem Nota Fiscal"></i>'
+                                                }
+                                            </td>
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    // Função para agrupar gastos por dia (melhorada)
     function groupExpensesByDay(expenses) {
         return expenses.reduce((acc, expense) => {
-            const day = new Date(expense.transaction_date).toLocaleDateString('pt-BR');
+            const date = new Date(expense.transaction_date + 'T00:00:00.000Z');
+            const day = date.toLocaleDateString('pt-BR');
             if (!acc[day]) acc[day] = [];
             acc[day].push(expense);
             return acc;
         }, {});
     }
+
+    // Funções auxiliares
+    function formatDateForDisplay(date) {
+        return new Date(date).toLocaleDateString('pt-BR');
+    }
+
+    function getMonthName(month) {
+        const months = [
+            'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+            'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
+        ];
+        return months[month - 1] || 'Mês Inválido';
+    }
+
+    // Funções globais para botões de ação
+    window.exportBillingToCSV = function(account, expenses) {
+        try {
+            const data = typeof expenses === 'string' ? JSON.parse(expenses) : expenses;
+            let csv = 'Data,Descrição,Valor,Tipo,Conta,Nota Fiscal\n';
+            
+            data.forEach(expense => {
+                const date = formatDateForDisplay(new Date(expense.transaction_date));
+                const description = `"${expense.description.replace(/"/g, '""')}"`;
+                const amount = parseFloat(expense.amount).toFixed(2);
+                const type = expense.is_business_expense ? 'Empresarial' : 'Pessoal';
+                const hasInvoice = expense.invoice_path ? 'Sim' : 'Não';
+                
+                csv += `${date},${description},${amount},${type},"${account}",${hasInvoice}\n`;
+            });
+
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            const url = URL.createObjectURL(blob);
+            link.setAttribute('href', url);
+            link.setAttribute('download', `fatura_${account.replace(/\s+/g, '_')}_${new Date().toISOString().slice(0, 10)}.csv`);
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            
+            showNotification('CSV exportado com sucesso!', 'success');
+        } catch (error) {
+            console.error('Erro ao exportar CSV:', error);
+            showNotification('Erro ao exportar CSV', 'error');
+        }
+    };
+
+    window.toggleBillingDetails = function(elementId) {
+        const element = document.getElementById(elementId);
+        if (element) {
+            element.classList.toggle('hidden');
+        }
+    };
+
+    window.printBillingReport = function(account, resultData) {
+        try {
+            const data = typeof resultData === 'string' ? JSON.parse(resultData) : resultData;
+            const printWindow = window.open('', '_blank');
+            
+            printWindow.document.write(`
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <title>Relatório de Fatura - ${account}</title>
+                    <style>
+                        body { font-family: Arial, sans-serif; margin: 20px; }
+                        .header { text-align: center; margin-bottom: 30px; }
+                        .period { color: #666; }
+                        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+                        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+                        th { background-color: #f2f2f2; }
+                        .total { font-weight: bold; background-color: #f9f9f9; }
+                        .text-right { text-align: right; }
+                    </style>
+                </head>
+                <body>
+                    <div class="header">
+                        <h1>Relatório de Fatura</h1>
+                        <h2>${account}</h2>
+                        <p class="period">Período: ${formatDateForDisplay(data.startDate)} a ${formatDateForDisplay(data.endDate)}</p>
+                    </div>
+                    
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Data</th>
+                                <th>Descrição</th>
+                                <th>Valor</th>
+                                <th>Tipo</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${data.expenses.map(expense => `
+                                <tr>
+                                    <td>${formatDateForDisplay(new Date(expense.transaction_date))}</td>
+                                    <td>${expense.description}</td>
+                                    <td class="text-right">R$ ${parseFloat(expense.amount).toFixed(2)}</td>
+                                    <td>${expense.is_business_expense ? 'Empresarial' : 'Pessoal'}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                        <tfoot>
+                            <tr class="total">
+                                <td colspan="2">TOTAL</td>
+                                <td class="text-right">R$ ${data.expenses.reduce((sum, exp) => sum + parseFloat(exp.amount), 0).toFixed(2)}</td>
+                                <td>${data.expenses.length} transações</td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                    
+                    <script>
+                        window.onload = function() {
+                            window.print();
+                            window.onafterprint = function() {
+                                window.close();
+                            };
+                        };
+                    </script>
+                </body>
+                </html>
+            `);
+            
+            printWindow.document.close();
+        } catch (error) {
+            console.error('Erro ao imprimir relatório:', error);
+            showNotification('Erro ao gerar relatório para impressão', 'error');
+        }
+    };
 
     // Helper to destroy Chart.js instance safely and clear Chart registry
     function destroyChartInstance(chartVar, canvasId) {

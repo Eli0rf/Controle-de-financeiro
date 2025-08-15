@@ -325,6 +325,55 @@ app.delete('/api/expenses/:id', authenticateToken, async (req, res) => {
     }
 });
 
+// Endpoint para download seguro de faturas
+app.get('/api/invoice/:id', authenticateToken, async (req, res) => {
+    const { id } = req.params;
+    const userId = req.user.id;
+    
+    try {
+        console.log(`🔍 Tentativa de download de fatura - Usuário: ${userId}, Despesa ID: ${id}`);
+        
+        // Verificar se o usuário tem acesso a esta fatura
+        const [rows] = await pool.query('SELECT invoice_path FROM expenses WHERE id = ? AND user_id = ?', [id, userId]);
+        
+        if (rows.length === 0) {
+            console.log(`❌ Fatura não encontrada - ID: ${id}, Usuário: ${userId}`);
+            return res.status(404).json({ message: 'Fatura não encontrada.' });
+        }
+        
+        const invoicePath = rows[0].invoice_path;
+        if (!invoicePath) {
+            console.log(`❌ Despesa sem fatura anexada - ID: ${id}`);
+            return res.status(404).json({ message: 'Esta despesa não possui fatura anexada.' });
+        }
+        
+        // Verificar se o arquivo existe no servidor
+        const fullPath = path.join(__dirname, invoicePath);
+        console.log(`📁 Verificando arquivo: ${fullPath}`);
+        
+        if (!fs.existsSync(fullPath)) {
+            console.log(`❌ Arquivo não encontrado no servidor: ${fullPath}`);
+            return res.status(404).json({ message: 'Arquivo da fatura não encontrado no servidor.' });
+        }
+        
+        // Obter o nome original do arquivo para o download
+        const fileName = path.basename(invoicePath);
+        console.log(`📄 Enviando arquivo: ${fileName}`);
+        
+        // Configurar headers para download
+        res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+        res.setHeader('Content-Type', 'application/octet-stream');
+        res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition');
+        
+        // Enviar o arquivo
+        res.sendFile(fullPath);
+        
+    } catch (error) {
+        console.error('❌ Erro ao baixar fatura:', error);
+        res.status(500).json({ message: 'Erro interno do servidor ao baixar fatura.' });
+    }
+});
+
 app.get('/api/dashboard', authenticateToken, async (req, res) => {
     const userId = req.user.id;
     const { year, month } = req.query;
@@ -1219,6 +1268,6 @@ app.use((error, req, res, next) => {
 });
 
 // --- ROTA PARA ARQUIVOS ESTÁTICOS ---
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+// Nota: Arquivos de fatura agora são servidos através do endpoint autenticado /api/invoice/:id
 
 module.exports = app;
