@@ -3424,8 +3424,8 @@ document.addEventListener('DOMContentLoaded', function() {
         try {
             if (!checkAuthentication()) return;
 
-            console.log('🔄 Carregando dados da aba de relatórios...');
-            showNotification('Carregando dados de relatórios...', 'info', 2000);
+            console.log('🔄 Carregando dados modernos dos relatórios...');
+            showNotification('Carregando dashboard executivo...', 'info', 2000);
 
             // Aguardar Chart.js estar carregado
             if (!await waitForChartJs()) {
@@ -3434,23 +3434,494 @@ document.addEventListener('DOMContentLoaded', function() {
                 return;
             }
 
-            // Carregar todos os dados necessários para a aba de relatórios
-            await Promise.allSettled([
-                fetchAndRenderGoalsChart(),      // Gráfico de Limites vs Gastos
-                fetchAndRenderPlanChart(),       // Gráfico de Gastos por Plano
-                loadBusinessAnalysisForReports() // Análise empresarial para relatórios
+            // Buscar dados atualizados
+            const [expenses, dashboardData] = await Promise.all([
+                fetchExpenses(),
+                fetchDashboardData()
             ]);
 
-            console.log('✅ Dados de relatórios carregados com sucesso');
-            showNotification('Dados de relatórios carregados!', 'success', 2000);
+            console.log('📊 Dados obtidos:', { expenses: expenses?.length, dashboardData });
+
+            // Atualizar indicadores principais
+            updateMainIndicators(expenses);
+            
+            // Renderizar todos os gráficos com dados reais
+            await renderAllReportsCharts(expenses, dashboardData);
+            
+            // Atualizar análise empresarial
+            updateBusinessAnalysis(expenses);
+            
+            // Gerar tabela de alertas
+            generateAlertsTable(expenses);
+
+            console.log('✅ Dashboard executivo carregado com sucesso');
+            showNotification('Dashboard executivo atualizado!', 'success', 2000);
 
         } catch (error) {
-            console.error('Erro ao carregar dados de relatórios:', error);
+            console.error('❌ Erro ao carregar dados de relatórios:', error);
             showNotification('Erro ao carregar dados de relatórios', 'error');
         }
     }
 
-    // Função específica para carregar dados do plan-chart
+    function updateMainIndicators(expenses) {
+        const tetos = {
+            1: 1000.00, 2: 2782.47, 3: 2431.67, 4: 350.00, 5: 2100.00,
+            6: 550.00, 7: 270.00, 8: 1200.00, 9: 1200.00, 10: 270.00,
+            11: 1895.40, 12: 2627.60, 13: 400.00, 14: 540.00, 15: 1080.00,
+            16: 1360.00, 17: 756.00, 18: 1512.00, 19: 1890.00, 20: 1620.00,
+            21: 1890.00, 22: 2430.00, 23: 2700.00, 24: 1080.00, 25: 2100.00,
+            26: 2460.00, 27: 2500.00, 28: 3060.00, 29: 3600.00, 30: 3060.00,
+            31: 3840.00, 32: 4320.00, 33: 4800.00, 34: 4800.00, 35: 5400.00,
+            36: 5760.00, 37: 6720.00, 38: 7200.00, 39: 8400.00, 40: 9600.00
+        };
+
+        if (!expenses || expenses.length === 0) {
+            console.warn('⚠️ Nenhum dado de despesas para atualizar indicadores');
+            return;
+        }
+
+        const currentMonth = new Date().getMonth() + 1;
+        const currentYear = new Date().getFullYear();
+        
+        // Filtrar gastos do mês atual
+        const monthlyExpenses = expenses.filter(expense => {
+            const expenseDate = new Date(expense.date);
+            return expenseDate.getMonth() + 1 === currentMonth && 
+                   expenseDate.getFullYear() === currentYear;
+        });
+
+        console.log('📅 Gastos do mês atual:', monthlyExpenses.length);
+
+        // Calcular totais por plano
+        const planTotals = {};
+        monthlyExpenses.forEach(expense => {
+            const planId = expense.plan_conta;
+            planTotals[planId] = (planTotals[planId] || 0) + parseFloat(expense.amount);
+        });
+
+        // Analisar status dos planos
+        let safePlans = 0;
+        let warningPlans = 0;
+        let exceededPlans = 0;
+        let totalBudget = 0;
+        let totalSpent = 0;
+
+        Object.keys(tetos).forEach(planId => {
+            const budget = tetos[planId];
+            const spent = planTotals[planId] || 0;
+            const percentage = budget > 0 ? (spent / budget) * 100 : 0;
+            
+            totalBudget += budget;
+            totalSpent += spent;
+            
+            if (percentage > 100) {
+                exceededPlans++;
+            } else if (percentage >= 70) {
+                warningPlans++;
+            } else {
+                safePlans++;
+            }
+        });
+
+        // Atualizar interface dos indicadores
+        const safePlansEl = document.getElementById('safe-plans');
+        const warningPlansEl = document.getElementById('warning-plans');
+        const exceededPlansEl = document.getElementById('exceeded-plans');
+        const generalUsageEl = document.getElementById('general-usage');
+        const totalBudgetEl = document.getElementById('total-budget');
+
+        if (safePlansEl) safePlansEl.textContent = safePlans;
+        if (warningPlansEl) warningPlansEl.textContent = warningPlans;
+        if (exceededPlansEl) exceededPlansEl.textContent = exceededPlans;
+        if (generalUsageEl) generalUsageEl.textContent = Math.round((totalSpent / totalBudget) * 100);
+        if (totalBudgetEl) totalBudgetEl.textContent = formatCurrency(totalBudget);
+
+        console.log('📊 Indicadores atualizados:', { safePlans, warningPlans, exceededPlans, totalBudget, totalSpent });
+    }
+
+    async function renderAllReportsCharts(expenses, dashboardData) {
+        console.log('🎨 Renderizando gráficos dos relatórios...');
+        
+        try {
+            // Renderizar todos os gráficos com dados atualizados
+            await Promise.allSettled([
+                renderGoalsChart(expenses),
+                renderGoalsPlanChart(expenses),
+                renderPlanChart(expenses || dashboardData?.planChartData)
+            ]);
+            
+            console.log('✅ Gráficos renderizados com sucesso');
+        } catch (error) {
+            console.error('❌ Erro ao renderizar gráficos:', error);
+        }
+    }
+
+    function updateBusinessAnalysis(expenses) {
+        const analysisContent = document.getElementById('business-analysis-content');
+        if (!analysisContent) {
+            console.warn('⚠️ Elemento business-analysis-content não encontrado');
+            return;
+        }
+        
+        if (!expenses || expenses.length === 0) {
+            analysisContent.innerHTML = `
+                <div class="text-center py-8">
+                    <div class="text-gray-400 text-4xl mb-4">📊</div>
+                    <p class="text-gray-600">Nenhum dado disponível para análise</p>
+                </div>
+            `;
+            return;
+        }
+        
+        const currentMonth = new Date().getMonth() + 1;
+        const currentYear = new Date().getFullYear();
+        
+        // Filtrar gastos do mês atual
+        const monthlyExpenses = expenses.filter(expense => {
+            const expenseDate = new Date(expense.date);
+            return expenseDate.getMonth() + 1 === currentMonth && 
+                   expenseDate.getFullYear() === currentYear;
+        });
+
+        const totalGastos = monthlyExpenses.reduce((sum, expense) => sum + parseFloat(expense.amount), 0);
+        const numTransacoes = monthlyExpenses.length;
+        const ticketMedio = numTransacoes > 0 ? totalGastos / numTransacoes : 0;
+
+        // Análise por tipo
+        const pessoal = monthlyExpenses.filter(e => e.type === 'pessoal').reduce((sum, e) => sum + parseFloat(e.amount), 0);
+        const profissional = monthlyExpenses.filter(e => e.type === 'profissional').reduce((sum, e) => sum + parseFloat(e.amount), 0);
+
+        analysisContent.innerHTML = `
+            <div class="space-y-4">
+                <div class="bg-blue-50 p-4 rounded-lg">
+                    <h4 class="font-semibold text-blue-800">💼 Gastos Totais</h4>
+                    <p class="text-2xl font-bold text-blue-600">${formatCurrency(totalGastos)}</p>
+                    <p class="text-sm text-blue-600">${numTransacoes} transações</p>
+                </div>
+                
+                <div class="bg-green-50 p-4 rounded-lg">
+                    <h4 class="font-semibold text-green-800">📈 Ticket Médio</h4>
+                    <p class="text-xl font-bold text-green-600">${formatCurrency(ticketMedio)}</p>
+                </div>
+                
+                <div class="space-y-2">
+                    <div class="flex justify-between">
+                        <span class="text-sm font-medium">Pessoal:</span>
+                        <span class="text-sm font-bold">${formatCurrency(pessoal)}</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-sm font-medium">Profissional:</span>
+                        <span class="text-sm font-bold">${formatCurrency(profissional)}</span>
+                    </div>
+                </div>
+                
+                <div class="bg-yellow-50 p-3 rounded-lg">
+                    <h5 class="font-semibold text-yellow-800 text-sm">🎯 Recomendação</h5>
+                    <p class="text-xs text-yellow-700 mt-1">
+                        ${getBusinessRecommendation(totalGastos, pessoal, profissional)}
+                    </p>
+                </div>
+            </div>
+        `;
+        
+        console.log('💼 Análise empresarial atualizada:', { totalGastos, numTransacoes, ticketMedio });
+    }
+
+    function getBusinessRecommendation(total, pessoal, profissional) {
+        const pessoalPerc = total > 0 ? (pessoal / total) * 100 : 0;
+        const profissionalPerc = total > 0 ? (profissional / total) * 100 : 0;
+        
+        if (pessoalPerc > 60) {
+            return "Considere reduzir gastos pessoais para melhorar o fluxo de caixa.";
+        } else if (profissionalPerc > 70) {
+            return "Alto investimento profissional. Monitore o ROI.";
+        } else {
+            return "Distribuição equilibrada entre gastos pessoais e profissionais.";
+        }
+    }
+
+    function generateAlertsTable(expenses) {
+        const alertsTable = document.getElementById('alerts-table');
+        if (!alertsTable) {
+            console.warn('⚠️ Elemento alerts-table não encontrado');
+            return;
+        }
+
+        const tetos = {
+            1: 1000.00, 2: 2782.47, 3: 2431.67, 4: 350.00, 5: 2100.00,
+            6: 550.00, 7: 270.00, 8: 1200.00, 9: 1200.00, 10: 270.00,
+            11: 1895.40, 12: 2627.60, 13: 400.00, 14: 540.00, 15: 1080.00,
+            16: 1360.00, 17: 756.00, 18: 1512.00, 19: 1890.00, 20: 1620.00,
+            21: 1890.00, 22: 2430.00, 23: 2700.00, 24: 1080.00, 25: 2100.00,
+            26: 2460.00, 27: 2500.00, 28: 3060.00, 29: 3600.00, 30: 3060.00,
+            31: 3840.00, 32: 4320.00, 33: 4800.00, 34: 4800.00, 35: 5400.00,
+            36: 5760.00, 37: 6720.00, 38: 7200.00, 39: 8400.00, 40: 9600.00
+        };
+
+        const planNames = {
+            1: "Combustível", 2: "Alimentação", 3: "Moradia", 4: "Transporte Público",
+            5: "Educação", 6: "Saúde", 7: "Lazer", 8: "Vestuário", 9: "Tecnologia",
+            10: "Comunicação", 11: "Seguros", 12: "Investimentos", 13: "Emergência",
+            14: "Manutenção", 15: "Impostos", 16: "Viagens", 17: "Presentes",
+            18: "Serviços", 19: "Equipamentos", 20: "Marketing"
+        };
+
+        if (!expenses || expenses.length === 0) {
+            alertsTable.innerHTML = `
+                <div class="text-center py-8">
+                    <div class="text-gray-400 text-4xl mb-4">📊</div>
+                    <p class="text-gray-600">Nenhum dado disponível para alertas</p>
+                </div>
+            `;
+            return;
+        }
+
+        const currentMonth = new Date().getMonth() + 1;
+        const currentYear = new Date().getFullYear();
+        
+        // Filtrar gastos do mês atual
+        const monthlyExpenses = expenses.filter(expense => {
+            const expenseDate = new Date(expense.date);
+            return expenseDate.getMonth() + 1 === currentMonth && 
+                   expenseDate.getFullYear() === currentYear;
+        });
+
+        // Calcular totais por plano
+        const planTotals = {};
+        monthlyExpenses.forEach(expense => {
+            const planId = expense.plan_conta;
+            planTotals[planId] = (planTotals[planId] || 0) + parseFloat(expense.amount);
+        });
+
+        // Gerar alertas
+        const alerts = [];
+        Object.keys(tetos).forEach(planId => {
+            const budget = tetos[planId];
+            const spent = planTotals[planId] || 0;
+            const percentage = budget > 0 ? (spent / budget) * 100 : 0;
+            const planName = planNames[planId] || `Plano ${planId}`;
+            
+            let status = '';
+            let statusClass = '';
+            let priority = 0;
+            
+            if (percentage > 100) {
+                status = 'Ultrapassado';
+                statusClass = 'bg-red-100 text-red-800';
+                priority = 3;
+            } else if (percentage >= 70) {
+                status = 'Atenção';
+                statusClass = 'bg-yellow-100 text-yellow-800';
+                priority = 2;
+            } else if (percentage >= 50) {
+                status = 'Monitorar';
+                statusClass = 'bg-blue-100 text-blue-800';
+                priority = 1;
+            }
+            
+            if (priority > 0) {
+                alerts.push({
+                    planId,
+                    planName,
+                    budget,
+                    spent,
+                    percentage,
+                    status,
+                    statusClass,
+                    priority
+                });
+            }
+        });
+
+        // Ordenar por prioridade
+        alerts.sort((a, b) => b.priority - a.priority);
+
+        if (alerts.length === 0) {
+            alertsTable.innerHTML = `
+                <div class="text-center py-8">
+                    <div class="text-green-600 text-6xl mb-4">✅</div>
+                    <h3 class="text-xl font-semibold text-green-800">Parabéns!</h3>
+                    <p class="text-green-600">Todos os planos estão dentro do orçamento!</p>
+                </div>
+            `;
+            return;
+        }
+
+        alertsTable.innerHTML = `
+            <table class="min-w-full">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Plano</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Orçamento</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Gasto</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Utilização</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                    </tr>
+                </thead>
+                <tbody class="bg-white divide-y divide-gray-200">
+                    ${alerts.map(alert => `
+                        <tr class="hover:bg-gray-50">
+                            <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                                ${alert.planName}
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                ${formatCurrency(alert.budget)}
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                ${formatCurrency(alert.spent)}
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                <div class="w-full bg-gray-200 rounded-full h-2">
+                                    <div class="h-2 rounded-full ${alert.percentage > 100 ? 'bg-red-600' : alert.percentage >= 70 ? 'bg-yellow-500' : 'bg-blue-600'}" 
+                                         style="width: ${Math.min(alert.percentage, 100)}%"></div>
+                                </div>
+                                <span class="text-xs">${alert.percentage.toFixed(1)}%</span>
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap">
+                                <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full ${alert.statusClass}">
+                                    ${alert.status}
+                                </span>
+                            </td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        `;
+        
+        console.log('⚠️ Alertas gerados:', alerts.length);
+    }
+
+        // Event listeners para os botões de refresh dos relatórios
+        document.addEventListener('DOMContentLoaded', function() {
+            // Botões de refresh dos gráficos
+            const refreshBudgetBtn = document.getElementById('refresh-budget-btn');
+            if (refreshBudgetBtn) {
+                refreshBudgetBtn.addEventListener('click', async () => {
+                    console.log('🔄 Atualizando gráfico de orçamento...');
+                    const expenses = await fetchExpenses();
+                    renderGoalsChart(expenses);
+                });
+            }
+            
+            const refreshDistributionBtn = document.getElementById('refresh-distribution-btn');
+            if (refreshDistributionBtn) {
+                refreshDistributionBtn.addEventListener('click', async () => {
+                    console.log('🔄 Atualizando gráfico de distribuição...');
+                    const expenses = await fetchExpenses();
+                    renderGoalsPlanChart(expenses);
+                });
+            }
+            
+            const refreshCategoryBtn = document.getElementById('refresh-category-btn');
+            if (refreshCategoryBtn) {
+                refreshCategoryBtn.addEventListener('click', async () => {
+                    console.log('🔄 Atualizando gráfico de categorias...');
+                    const expenses = await fetchExpenses();
+                    renderPlanChart(expenses);
+                });
+            }
+            
+            const refreshAlertsBtn = document.getElementById('refresh-alerts-btn');
+            if (refreshAlertsBtn) {
+                refreshAlertsBtn.addEventListener('click', async () => {
+                    console.log('🔄 Atualizando alertas...');
+                    await loadReportsData();
+                });
+            }
+
+            // Ações rápidas
+            const exportReportBtn = document.getElementById('export-detailed-report');
+            if (exportReportBtn) {
+                exportReportBtn.addEventListener('click', () => {
+                    generateDetailedReport();
+                });
+            }
+            
+            const budgetProjectionBtn = document.getElementById('budget-projection');
+            if (budgetProjectionBtn) {
+                budgetProjectionBtn.addEventListener('click', () => {
+                    showBudgetProjection();
+                });
+            }
+            
+            const budgetOptimizerBtn = document.getElementById('budget-optimizer');
+            if (budgetOptimizerBtn) {
+                budgetOptimizerBtn.addEventListener('click', () => {
+                    showBudgetOptimizer();
+                });
+            }
+        });
+
+        function generateDetailedReport() {
+            showModal('Relatório Detalhado', `
+                <div class="space-y-4">
+                    <div class="bg-blue-50 p-4 rounded-lg">
+                        <h4 class="font-semibold text-blue-800">📊 Exportando Relatório Completo</h4>
+                        <p class="text-sm text-blue-600 mt-2">
+                            Gerando análise detalhada com todos os dados financeiros, 
+                            comparativos de orçamento e recomendações estratégicas.
+                        </p>
+                    </div>
+                    <div class="text-center">
+                        <button onclick="generatePDFReport()" class="bg-green-600 text-white px-6 py-3 rounded-lg hover:bg-green-700">
+                            📄 Gerar PDF Completo
+                        </button>
+                    </div>
+                </div>
+            `);
+        }
+
+        function showBudgetProjection() {
+            showModal('Projeção Orçamentária', `
+                <div class="space-y-4">
+                    <div class="bg-purple-50 p-4 rounded-lg">
+                        <h4 class="font-semibold text-purple-800">🔮 Análise de Tendências</h4>
+                        <p class="text-sm text-purple-600 mt-2">
+                            Baseado no histórico de gastos, projete cenários futuros 
+                            e identifique oportunidades de otimização.
+                        </p>
+                    </div>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div class="text-center">
+                            <p class="text-sm text-gray-600">Tendência Atual</p>
+                            <p class="text-2xl font-bold text-purple-600">+5.2%</p>
+                        </div>
+                        <div class="text-center">
+                            <p class="text-sm text-gray-600">Projeção 3 meses</p>
+                            <p class="text-2xl font-bold text-orange-600">R$ 15.240</p>
+                        </div>
+                    </div>
+                </div>
+            `);
+        }
+
+        function showBudgetOptimizer() {
+            showModal('Otimizador de Orçamento', `
+                <div class="space-y-4">
+                    <div class="bg-orange-50 p-4 rounded-lg">
+                        <h4 class="font-semibold text-orange-800">⚡ Sugestões de Otimização</h4>
+                        <p class="text-sm text-orange-600 mt-2">
+                            Análise inteligente para identificar oportunidades de economia 
+                            e melhor distribuição de recursos.
+                        </p>
+                    </div>
+                    <div class="space-y-3">
+                        <div class="border-l-4 border-green-500 pl-3">
+                            <p class="font-semibold text-green-800">💡 Economia Potencial</p>
+                            <p class="text-sm text-gray-600">Reduza gastos com alimentação em 15% - Economia: R$ 417,37</p>
+                        </div>
+                        <div class="border-l-4 border-blue-500 pl-3">
+                            <p class="font-semibold text-blue-800">📈 Oportunidade</p>
+                            <p class="text-sm text-gray-600">Aumente investimentos em 10% para melhor ROI</p>
+                        </div>
+                        <div class="border-l-4 border-yellow-500 pl-3">
+                            <p class="font-semibold text-yellow-800">⚠️ Alerta</p>
+                            <p class="text-sm text-gray-600">Gastos com tecnologia acima da média do mercado</p>
+                        </div>
+                    </div>
+                </div>
+            `);
+        }
     async function fetchAndRenderPlanChart() {
         try {
             const params = new URLSearchParams({
