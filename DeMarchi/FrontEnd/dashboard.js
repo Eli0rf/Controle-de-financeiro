@@ -592,18 +592,58 @@ document.addEventListener('DOMContentLoaded', function() {
             
             console.log('📊 Renderizando gráfico de limites vs gastos:', data);
             
-            // Filtrar apenas planos com gastos ou limites > 0
-            const filteredData = data.filter(d => 
-                (d.Total > 0 || d.Teto > 0) && d.PlanoContasID
-            );
+            if (!data || data.length === 0) {
+                console.log('❌ Nenhum dado recebido para o gráfico de limites');
+                return false;
+            }
 
-            if (filteredData.length === 0) {
+            // Definir tetos de cada plano (baseado no código anterior)
+            const tetos = {
+                1: 1000.00, 2: 2782.47, 3: 2431.67, 4: 350.00, 5: 2100.00,
+                6: 550.00, 7: 270.00, 8: 1200.00, 9: 1200.00, 10: 270.00,
+                11: 1895.40, 12: 2627.60, 13: 400.00, 14: 540.00, 15: 1080.00,
+                16: 1360.00, 17: 756.00, 18: 1512.00, 19: 1890.00, 20: 1620.00,
+                21: 1890.00, 22: 2430.00, 23: 2700.00, 24: 1080.00, 25: 2100.00,
+                26: 2460.00, 27: 2500.00, 28: 3060.00, 29: 3600.00, 30: 3060.00,
+                31: 3840.00, 32: 4320.00, 33: 4800.00, 34: 4800.00, 35: 5400.00,
+                36: 5760.00, 37: 6720.00, 38: 7200.00, 39: 8400.00, 40: 9600.00
+            };
+
+            // Calcular totais por plano a partir dos dados de despesas
+            const planTotals = {};
+            data.forEach(expense => {
+                const planId = expense.account_plan_code || expense.plan_conta;
+                if (planId) {
+                    planTotals[planId] = (planTotals[planId] || 0) + parseFloat(expense.amount || 0);
+                }
+            });
+
+            console.log('💰 Totais calculados por plano:', planTotals);
+
+            // Criar dados do gráfico apenas para planos que têm gastos ou tetos
+            const chartData = [];
+            Object.keys({...tetos, ...planTotals}).forEach(planId => {
+                const total = planTotals[planId] || 0;
+                const teto = tetos[planId] || 0;
+                
+                if (total > 0 || teto > 0) {
+                    chartData.push({
+                        PlanoContasID: planId,
+                        Total: total,
+                        Teto: teto
+                    });
+                }
+            });
+
+            if (chartData.length === 0) {
                 console.log('❌ Nenhum plano com gastos ou limites para exibir');
                 return false;
             }
 
             // Ordenar por PlanoContasID para melhor visualização
-            const sortedData = filteredData.sort((a, b) => a.PlanoContasID - b.PlanoContasID);
+            const sortedData = chartData.sort((a, b) => parseInt(a.PlanoContasID) - parseInt(b.PlanoContasID));
+
+            console.log('📊 Dados do gráfico:', sortedData);
 
             const labels = sortedData.map(d => `Plano ${d.PlanoContasID}`);
             const limitData = sortedData.map(d => parseFloat(d.Teto) || 0);
@@ -835,18 +875,54 @@ document.addEventListener('DOMContentLoaded', function() {
             
             console.log('📊 Renderizando gráfico de tetos por plano:', data);
             
-            // Filtrar apenas planos com gastos ou limites > 0
-            const filteredData = data.filter(d => 
-                (d.Total > 0 || d.Teto > 0) && d.PlanoContasID
-            );
+            if (!data || data.length === 0) {
+                console.log('❌ Nenhum dado recebido para o gráfico de planos');
+                return false;
+            }
 
-            if (filteredData.length === 0) {
+            // Definir tetos de cada plano (baseado no código anterior)
+            const tetos = {
+                1: 1000.00, 2: 2782.47, 3: 2431.67, 4: 350.00, 5: 2100.00,
+                6: 550.00, 7: 270.00, 8: 1200.00, 9: 1200.00, 10: 270.00,
+                11: 1895.40, 12: 2627.60, 13: 400.00, 14: 540.00, 15: 1080.00,
+                16: 1360.00, 17: 756.00, 18: 1512.00, 19: 1890.00, 20: 1620.00,
+                21: 1890.00, 22: 2430.00, 23: 2700.00, 24: 1080.00, 25: 2100.00,
+                26: 2460.00, 27: 2500.00, 28: 3060.00, 29: 3600.00, 30: 3060.00,
+                31: 3840.00, 32: 4320.00, 33: 4800.00, 34: 4800.00, 35: 5400.00,
+                36: 5760.00, 37: 6720.00, 38: 7200.00, 39: 8400.00, 40: 9600.00
+            };
+
+            // Calcular totais por plano a partir dos dados de despesas
+            const planTotals = {};
+            data.forEach(expense => {
+                const planId = expense.account_plan_code || expense.plan_conta;
+                if (planId) {
+                    planTotals[planId] = (planTotals[planId] || 0) + parseFloat(expense.amount || 0);
+                }
+            });
+
+            // Criar dados apenas para planos que têm gastos ou tetos
+            const chartData = [];
+            Object.keys({...tetos, ...planTotals}).forEach(planId => {
+                const total = planTotals[planId] || 0;
+                const teto = tetos[planId] || 0;
+                
+                if (total > 0 || teto > 0) {
+                    chartData.push({
+                        PlanoContasID: planId,
+                        Total: total,
+                        Teto: teto
+                    });
+                }
+            });
+
+            if (chartData.length === 0) {
                 console.log('❌ Nenhum plano com dados para exibir');
                 return false;
             }
 
             // Ordenar por PlanoContasID
-            const sortedData = filteredData.sort((a, b) => a.PlanoContasID - b.PlanoContasID);
+            const sortedData = chartData.sort((a, b) => parseInt(a.PlanoContasID) - parseInt(b.PlanoContasID));
 
             const labels = sortedData.map(d => `Plano ${d.PlanoContasID}`);
             const limitData = sortedData.map(d => parseFloat(d.Teto) || 0);
@@ -964,7 +1040,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         },
                         datalabels: {
                             display: function(context) {
-                                return context.parsed.y > 0;
+                                return context.parsed && context.parsed.y > 0;
                             },
                             color: getThemeColor('#374151', '#f9fafb'),
                             anchor: 'end',
