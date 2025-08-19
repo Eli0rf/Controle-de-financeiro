@@ -3026,24 +3026,30 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         
         // Buscar por todos os gráficos do Chart.js e destruir os órfãos
-        if (typeof Chart !== 'undefined' && Chart.instances) {
-            Chart.instances.forEach((instance, index) => {
-                if (instance.canvas && instance.canvas.id) {
-                    const canvasId = instance.canvas.id;
-                    // Se o gráfico corresponde ao canvas que queremos limpar
-                    if ((chartKey === 'goalsChart' && canvasId === 'goals-chart') ||
-                        (chartKey === 'goalsPlanChart' && canvasId === 'goals-plan-chart') ||
-                        (chartKey === 'mixedTypeChart' && canvasId === 'mixed-type-chart') ||
-                        (chartKey === 'planChart' && canvasId === 'plan-chart')) {
-                        try {
-                            console.log(`🧹 Destruindo gráfico órfão: ${canvasId}`);
-                            instance.destroy();
-                        } catch (error) {
-                            console.warn(`⚠️ Erro ao destruir gráfico órfão:`, error);
-                        }
+        if (typeof Chart !== 'undefined') {
+            // Chart.js 4.x usa Chart.getChart() para obter instâncias por canvas
+            try {
+                // Mapear chaves do chartRegistry para IDs de canvas
+                const canvasIdMap = {
+                    'goalsChart': 'goals-chart',
+                    'goalsPlanChart': 'goals-plan-chart', 
+                    'mixedTypeChart': 'mixed-type-chart',
+                    'planChart': 'plan-chart',
+                    'expensesLineChart': 'expenses-line-chart',
+                    'expensesPieChart': 'expenses-pie-chart'
+                };
+                
+                const canvasId = canvasIdMap[chartKey];
+                if (canvasId) {
+                    const existingChart = Chart.getChart(canvasId);
+                    if (existingChart) {
+                        console.log(`🧹 Destruindo gráfico existente: ${canvasId}`);
+                        existingChart.destroy();
                     }
                 }
-            });
+            } catch (error) {
+                console.warn(`⚠️ Erro ao verificar gráficos existentes:`, error);
+            }
         }
     }
 
