@@ -97,6 +97,16 @@ document.addEventListener('DOMContentLoaded', function() {
         return token;
     }
 
+    // Função utilitária para formatar valores em Real brasileiro
+    function formatCurrency(value) {
+        return new Intl.NumberFormat('pt-BR', {
+            style: 'currency',
+            currency: 'BRL',
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2
+        }).format(value || 0);
+    }
+
     // Função para verificar se o usuário está autenticado
     function checkAuthentication() {
         const token = getToken();
@@ -268,6 +278,49 @@ document.addEventListener('DOMContentLoaded', function() {
         
         // Event listener para teste do gráfico de tendências
         if (testTrendChartBtn) testTrendChartBtn.addEventListener('click', testTrendAnalysisChart);
+        
+        // Event listener para refresh de insights
+        if (refreshInsightsBtn) refreshInsightsBtn.addEventListener('click', refreshInsights);
+        
+        // Event listeners para as abas de insights
+        if (insightTabBtns) {
+            insightTabBtns.forEach(btn => {
+                btn.addEventListener('click', function() {
+                    switchInsightTab(this.dataset.tab);
+                });
+            });
+        }
+        
+        // Event listener para toggle do tema
+        const themeToggle = document.getElementById('theme-toggle');
+        if (themeToggle) themeToggle.addEventListener('click', toggleTheme);
+        
+        // Event listeners para botões de refresh dos gráficos
+        const refreshBudgetBtn = document.getElementById('refresh-budget-btn');
+        if (refreshBudgetBtn) refreshBudgetBtn.addEventListener('click', refreshBudgetChart);
+        
+        const refreshDistributionBtn = document.getElementById('refresh-distribution-btn');
+        if (refreshDistributionBtn) refreshDistributionBtn.addEventListener('click', refreshDistributionChart);
+        
+        // Event listeners para export de gráficos (será implementado ao clicar com botão direito)
+        const chartCanvases = ['goals-chart', 'goals-plan-chart', 'expenses-line-chart', 'expenses-pie-chart'];
+        chartCanvases.forEach(canvasId => {
+            const canvas = document.getElementById(canvasId);
+            if (canvas) {
+                canvas.addEventListener('contextmenu', function(e) {
+                    e.preventDefault();
+                    exportChartAsImage(canvasId);
+                });
+            }
+        });
+        
+        // Event listeners para navegação das abas principais
+        const mainTabBtns = document.querySelectorAll('.tab-button[data-tab]');
+        mainTabBtns.forEach(btn => {
+            btn.addEventListener('click', function() {
+                switchMainTab(this.dataset.tab);
+            });
+        });
     }
 
     async function handleLogin(e) {
@@ -743,9 +796,9 @@ document.addEventListener('DOMContentLoaded', function() {
                                     const percentage = limit > 0 ? ((current / limit) * 100).toFixed(1) : '0.0';
                                     
                                     if (context.dataset.label.includes('Teto')) {
-                                        return `${context.dataset.label}: R$ ${value.toFixed(2)}`;
+                                        return `${context.dataset.label}: ${formatCurrency(value)}`;
                                     } else {
-                                        return `${context.dataset.label}: R$ ${value.toFixed(2)} (${percentage}% do limite)`;
+                                        return `${context.dataset.label}: ${formatCurrency(value)} (${percentage}% do limite)`;
                                     }
                                 },
                                 footer: function(context) {
@@ -759,9 +812,9 @@ document.addEventListener('DOMContentLoaded', function() {
                                         
                                         let status = '';
                                         if (current > limit) {
-                                            status = `⚠️ ULTRAPASSOU em R$ ${(current - limit).toFixed(2)}`;
+                                            status = `⚠️ ULTRAPASSOU em ${formatCurrency(current - limit)}`;
                                         } else {
-                                            status = `✅ Disponível: R$ ${remaining.toFixed(2)}`;
+                                            status = `✅ Disponível: ${formatCurrency(remaining)}`;
                                         }
                                         
                                         return [
@@ -780,12 +833,12 @@ document.addEventListener('DOMContentLoaded', function() {
                             color: '#374151',
                             anchor: 'end',
                             align: 'top',
-                            font: { weight: 'bold', size: 9 },
+                            font: { weight: 'bold', size: 10 },
                             formatter: function(value, context) {
                                 if (!value || value <= 0) return '';
                                 
                                 if (context.dataset.label && context.dataset.label.includes('Limite')) {
-                                    return `R$ ${value.toFixed(0)}`;
+                                    return formatCurrency(value).replace('R$ ', 'R$');
                                 } else {
                                     const index = context.dataIndex;
                                     const item = sortedData[index];
@@ -1016,9 +1069,9 @@ document.addEventListener('DOMContentLoaded', function() {
                                     const percentage = limit > 0 ? ((current / limit) * 100).toFixed(1) : '0.0';
                                     
                                     if (context.dataset.label.includes('Limite')) {
-                                        return `${context.dataset.label}: R$ ${value.toFixed(2)}`;
+                                        return `${context.dataset.label}: ${formatCurrency(value)}`;
                                     } else {
-                                        return `${context.dataset.label}: R$ ${value.toFixed(2)} (${percentage}%)`;
+                                        return `${context.dataset.label}: ${formatCurrency(value)} (${percentage}%)`;
                                     }
                                 },
                                 footer: function(context) {
@@ -1125,6 +1178,166 @@ document.addEventListener('DOMContentLoaded', function() {
             if (themeIcon) themeIcon.className = 'bi bi-moon-stars-fill';
         }
         localStorage.setItem('theme', mode);
+    }
+
+    // Função para atualizar insights
+    async function refreshInsights() {
+        const btn = document.getElementById('refresh-insights-btn');
+        const originalText = btn.innerHTML;
+        
+        try {
+            btn.innerHTML = '<i class="bi bi-arrow-clockwise animate-spin"></i> Atualizando...';
+            btn.disabled = true;
+            
+            // Simular carregamento por 2 segundos
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            
+            // Recarregar dados e gráficos
+            await fetchAllData();
+            
+            showNotification('💡 Insights atualizados com sucesso!', 'success');
+        } catch (error) {
+            console.error('Erro ao atualizar insights:', error);
+            showNotification('❌ Erro ao atualizar insights', 'error');
+        } finally {
+            btn.innerHTML = originalText;
+            btn.disabled = false;
+        }
+    }
+
+    // Função para alternar entre abas de insights
+    function switchInsightTab(tabName) {
+        // Remover classe active de todos os botões
+        document.querySelectorAll('.insight-tab-btn').forEach(btn => {
+            btn.classList.remove('active', 'bg-blue-500', 'text-white');
+            btn.classList.add('bg-gray-200', 'text-gray-700');
+        });
+        
+        // Adicionar classe active ao botão clicado
+        const activeBtn = document.querySelector(`[data-tab="${tabName}"]`);
+        if (activeBtn) {
+            activeBtn.classList.remove('bg-gray-200', 'text-gray-700');
+            activeBtn.classList.add('active', 'bg-blue-500', 'text-white');
+        }
+        
+        // Ocultar todos os conteúdos das abas
+        document.querySelectorAll('.insight-tab-content').forEach(content => {
+            content.classList.add('hidden');
+        });
+        
+        // Mostrar conteúdo da aba ativa
+        const activeContent = document.getElementById(`${tabName}-content`);
+        if (activeContent) {
+            activeContent.classList.remove('hidden');
+        }
+        
+        console.log(`📊 Aba de insights trocada para: ${tabName}`);
+    }
+
+    // Função para atualizar gráfico de orçamento
+    async function refreshBudgetChart() {
+        const btn = document.getElementById('refresh-budget-btn');
+        const originalHTML = btn.innerHTML;
+        
+        try {
+            btn.innerHTML = '<svg class="w-5 h-5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" class="opacity-25"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>';
+            btn.disabled = true;
+            
+            // Recarregar dados dos gráficos de metas
+            await fetchAndRenderGoalsChart();
+            
+            showNotification('🎯 Gráfico de orçamento atualizado!', 'success');
+        } catch (error) {
+            console.error('Erro ao atualizar gráfico:', error);
+            showNotification('❌ Erro ao atualizar gráfico', 'error');
+        } finally {
+            btn.innerHTML = originalHTML;
+            btn.disabled = false;
+        }
+    }
+
+    // Função para atualizar gráfico de distribuição
+    async function refreshDistributionChart() {
+        const btn = document.getElementById('refresh-distribution-btn');
+        const originalHTML = btn.innerHTML;
+        
+        try {
+            btn.innerHTML = '<svg class="w-5 h-5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" class="opacity-25"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>';
+            btn.disabled = true;
+            
+            // Recarregar dados do gráfico de distribuição por plano
+            await fetchAndRenderGoalsPlanChart();
+            
+            showNotification('📊 Gráfico de distribuição atualizado!', 'success');
+        } catch (error) {
+            console.error('Erro ao atualizar gráfico:', error);
+            showNotification('❌ Erro ao atualizar gráfico', 'error');
+        } finally {
+            btn.innerHTML = originalHTML;
+            btn.disabled = false;
+        }
+    }
+
+    // Função para exportar gráfico como imagem
+    function exportChartAsImage(canvasId) {
+        const canvas = document.getElementById(canvasId);
+        if (!canvas) {
+            showNotification('❌ Gráfico não encontrado', 'error');
+            return;
+        }
+
+        try {
+            // Criar um link temporário para download
+            const link = document.createElement('a');
+            link.download = `grafico_${canvasId}_${new Date().getTime()}.png`;
+            link.href = canvas.toDataURL('image/png', 1.0);
+            
+            // Simular clique para baixar
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            
+            showNotification('📸 Gráfico exportado com sucesso!', 'success');
+        } catch (error) {
+            console.error('Erro ao exportar gráfico:', error);
+            showNotification('❌ Erro ao exportar gráfico', 'error');
+        }
+    }
+
+    // Função para trocar abas principais
+    function switchMainTab(tabName) {
+        // Remover classe active de todos os botões
+        document.querySelectorAll('.tab-button').forEach(btn => {
+            btn.classList.remove('active', 'bg-blue-500', 'text-white');
+            btn.classList.add('hover:bg-gray-50');
+        });
+        
+        // Adicionar classe active ao botão clicado
+        const activeBtn = document.querySelector(`.tab-button[data-tab="${tabName}"]`);
+        if (activeBtn) {
+            activeBtn.classList.remove('hover:bg-gray-50');
+            activeBtn.classList.add('active', 'bg-blue-500', 'text-white');
+        }
+        
+        // Ocultar todas as abas
+        document.querySelectorAll('.tab-content').forEach(content => {
+            content.classList.add('hidden');
+        });
+        
+        // Mostrar aba ativa
+        const activeContent = document.getElementById(`${tabName}-tab`);
+        if (activeContent) {
+            activeContent.classList.remove('hidden');
+            
+            // Carregar dados específicos da aba se necessário
+            if (tabName === 'business-analysis') {
+                loadBusinessAnalysisData();
+            } else if (tabName === 'reports') {
+                loadReportsData();
+            }
+        }
+        
+        console.log(`🔄 Aba principal trocada para: ${tabName}`);
     }
 
     function toggleTheme() {
