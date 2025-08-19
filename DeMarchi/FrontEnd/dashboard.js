@@ -3420,6 +3420,56 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     // ========== CARREGAMENTO DE DADOS DA ABA RELATÓRIOS ==========
+    
+    // Função para buscar dados de despesas (faltava essa função)
+    async function fetchExpenses() {
+        try {
+            if (!checkAuthentication()) return [];
+
+            const params = new URLSearchParams({
+                year: filterYear.value,
+                month: filterMonth.value
+            });
+
+            const response = await authenticatedFetch(`${API_BASE_URL}/api/expenses?${params.toString()}`);
+
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.message || 'Erro ao buscar despesas.');
+            }
+
+            const expenses = await response.json();
+            console.log('📊 Despesas obtidas:', expenses.length);
+            return expenses;
+        } catch (error) {
+            console.error('❌ Erro ao buscar despesas:', error);
+            return [];
+        }
+    }
+
+    // Função para buscar dados do dashboard
+    async function fetchDashboardData() {
+        try {
+            const params = new URLSearchParams({
+                year: filterYear.value,
+                month: filterMonth.value
+            });
+
+            const response = await authenticatedFetch(`${API_BASE_URL}/api/dashboard?${params}`);
+            
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.message || 'Erro ao buscar dados do dashboard.');
+            }
+            
+            const data = await response.json();
+            return data;
+        } catch (error) {
+            console.error('❌ Erro ao buscar dados do dashboard:', error);
+            return {};
+        }
+    }
+
     async function loadReportsData() {
         try {
             if (!checkAuthentication()) return;
