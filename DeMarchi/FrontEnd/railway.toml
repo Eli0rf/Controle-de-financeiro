@@ -1,0 +1,15 @@
+[build]
+builder = "NIXPACKS"
+
+[deploy]
+startCommand = "npx http-server . -p $PORT -c-1 --cors"
+healthcheckPath = "/Dashboard.html"
+healthcheckTimeout = 300
+healthcheckGracePeriod = 60
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 3
+
+[environments.production.variables]
+NODE_ENV = "production"
+PORT = "3000"
+HOST = "0.0.0.0"

@@ -12,8 +12,6 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Variáveis globais para gerenciamento de gráficos
     const charts = {};
-    const chartRegistry = {};
-    
     let allExpensesCache = [];
 
     const loginSection = document.getElementById('login-section');
@@ -92,8 +90,6 @@ document.addEventListener('DOMContentLoaded', function() {
         irChart1: null,
         irChart2: null
     };
-    
-    let allExpensesCache = [];
 
     function getToken() {
         const token = localStorage.getItem('token');
