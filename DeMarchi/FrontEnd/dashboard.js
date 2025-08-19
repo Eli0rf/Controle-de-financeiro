@@ -559,102 +559,223 @@ document.addEventListener('DOMContentLoaded', function() {
      * Renderiza gráfico de metas/limites
      */
     function renderGoalsChart(data = []) {
-        const chartKey = 'goalsChart';
-        const canvasId = 'goals-chart';
-        
-        if (!isChartJsLoaded()) {
-            console.error('❌ Chart.js não está carregado para renderGoalsChart');
-            displayChartFallback(canvasId, 'Chart.js não carregado');
-            return;
-        }
+        return safeRenderChart('goals-chart', (canvas, ctx, data) => {
+            destroyChart('goalsChart');
+            
+            if (!data || data.length === 0) {
+                console.log('❌ Sem dados para o gráfico goals-chart');
+                return false;
+            }
 
-        if (!data || data.length === 0) {
-            console.warn('⚠️ Dados vazios para Goals Chart');
-            displayChartFallback(canvasId, 'Nenhum limite de gasto configurado');
-            return;
-        }
+            console.log('📊 Renderizando gráfico de limites vs gastos:', data);
+            
+            // Filtrar apenas planos com gastos ou limites > 0
+            const filteredData = data.filter(d => 
+                (d.Total > 0 || d.Teto > 0) && d.PlanoContasID
+            );
 
-        try {
-            const chartData = {
-                labels: data.map(item => `Plano ${item.PlanoContasID || 'N/A'}`),
-                datasets: [
-                    {
-                        label: 'Teto de Gastos',
-                        data: data.map(item => Number(item.Teto) || 0),
-                        type: 'line',
-                        fill: false,
-                        borderColor: 'rgba(34, 197, 94, 1)',
-                        backgroundColor: 'rgba(34, 197, 94, 0.7)',
-                        borderWidth: 3,
-                        pointRadius: 6,
-                        pointBackgroundColor: 'rgba(34, 197, 94, 1)',
-                        tension: 0.1
-                    },
-                    {
-                        label: 'Gastos Atuais',
-                        data: data.map(item => Number(item.Total) || 0),
-                        backgroundColor: data.map(item => {
-                            const current = Number(item.Total) || 0;
-                            const limit = Number(item.Teto) || 0;
-                            return current > limit ? 'rgba(239, 68, 68, 0.7)' : 'rgba(59, 130, 246, 0.7)';
-                        }),
-                        borderColor: data.map(item => {
-                            const current = Number(item.Total) || 0;
-                            const limit = Number(item.Teto) || 0;
-                            return current > limit ? 'rgba(239, 68, 68, 1)' : 'rgba(59, 130, 246, 1)';
-                        }),
-                        borderWidth: 2
-                    }
-                ]
-            };
+            if (filteredData.length === 0) {
+                console.log('❌ Nenhum plano com gastos ou limites para exibir');
+                return false;
+            }
 
-            const options = mergeChartOptions({
-                plugins: {
-                    title: {
-                        display: true,
-                        text: 'Controle de Limites de Gastos por Plano'
-                    },
-                    tooltip: {
-                        callbacks: {
-                            label: function(context) {
-                                const value = context.parsed.y;
-                                const dataIndex = context.dataIndex;
-                                const item = data[dataIndex];
-                                const percentage = item.Teto > 0 ? ((item.Total / item.Teto) * 100).toFixed(1) : 0;
-                                return [
-                                    `${context.dataset.label}: R$ ${value.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`,
-                                    `Utilização: ${percentage}%`
-                                ];
+            // Ordenar por PlanoContasID para melhor visualização
+            const sortedData = filteredData.sort((a, b) => a.PlanoContasID - b.PlanoContasID);
+
+            const labels = sortedData.map(d => `Plano ${d.PlanoContasID}`);
+            const limitData = sortedData.map(d => parseFloat(d.Teto) || 0);
+            const currentData = sortedData.map(d => parseFloat(d.Total) || 0);
+
+            chartRegistry.goalsChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        {
+                            label: '🎯 Teto de Gastos',
+                            data: limitData,
+                            type: 'line',
+                            fill: false,
+                            borderColor: 'rgba(34, 197, 94, 1)',
+                            backgroundColor: 'rgba(34, 197, 94, 0.1)',
+                            borderWidth: 3,
+                            pointRadius: 6,
+                            pointBackgroundColor: 'rgba(34, 197, 94, 1)',
+                            pointBorderColor: '#fff',
+                            pointBorderWidth: 2,
+                            tension: 0.1,
+                            yAxisID: 'y'
+                        },
+                        {
+                            label: '💰 Gastos Atuais',
+                            data: currentData,
+                            backgroundColor: sortedData.map(item => {
+                                const current = parseFloat(item.Total) || 0;
+                                const limit = parseFloat(item.Teto) || 0;
+                                const percentage = limit > 0 ? (current / limit) * 100 : 0;
+                                
+                                if (percentage > 100) return 'rgba(239, 68, 68, 0.8)'; // Vermelho - Ultrapassou
+                                if (percentage >= 90) return 'rgba(251, 146, 60, 0.8)'; // Laranja - Quase no limite
+                                if (percentage >= 70) return 'rgba(250, 204, 21, 0.8)'; // Amarelo - Atenção
+                                return 'rgba(34, 197, 94, 0.8)'; // Verde - Seguro
+                            }),
+                            borderColor: sortedData.map(item => {
+                                const current = parseFloat(item.Total) || 0;
+                                const limit = parseFloat(item.Teto) || 0;
+                                const percentage = limit > 0 ? (current / limit) * 100 : 0;
+                                
+                                if (percentage > 100) return 'rgba(239, 68, 68, 1)';
+                                if (percentage >= 90) return 'rgba(251, 146, 60, 1)';
+                                if (percentage >= 70) return 'rgba(250, 204, 21, 1)';
+                                return 'rgba(34, 197, 94, 1)';
+                            }),
+                            borderWidth: 2,
+                            yAxisID: 'y'
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: '🎯 Controle de Limites vs Gastos por Plano de Conta',
+                            color: getThemeColor('#374151', '#f9fafb'),
+                            font: { size: 16, weight: 'bold' }
+                        },
+                        subtitle: {
+                            display: true,
+                            text: `${filteredData.length} planos monitorados - Vermelho: ultrapassou, Laranja: próximo do limite`,
+                            color: getThemeColor('#6b7280', '#d1d5db'),
+                            font: { size: 12 }
+                        },
+                        legend: {
+                            position: 'bottom',
+                            labels: { 
+                                color: getThemeColor('#374151', '#f9fafb'),
+                                usePointStyle: true,
+                                padding: 20
+                            }
+                        },
+                        tooltip: {
+                            backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                            titleColor: '#fff',
+                            bodyColor: '#fff',
+                            borderColor: '#374151',
+                            borderWidth: 1,
+                            callbacks: {
+                                title: function(context) {
+                                    const index = context[0].dataIndex;
+                                    const item = sortedData[index];
+                                    return `Plano de Conta ${item.PlanoContasID}`;
+                                },
+                                label: function(context) {
+                                    const value = context.parsed.y;
+                                    const index = context.dataIndex;
+                                    const item = sortedData[index];
+                                    const current = parseFloat(item.Total) || 0;
+                                    const limit = parseFloat(item.Teto) || 0;
+                                    const percentage = limit > 0 ? ((current / limit) * 100).toFixed(1) : '0.0';
+                                    
+                                    if (context.dataset.label.includes('Teto')) {
+                                        return `${context.dataset.label}: R$ ${value.toFixed(2)}`;
+                                    } else {
+                                        return `${context.dataset.label}: R$ ${value.toFixed(2)} (${percentage}% do limite)`;
+                                    }
+                                },
+                                footer: function(context) {
+                                    if (context.length > 0) {
+                                        const index = context[0].dataIndex;
+                                        const item = sortedData[index];
+                                        const current = parseFloat(item.Total) || 0;
+                                        const limit = parseFloat(item.Teto) || 0;
+                                        const remaining = Math.max(0, limit - current);
+                                        const percentage = limit > 0 ? ((current / limit) * 100).toFixed(1) : '0.0';
+                                        
+                                        let status = '';
+                                        if (current > limit) {
+                                            status = `⚠️ ULTRAPASSOU em R$ ${(current - limit).toFixed(2)}`;
+                                        } else {
+                                            status = `✅ Disponível: R$ ${remaining.toFixed(2)}`;
+                                        }
+                                        
+                                        return [
+                                            `Utilização: ${percentage}%`,
+                                            status
+                                        ];
+                                    }
+                                    return '';
+                                }
+                            }
+                        },
+                        datalabels: {
+                            display: function(context) {
+                                return context.parsed.y > 0;
+                            },
+                            color: getThemeColor('#374151', '#f9fafb'),
+                            anchor: 'end',
+                            align: 'top',
+                            font: { weight: 'bold', size: 9 },
+                            formatter: function(value, context) {
+                                if (context.dataset.label.includes('Teto')) {
+                                    return `R$ ${value.toFixed(0)}`;
+                                } else {
+                                    const index = context.dataIndex;
+                                    const item = sortedData[index];
+                                    const current = parseFloat(item.Total) || 0;
+                                    const limit = parseFloat(item.Teto) || 0;
+                                    const percentage = limit > 0 ? ((current / limit) * 100).toFixed(0) : '0';
+                                    return value > 0 ? `${percentage}%` : '';
+                                }
                             }
                         }
-                    }
-                },
-                scales: {
-                    y: {
-                        title: {
-                            display: true,
-                            text: 'Valor (R$)'
+                    },
+                    scales: {
+                        x: {
+                            ticks: {
+                                color: getThemeColor('#6b7280', '#d1d5db'),
+                                maxRotation: 45,
+                                minRotation: 0
+                            },
+                            grid: {
+                                color: getThemeColor('#e5e7eb', '#374151')
+                            },
+                            title: {
+                                display: true,
+                                text: 'Planos de Conta',
+                                color: getThemeColor('#374151', '#f9fafb')
+                            }
+                        },
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                color: getThemeColor('#6b7280', '#d1d5db'),
+                                callback: function(value) {
+                                    return `R$ ${value.toFixed(0)}`;
+                                }
+                            },
+                            grid: {
+                                color: getThemeColor('#e5e7eb', '#374151')
+                            },
+                            title: {
+                                display: true,
+                                text: 'Valor (R$)',
+                                color: getThemeColor('#374151', '#f9fafb')
+                            }
                         }
                     },
-                    x: {
-                        title: {
-                            display: true,
-                            text: 'Planos de Conta'
-                        }
+                    interaction: {
+                        mode: 'index',
+                        intersect: false
                     }
-                }
+                },
+                plugins: [ChartDataLabels]
             });
-
-            createChart(chartKey, canvasId, {
-                type: 'bar',
-                data: chartData,
-                options: options
-            });
-
-        } catch (error) {
-            console.error('❌ Erro ao renderizar Goals Chart:', error);
-            displayChartFallback(canvasId, 'Erro ao carregar gráfico de metas');
-        }
+            
+            console.log('✅ Gráfico goals-chart renderizado com sucesso');
+            return true;
+        }, data, 'Nenhum limite de gasto configurado.');
     }
 
     /**
