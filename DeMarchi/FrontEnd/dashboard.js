@@ -10,6 +10,12 @@ document.addEventListener('DOMContentLoaded', function() {
     
     const FILE_BASE_URL = 'https://backend-production-a867.up.railway.app';
 
+    // Variáveis globais para gerenciamento de gráficos
+    const charts = {};
+    const chartRegistry = {};
+    
+    let allExpensesCache = [];
+
     const loginSection = document.getElementById('login-section');
     const dashboardContent = document.getElementById('dashboard-content');
     const loginForm = document.getElementById('login-form');
@@ -732,14 +738,16 @@ document.addEventListener('DOMContentLoaded', function() {
                         },
                         datalabels: {
                             display: function(context) {
-                                return context.parsed.y > 0;
+                                return context.parsed && context.parsed.y && context.parsed.y > 0;
                             },
-                            color: getThemeColor('#374151', '#f9fafb'),
+                            color: '#374151',
                             anchor: 'end',
                             align: 'top',
                             font: { weight: 'bold', size: 9 },
                             formatter: function(value, context) {
-                                if (context.dataset.label.includes('Teto')) {
+                                if (!value || value <= 0) return '';
+                                
+                                if (context.dataset.label && context.dataset.label.includes('Limite')) {
                                     return `R$ ${value.toFixed(0)}`;
                                 } else {
                                     const index = context.dataIndex;
@@ -1754,14 +1762,15 @@ document.addEventListener('DOMContentLoaded', function() {
                         },
                         datalabels: {
                             display: function(context) {
-                                return context.parsed.y > 0;
+                                return context.parsed && context.parsed.y && context.parsed.y > 0;
                             },
-                            color: getThemeColor('#374151', '#f9fafb'),
+                            color: '#374151',
                             anchor: 'end',
                             align: 'top',
                             font: { weight: 'bold', size: 10 },
-                            formatter: function(value) {
-                                return value > 0 ? `R$ ${value.toFixed(0)}` : '';
+                            formatter: function(value, context) {
+                                if (!value || value <= 0) return '';
+                                return `R$ ${value.toFixed(0)}`;
                             }
                         }
                     },
@@ -2998,14 +3007,47 @@ document.addEventListener('DOMContentLoaded', function() {
      * Destrói uma instância de gráfico de forma segura
      */
     function destroyChart(chartKey) {
+        // Verificar no registry principal
         if (chartRegistry[chartKey]) {
             try {
-                console.log(`🧹 Destruindo gráfico: ${chartKey}`);
+                console.log(`🧹 Destruindo gráfico (registry): ${chartKey}`);
                 chartRegistry[chartKey].destroy();
             } catch (error) {
                 console.warn(`⚠️ Erro ao destruir gráfico ${chartKey}:`, error);
             }
             chartRegistry[chartKey] = null;
+        }
+        
+        // Verificar no objeto charts também
+        if (charts[chartKey]) {
+            try {
+                console.log(`🧹 Destruindo gráfico (charts): ${chartKey}`);
+                charts[chartKey].destroy();
+            } catch (error) {
+                console.warn(`⚠️ Erro ao destruir gráfico ${chartKey}:`, error);
+            }
+            charts[chartKey] = null;
+        }
+        
+        // Buscar por todos os gráficos do Chart.js e destruir os órfãos
+        if (typeof Chart !== 'undefined' && Chart.instances) {
+            Chart.instances.forEach((instance, index) => {
+                if (instance.canvas && instance.canvas.id) {
+                    const canvasId = instance.canvas.id;
+                    // Se o gráfico corresponde ao canvas que queremos limpar
+                    if ((chartKey === 'goalsChart' && canvasId === 'goals-chart') ||
+                        (chartKey === 'goalsPlanChart' && canvasId === 'goals-plan-chart') ||
+                        (chartKey === 'mixedTypeChart' && canvasId === 'mixed-type-chart') ||
+                        (chartKey === 'planChart' && canvasId === 'plan-chart')) {
+                        try {
+                            console.log(`🧹 Destruindo gráfico órfão: ${canvasId}`);
+                            instance.destroy();
+                        } catch (error) {
+                            console.warn(`⚠️ Erro ao destruir gráfico órfão:`, error);
+                        }
+                    }
+                }
+            });
         }
     }
 
