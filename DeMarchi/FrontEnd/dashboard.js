@@ -782,87 +782,210 @@ document.addEventListener('DOMContentLoaded', function() {
      * Renderiza gráfico de planos de metas (distribuição)
      */
     function renderGoalsPlanChart(data = []) {
-        const chartKey = 'goalsPlanChart';
-        const canvasId = 'goals-plan-chart';
-        
-        if (!isChartJsLoaded()) {
-            console.error('❌ Chart.js não está carregado para renderGoalsPlanChart');
-            displayChartFallback(canvasId, 'Chart.js não carregado');
-            return;
-        }
-
-        if (!data || data.length === 0) {
-            console.warn('⚠️ Dados vazios para Goals Plan Chart');
-            displayChartFallback(canvasId, 'Nenhum plano de meta encontrado');
-            return;
-        }
-
-        try {
-            const sorted = [...data].sort((a, b) => a.PlanoContasID - b.PlanoContasID);
+        return safeRenderChart('goals-plan-chart', (canvas, ctx, data) => {
+            destroyChart('goalsPlanChart');
             
-            const chartData = {
-                labels: sorted.map(item => `Plano ${item.PlanoContasID}`),
-                datasets: [
-                    {
-                        label: 'Teto de Gastos',
-                        data: sorted.map(item => Number(item.Teto) || 0),
-                        backgroundColor: 'rgba(34, 197, 94, 0.6)',
-                        borderColor: 'rgba(34, 197, 94, 1)',
-                        borderWidth: 2
-                    },
-                    {
-                        label: 'Gasto Atual',
-                        data: sorted.map(item => Number(item.Total) || 0),
-                        backgroundColor: sorted.map(item => {
-                            const current = Number(item.Total) || 0;
-                            const limit = Number(item.Teto) || 0;
-                            return current > limit ? 'rgba(239, 68, 68, 0.6)' : 'rgba(59, 130, 246, 0.6)';
-                        }),
-                        borderColor: sorted.map(item => {
-                            const current = Number(item.Total) || 0;
-                            const limit = Number(item.Teto) || 0;
-                            return current > limit ? 'rgba(239, 68, 68, 1)' : 'rgba(59, 130, 246, 1)';
-                        }),
-                        borderWidth: 2
-                    }
-                ]
-            };
+            if (!data || data.length === 0) {
+                console.log('❌ Sem dados para o gráfico goals-plan-chart');
+                return false;
+            }
 
-            const options = mergeChartOptions({
-                plugins: {
-                    title: {
-                        display: true,
-                        text: 'Comparativo de Gastos vs Limites'
-                    },
-                    tooltip: {
-                        mode: 'index',
-                        intersect: false,
-                        callbacks: {
-                            label: function(context) {
-                                const value = context.parsed.y;
-                                const dataIndex = context.dataIndex;
-                                const item = sorted[dataIndex];
-                                const percentage = item.Teto > 0 ? Math.round((item.Total / item.Teto) * 100) : 0;
-                                return [
-                                    `${context.dataset.label}: R$ ${value.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`,
-                                    `Percentual: ${percentage}%`
-                                ];
+            console.log('📊 Renderizando gráfico de tetos por plano:', data);
+            
+            // Filtrar apenas planos com gastos ou limites > 0
+            const filteredData = data.filter(d => 
+                (d.Total > 0 || d.Teto > 0) && d.PlanoContasID
+            );
+
+            if (filteredData.length === 0) {
+                console.log('❌ Nenhum plano com dados para exibir');
+                return false;
+            }
+
+            // Ordenar por PlanoContasID
+            const sortedData = filteredData.sort((a, b) => a.PlanoContasID - b.PlanoContasID);
+
+            const labels = sortedData.map(d => `Plano ${d.PlanoContasID}`);
+            const limitData = sortedData.map(d => parseFloat(d.Teto) || 0);
+            const currentData = sortedData.map(d => parseFloat(d.Total) || 0);
+
+            chartRegistry.goalsPlanChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        {
+                            label: '🎯 Limite Configurado',
+                            data: limitData,
+                            backgroundColor: 'rgba(34, 197, 94, 0.7)',
+                            borderColor: 'rgba(34, 197, 94, 1)',
+                            borderWidth: 2
+                        },
+                        {
+                            label: '💰 Gasto Atual',
+                            data: currentData,
+                            backgroundColor: sortedData.map(item => {
+                                const current = parseFloat(item.Total) || 0;
+                                const limit = parseFloat(item.Teto) || 0;
+                                const percentage = limit > 0 ? (current / limit) * 100 : 0;
+                                
+                                if (percentage > 100) return 'rgba(239, 68, 68, 0.8)'; // Vermelho - Ultrapassou
+                                if (percentage >= 90) return 'rgba(251, 146, 60, 0.8)'; // Laranja - Quase no limite
+                                if (percentage >= 70) return 'rgba(250, 204, 21, 0.8)'; // Amarelo - Atenção
+                                return 'rgba(59, 130, 246, 0.8)'; // Azul - Normal
+                            }),
+                            borderColor: sortedData.map(item => {
+                                const current = parseFloat(item.Total) || 0;
+                                const limit = parseFloat(item.Teto) || 0;
+                                const percentage = limit > 0 ? (current / limit) * 100 : 0;
+                                
+                                if (percentage > 100) return 'rgba(239, 68, 68, 1)';
+                                if (percentage >= 90) return 'rgba(251, 146, 60, 1)';
+                                if (percentage >= 70) return 'rgba(250, 204, 21, 1)';
+                                return 'rgba(59, 130, 246, 1)';
+                            }),
+                            borderWidth: 2
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: '📊 Comparativo: Limites vs Gastos por Plano de Conta',
+                            color: getThemeColor('#374151', '#f9fafb'),
+                            font: { size: 16, weight: 'bold' }
+                        },
+                        subtitle: {
+                            display: true,
+                            text: `${filteredData.length} planos com limites configurados`,
+                            color: getThemeColor('#6b7280', '#d1d5db'),
+                            font: { size: 12 }
+                        },
+                        legend: {
+                            position: 'bottom',
+                            labels: { 
+                                color: getThemeColor('#374151', '#f9fafb'),
+                                usePointStyle: true,
+                                padding: 20
+                            }
+                        },
+                        tooltip: {
+                            backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                            titleColor: '#fff',
+                            bodyColor: '#fff',
+                            borderColor: '#374151',
+                            borderWidth: 1,
+                            mode: 'index',
+                            intersect: false,
+                            callbacks: {
+                                title: function(context) {
+                                    const index = context[0].dataIndex;
+                                    const item = sortedData[index];
+                                    return `Plano de Conta ${item.PlanoContasID}`;
+                                },
+                                label: function(context) {
+                                    const value = context.parsed.y;
+                                    const index = context.dataIndex;
+                                    const item = sortedData[index];
+                                    const current = parseFloat(item.Total) || 0;
+                                    const limit = parseFloat(item.Teto) || 0;
+                                    const percentage = limit > 0 ? ((current / limit) * 100).toFixed(1) : '0.0';
+                                    
+                                    if (context.dataset.label.includes('Limite')) {
+                                        return `${context.dataset.label}: R$ ${value.toFixed(2)}`;
+                                    } else {
+                                        return `${context.dataset.label}: R$ ${value.toFixed(2)} (${percentage}%)`;
+                                    }
+                                },
+                                footer: function(context) {
+                                    if (context.length > 0) {
+                                        const index = context[0].dataIndex;
+                                        const item = sortedData[index];
+                                        const current = parseFloat(item.Total) || 0;
+                                        const limit = parseFloat(item.Teto) || 0;
+                                        
+                                        if (current > limit) {
+                                            const excess = current - limit;
+                                            return `⚠️ Excesso: R$ ${excess.toFixed(2)}`;
+                                        } else {
+                                            const remaining = limit - current;
+                                            return `✅ Disponível: R$ ${remaining.toFixed(2)}`;
+                                        }
+                                    }
+                                    return '';
+                                }
+                            }
+                        },
+                        datalabels: {
+                            display: function(context) {
+                                return context.parsed.y > 0;
+                            },
+                            color: getThemeColor('#374151', '#f9fafb'),
+                            anchor: 'end',
+                            align: 'top',
+                            font: { weight: 'bold', size: 9 },
+                            formatter: function(value, context) {
+                                if (context.dataset.label.includes('Limite')) {
+                                    return value > 0 ? `R$ ${value.toFixed(0)}` : '';
+                                } else {
+                                    const index = context.dataIndex;
+                                    const item = sortedData[index];
+                                    const current = parseFloat(item.Total) || 0;
+                                    const limit = parseFloat(item.Teto) || 0;
+                                    const percentage = limit > 0 ? ((current / limit) * 100).toFixed(0) : '0';
+                                    return value > 0 ? `${percentage}%` : '';
+                                }
                             }
                         }
+                    },
+                    scales: {
+                        x: {
+                            ticks: {
+                                color: getThemeColor('#6b7280', '#d1d5db'),
+                                maxRotation: 45,
+                                minRotation: 0
+                            },
+                            grid: {
+                                color: getThemeColor('#e5e7eb', '#374151')
+                            },
+                            title: {
+                                display: true,
+                                text: 'Planos de Conta',
+                                color: getThemeColor('#374151', '#f9fafb')
+                            }
+                        },
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                color: getThemeColor('#6b7280', '#d1d5db'),
+                                callback: function(value) {
+                                    return `R$ ${value.toFixed(0)}`;
+                                }
+                            },
+                            grid: {
+                                color: getThemeColor('#e5e7eb', '#374151')
+                            },
+                            title: {
+                                display: true,
+                                text: 'Valor (R$)',
+                                color: getThemeColor('#374151', '#f9fafb')
+                            }
+                        }
+                    },
+                    interaction: {
+                        mode: 'index',
+                        intersect: false
                     }
-                }
+                },
+                plugins: [ChartDataLabels]
             });
-
-            createChart(chartKey, canvasId, {
-                type: 'bar',
-                data: chartData,
-                options: options
-            });
-
-        } catch (error) {
-            console.error('❌ Erro ao renderizar Goals Plan Chart:', error);
-            displayChartFallback(canvasId, 'Erro ao carregar gráfico de planos');
-        }
+            
+            console.log('✅ Gráfico goals-plan-chart renderizado com sucesso');
+            return true;
+        }, data, 'Nenhum plano de limite encontrado.');
     }
 
     // ====== DARK MODE (MODO ESCURO) ======
@@ -3026,6 +3149,8 @@ document.addEventListener('DOMContentLoaded', function() {
                     // Load specific content based on tab
                     if (targetTab === 'business-analysis') {
                         loadBusinessAnalysis();
+                    } else if (targetTab === 'reports') {
+                        loadReportsData();
                     }
                 }
             });
@@ -3200,6 +3325,146 @@ document.addEventListener('DOMContentLoaded', function() {
             console.error('Erro ao atualizar gráficos empresariais:', error);
             showNotification('Erro ao carregar análise empresarial', 'error');
         }
+    }
+
+    // ========== CARREGAMENTO DE DADOS DA ABA RELATÓRIOS ==========
+    async function loadReportsData() {
+        try {
+            if (!checkAuthentication()) return;
+
+            console.log('🔄 Carregando dados da aba de relatórios...');
+            showNotification('Carregando dados de relatórios...', 'info', 2000);
+
+            // Aguardar Chart.js estar carregado
+            if (!await waitForChartJs()) {
+                console.warn('Chart.js não carregado para relatórios');
+                showNotification('Carregando biblioteca de gráficos...', 'info', 3000);
+                return;
+            }
+
+            // Carregar todos os dados necessários para a aba de relatórios
+            await Promise.allSettled([
+                fetchAndRenderGoalsChart(),      // Gráfico de Limites vs Gastos
+                fetchAndRenderPlanChart(),       // Gráfico de Gastos por Plano
+                loadBusinessAnalysisForReports() // Análise empresarial para relatórios
+            ]);
+
+            console.log('✅ Dados de relatórios carregados com sucesso');
+            showNotification('Dados de relatórios carregados!', 'success', 2000);
+
+        } catch (error) {
+            console.error('Erro ao carregar dados de relatórios:', error);
+            showNotification('Erro ao carregar dados de relatórios', 'error');
+        }
+    }
+
+    // Função específica para carregar dados do plan-chart
+    async function fetchAndRenderPlanChart() {
+        try {
+            const params = new URLSearchParams({
+                year: filterYear.value,
+                month: filterMonth.value
+            });
+
+            const response = await authenticatedFetch(`${API_BASE_URL}/api/dashboard?${params}`);
+            
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.message || 'Erro ao buscar dados do plano.');
+            }
+            
+            const data = await response.json();
+            renderPlanChart(data.planChartData || []);
+
+        } catch (error) {
+            console.error('Erro ao buscar dados do plano:', error);
+            showNotification('Erro ao carregar gráfico de planos', 'error');
+        }
+    }
+
+    // Carregar análise empresarial específica para relatórios
+    async function loadBusinessAnalysisForReports() {
+        try {
+            const year = filterYear.value;
+            const month = filterMonth.value;
+
+            const businessData = await fetchBusinessData(year, month);
+            
+            // Atualizar apenas o conteúdo da análise empresarial na aba de relatórios
+            const businessContainer = document.getElementById('business-analysis-content');
+            if (businessContainer) {
+                businessContainer.innerHTML = `
+                    <div class="grid grid-cols-2 gap-4">
+                        <div class="text-center">
+                            <p class="text-2xl font-bold text-blue-600">R$ ${(businessData.total || 0).toFixed(2)}</p>
+                            <p class="text-sm text-gray-600">Total Empresarial</p>
+                        </div>
+                        <div class="text-center">
+                            <p class="text-2xl font-bold text-green-600">${businessData.count || 0}</p>
+                            <p class="text-sm text-gray-600">Transações</p>
+                        </div>
+                    </div>
+                    <div class="mt-4">
+                        <canvas id="business-mini-chart" width="300" height="150"></canvas>
+                    </div>
+                `;
+                
+                // Renderizar mini gráfico empresarial
+                renderBusinessMiniChart(businessData);
+            }
+
+        } catch (error) {
+            console.error('Erro ao carregar análise empresarial para relatórios:', error);
+            const businessContainer = document.getElementById('business-analysis-content');
+            if (businessContainer) {
+                businessContainer.innerHTML = '<p class="text-red-500 text-center">Erro ao carregar dados empresariais</p>';
+            }
+        }
+    }
+
+    // Mini gráfico empresarial para a aba de relatórios
+    function renderBusinessMiniChart(data) {
+        const canvas = document.getElementById('business-mini-chart');
+        if (!canvas || !data.expenses) return;
+
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+
+        // Destruir gráfico existente se houver
+        if (chartRegistry.businessMiniChart) {
+            chartRegistry.businessMiniChart.destroy();
+        }
+
+        const accounts = [...new Set(data.expenses.map(e => e.account))];
+        const accountTotals = accounts.map(account => 
+            data.expenses
+                .filter(e => e.account === account)
+                .reduce((sum, e) => sum + parseFloat(e.amount), 0)
+        );
+
+        chartRegistry.businessMiniChart = new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: accounts,
+                datasets: [{
+                    data: accountTotals,
+                    backgroundColor: [
+                        '#3B82F6', '#EF4444', '#10B981', '#F59E0B', 
+                        '#8B5CF6', '#06B6D4', '#84CC16', '#F97316'
+                    ]
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'bottom',
+                        labels: { fontSize: 10 }
+                    }
+                }
+            }
+        });
     }
 
     // ========== GRÁFICOS DE ANÁLISE EMPRESARIAL ==========
