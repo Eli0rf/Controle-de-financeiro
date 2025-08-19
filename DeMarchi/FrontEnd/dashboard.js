@@ -642,6 +642,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
             // Ordenar por PlanoContasID para melhor visualização
             const sortedData = chartData.sort((a, b) => parseInt(a.PlanoContasID) - parseInt(b.PlanoContasID));
+            const filteredData = sortedData; // Para usar no subtitle
 
             console.log('📊 Dados do gráfico:', sortedData);
 
@@ -923,6 +924,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
             // Ordenar por PlanoContasID
             const sortedData = chartData.sort((a, b) => parseInt(a.PlanoContasID) - parseInt(b.PlanoContasID));
+            const filteredData = sortedData; // Para usar no subtitle
 
             const labels = sortedData.map(d => `Plano ${d.PlanoContasID}`);
             const limitData = sortedData.map(d => parseFloat(d.Teto) || 0);
