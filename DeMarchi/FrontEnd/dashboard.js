@@ -235,6 +235,12 @@ document.addEventListener('DOMContentLoaded', function() {
         if (monthlyReportBtn) monthlyReportBtn.addEventListener('click', openReportModal);
         if (cancelReportBtn) cancelReportBtn.addEventListener('click', closeReportModal);
         if (reportForm) reportForm.addEventListener('submit', handleMonthlyReportDownload);
+        
+        // Event listeners para atualizar prévia do relatório
+        const reportYear = document.getElementById('report-year');
+        const reportMonth = document.getElementById('report-month');
+        if (reportYear) reportYear.addEventListener('change', loadReportCeilingPreview);
+        if (reportMonth) reportMonth.addEventListener('change', loadReportCeilingPreview);
         if (businessCheckbox) businessCheckbox.addEventListener('change', toggleExpenseFields);
         document.getElementById('filter-account').addEventListener('change', fetchAllData);
         if (filterPlan) filterPlan.addEventListener('input', applyAllFilters);
@@ -1926,12 +1932,98 @@ document.addEventListener('DOMContentLoaded', function() {
             reportAccount.value = filterAccount.value;
         }
 
+        // Carrega prévia dos limites de gastos
+        loadReportCeilingPreview();
+
         // Exibe o modal normalmente
         const modal = document.getElementById('report-modal');
         if (modal) {
             modal.classList.remove('hidden', 'opacity-0');
             modal.classList.add('flex');
             setTimeout(() => modal.classList.remove('opacity-0'), 10);
+        }
+    }
+
+    // Função para carregar prévia dos limites no modal de relatório
+    async function loadReportCeilingPreview() {
+        try {
+            const year = document.getElementById('report-year')?.value || filterYear.value;
+            const month = document.getElementById('report-month')?.value || filterMonth.value;
+            
+            if (!year || !month) return;
+
+            const response = await authenticatedFetch(`${API_BASE_URL}/api/expenses-goals?year=${year}&month=${month}`);
+            
+            if (!response.ok) return;
+            
+            const data = await response.json();
+            
+            const previewContainer = document.getElementById('report-ceiling-preview');
+            const previewContent = document.getElementById('ceiling-preview-content');
+            
+            if (!previewContainer || !previewContent) return;
+
+            if (data && data.length > 0) {
+                // Filtrar apenas planos com gastos ou tetos > 0
+                const filteredData = data.filter(d => (d.Total > 0 || d.Teto > 0) && d.PlanoContasID);
+                
+                if (filteredData.length > 0) {
+                    // Ordenar por percentual de utilização (maior primeiro)
+                    const sortedData = filteredData.sort((a, b) => {
+                        const percentA = a.Teto > 0 ? (a.Total / a.Teto) * 100 : 0;
+                        const percentB = b.Teto > 0 ? (b.Total / b.Teto) * 100 : 0;
+                        return percentB - percentA;
+                    });
+
+                    let html = `<div class="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">`;
+                    
+                    sortedData.slice(0, 8).forEach(item => { // Mostrar apenas os 8 primeiros
+                        const percentage = item.Teto > 0 ? ((item.Total / item.Teto) * 100).toFixed(1) : '0.0';
+                        let statusIcon = '🟢';
+                        let statusClass = 'text-green-700';
+                        
+                        if (percentage > 100) {
+                            statusIcon = '🔴';
+                            statusClass = 'text-red-700';
+                        } else if (percentage >= 90) {
+                            statusIcon = '🟡';
+                            statusClass = 'text-yellow-700';
+                        } else if (percentage >= 70) {
+                            statusIcon = '🟡';
+                            statusClass = 'text-yellow-600';
+                        }
+                        
+                        html += `
+                            <div class="flex justify-between items-center py-1">
+                                <span>Plano ${item.PlanoContasID}:</span>
+                                <span class="${statusClass}">
+                                    ${statusIcon} ${percentage}%
+                                </span>
+                            </div>
+                        `;
+                    });
+                    
+                    html += `</div>`;
+                    
+                    if (sortedData.length > 8) {
+                        html += `<p class="text-center mt-2 text-green-600">... e mais ${sortedData.length - 8} planos no relatório completo</p>`;
+                    }
+                    
+                    previewContent.innerHTML = html;
+                    previewContainer.classList.remove('hidden');
+                } else {
+                    previewContainer.classList.add('hidden');
+                }
+            } else {
+                previewContainer.classList.add('hidden');
+            }
+            
+        } catch (error) {
+            console.error('Erro ao carregar prévia dos limites:', error);
+            const previewContainer = document.getElementById('report-ceiling-preview');
+            if (previewContainer) {
+                previewContainer.classList.add('hidden');
+            }
         }
     }
 

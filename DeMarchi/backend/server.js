@@ -802,6 +802,138 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
         });
         doc.moveDown();
 
+        // Análise de Tetos vs Gastos por Plano
+        doc.fontSize(16).fillColor('#10B981').text('🎯 Controle de Limites de Gastos por Plano', { underline: true });
+        doc.moveDown(0.5);
+        doc.fontSize(12).fillColor('#6B7280').text('Análise comparativa entre tetos configurados e gastos realizados:');
+        doc.moveDown();
+
+        // Coletar dados de tetos vs gastos
+        const planosComTetos = [];
+        Object.entries(porPlano).forEach(([plano, valor]) => {
+            const planoId = parseInt(plano);
+            if (!isNaN(planoId) && tetos[planoId]) {
+                const teto = tetos[planoId];
+                const percentual = (valor / teto) * 100;
+                planosComTetos.push({
+                    plano: planoId,
+                    gasto: valor,
+                    teto: teto,
+                    percentual: percentual
+                });
+            }
+        });
+
+        // Ordenar por percentual (maior utilização primeiro)
+        planosComTetos.sort((a, b) => b.percentual - a.percentual);
+
+        if (planosComTetos.length === 0) {
+            doc.fontSize(12).fillColor('#6B7280').text('• Nenhum plano com teto configurado encontrado no período.');
+        } else {
+            // Cabeçalho da tabela
+            doc.fontSize(11).fillColor('#374151');
+            const tableY = doc.y;
+            doc.text('Plano', 50, tableY, { width: 60 });
+            doc.text('Gasto Atual', 120, tableY, { width: 80 });
+            doc.text('Teto Config.', 210, tableY, { width: 80 });
+            doc.text('Utilização', 300, tableY, { width: 70 });
+            doc.text('Status', 380, tableY, { width: 80 });
+            doc.moveDown();
+
+            // Linha separadora
+            doc.strokeColor('#E5E7EB').moveTo(50, doc.y).lineTo(480, doc.y).stroke();
+            doc.moveDown(0.3);
+
+            // Dados da tabela
+            planosComTetos.forEach(item => {
+                let statusColor = '#10B981'; // Verde
+                let statusText = '✅ Seguro';
+                let statusEmoji = '🟢';
+
+                if (item.percentual > 100) {
+                    statusColor = '#EF4444'; // Vermelho
+                    statusText = '🚨 Ultrapassou';
+                    statusEmoji = '🔴';
+                } else if (item.percentual >= 90) {
+                    statusColor = '#F59E0B'; // Laranja
+                    statusText = '⚠️ Próximo';
+                    statusEmoji = '🟡';
+                } else if (item.percentual >= 70) {
+                    statusColor = '#EAB308'; // Amarelo
+                    statusText = '⚡ Atenção';
+                    statusEmoji = '🟡';
+                }
+
+                const currentY = doc.y;
+                doc.fontSize(10).fillColor('#374151');
+                doc.text(`${item.plano}`, 50, currentY, { width: 60 });
+                doc.text(`R$ ${item.gasto.toFixed(2)}`, 120, currentY, { width: 80 });
+                doc.text(`R$ ${item.teto.toFixed(2)}`, 210, currentY, { width: 80 });
+                doc.text(`${item.percentual.toFixed(1)}%`, 300, currentY, { width: 70 });
+                doc.fillColor(statusColor).text(`${statusEmoji} ${statusText}`, 380, currentY, { width: 80 });
+                doc.moveDown(0.8);
+            });
+
+            doc.moveDown();
+            
+            // Resumo dos alertas
+            const ultrapassaram = planosComTetos.filter(p => p.percentual > 100).length;
+            const proximosLimite = planosComTetos.filter(p => p.percentual >= 90 && p.percentual <= 100).length;
+            const seguros = planosComTetos.filter(p => p.percentual < 70).length;
+
+            doc.fontSize(12).fillColor('#374151').text('📊 Resumo dos Alertas:', { underline: true });
+            doc.moveDown(0.3);
+            doc.fontSize(10);
+            
+            if (ultrapassaram > 0) {
+                doc.fillColor('#EF4444').text(`🔴 ${ultrapassaram} plano(s) ultrapassaram o limite`);
+            }
+            if (proximosLimite > 0) {
+                doc.fillColor('#F59E0B').text(`🟡 ${proximosLimite} plano(s) próximos do limite (>90%)`);
+            }
+            doc.fillColor('#10B981').text(`🟢 ${seguros} plano(s) em situação segura (<70%)`);
+            
+            // Valor total disponível vs utilizado
+            const tetoTotal = planosComTetos.reduce((sum, p) => sum + p.teto, 0);
+            const gastoTotal = planosComTetos.reduce((sum, p) => sum + p.gasto, 0);
+            const utilizacaoGeral = tetoTotal > 0 ? (gastoTotal / tetoTotal) * 100 : 0;
+            
+            doc.moveDown(0.5);
+            doc.fontSize(11).fillColor('#3B82F6');
+            doc.text(`💰 Total de tetos configurados: R$ ${tetoTotal.toFixed(2)}`);
+            doc.text(`💸 Total gasto nos planos: R$ ${gastoTotal.toFixed(2)}`);
+            doc.text(`📈 Utilização geral dos tetos: ${utilizacaoGeral.toFixed(1)}%`);
+            
+            if (utilizacaoGeral > 85) {
+                doc.moveDown(0.3);
+                doc.fillColor('#EF4444').fontSize(10).text('⚠️ ATENÇÃO: Utilização geral dos tetos está alta! Monitore os gastos.');
+            }
+
+            // Recomendações baseadas na análise
+            doc.moveDown();
+            doc.fontSize(12).fillColor('#6366F1').text('💡 Recomendações:', { underline: true });
+            doc.moveDown(0.3);
+            doc.fontSize(10).fillColor('#374151');
+
+            const planosRisco = planosComTetos.filter(p => p.percentual >= 85);
+            const planosSegurosBaixaUtilizacao = planosComTetos.filter(p => p.percentual < 30);
+
+            if (planosRisco.length > 0) {
+                doc.text(`• Monitore de perto os planos: ${planosRisco.map(p => p.plano).join(', ')} - estão próximos ou acima do limite`);
+            }
+
+            if (planosSegurosBaixaUtilizacao.length > 0) {
+                doc.text(`• Planos ${planosSegurosBaixaUtilizacao.map(p => p.plano).join(', ')} têm baixa utilização - considere redistribuir orçamento`);
+            }
+
+            if (ultrapassaram > 0) {
+                doc.fillColor('#EF4444').text(`• URGENTE: Revisar gastos dos planos que ultrapassaram o limite`);
+            }
+
+            doc.fillColor('#10B981').text(`• Continue monitorando para manter controle financeiro eficiente`);
+        }
+        doc.moveDown();
+
         // Por conta
         doc.fontSize(16).fillColor('#6366F1').text('Gastos por Conta', { underline: true });
         Object.entries(porConta).forEach(([conta, valor]) => {
