@@ -565,14 +565,29 @@ document.addEventListener('DOMContentLoaded', function() {
      * Renderiza gráfico de metas/limites
      */
     function renderGoalsChart(data = []) {
-        return safeRenderChart('goals-chart', (canvas, ctx, data) => {
+        const canvasId = 'goals-chart';
+        const canvas = document.getElementById(canvasId);
+        if (!canvas) {
+            console.warn(`Canvas ${canvasId} não encontrado`);
+            return false;
+        }
+        
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return false;
+        
+        if (!isChartJsLoaded()) {
+            console.error(`Chart.js não está carregado para ${canvasId}`);
+            return false;
+        }
+        
+        if (!data || data.length === 0) {
+            console.log('❌ Sem dados para o gráfico goals-chart');
+            return false;
+        }
+
+        try {
             destroyChart('goalsChart');
             
-            if (!data || data.length === 0) {
-                console.log('❌ Sem dados para o gráfico goals-chart');
-                return false;
-            }
-
             console.log('📊 Renderizando gráfico de limites vs gastos:', data);
             
             // Filtrar apenas planos com gastos ou limites > 0
@@ -781,21 +796,39 @@ document.addEventListener('DOMContentLoaded', function() {
             
             console.log('✅ Gráfico goals-chart renderizado com sucesso');
             return true;
-        }, data, 'Nenhum limite de gasto configurado.');
+        } catch (error) {
+            console.error('❌ Erro ao renderizar goals-chart:', error);
+            return false;
+        }
     }
 
     /**
      * Renderiza gráfico de planos de metas (distribuição)
      */
     function renderGoalsPlanChart(data = []) {
-        return safeRenderChart('goals-plan-chart', (canvas, ctx, data) => {
+        const canvasId = 'goals-plan-chart';
+        const canvas = document.getElementById(canvasId);
+        if (!canvas) {
+            console.warn(`Canvas ${canvasId} não encontrado`);
+            return false;
+        }
+        
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return false;
+        
+        if (!isChartJsLoaded()) {
+            console.error(`Chart.js não está carregado para ${canvasId}`);
+            return false;
+        }
+        
+        if (!data || data.length === 0) {
+            console.log('❌ Sem dados para o gráfico goals-plan-chart');
+            return false;
+        }
+
+        try {
             destroyChart('goalsPlanChart');
             
-            if (!data || data.length === 0) {
-                console.log('❌ Sem dados para o gráfico goals-plan-chart');
-                return false;
-            }
-
             console.log('📊 Renderizando gráfico de tetos por plano:', data);
             
             // Filtrar apenas planos com gastos ou limites > 0
@@ -815,7 +848,7 @@ document.addEventListener('DOMContentLoaded', function() {
             const limitData = sortedData.map(d => parseFloat(d.Teto) || 0);
             const currentData = sortedData.map(d => parseFloat(d.Total) || 0);
 
-            chartRegistry.goalsPlanChart = new Chart(ctx, {
+            charts['goalsPlanChart'] = new Chart(ctx, {
                 type: 'bar',
                 data: {
                     labels: labels,
@@ -991,7 +1024,10 @@ document.addEventListener('DOMContentLoaded', function() {
             
             console.log('✅ Gráfico goals-plan-chart renderizado com sucesso');
             return true;
-        }, data, 'Nenhum plano de limite encontrado.');
+        } catch (error) {
+            console.error('❌ Erro ao renderizar goals-plan-chart:', error);
+            return false;
+        }
     }
 
     // ====== DARK MODE (MODO ESCURO) ======
@@ -1168,7 +1204,9 @@ document.addEventListener('DOMContentLoaded', function() {
             }
             
             // Melhorar a mensagem do alerta
-            const improvedMessage = `${icon} Plano ${alert.planoId}: ${alert.percentual}% do limite atingido (R$ ${alert.valor.toFixed(2)} de R$ ${alert.limite.toFixed(2)})`;
+            const valor = parseFloat(alert.valor) || 0;
+            const limite = parseFloat(alert.limite) || 0;
+            const improvedMessage = `${icon} Plano ${alert.planoId}: ${alert.percentual}% do limite atingido (${formatCurrency(valor)} de ${formatCurrency(limite)})`;
             
             showNotification(improvedMessage, alertType);
             
@@ -1600,14 +1638,29 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function renderMixedTypeChart(data = []) {
-        return safeRenderChart('mixed-type-chart', (canvas, ctx, data) => {
+        const canvasId = 'mixed-type-chart';
+        const canvas = document.getElementById(canvasId);
+        if (!canvas) {
+            console.warn(`Canvas ${canvasId} não encontrado`);
+            return false;
+        }
+        
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return false;
+        
+        if (!isChartJsLoaded()) {
+            console.error(`Chart.js não está carregado para ${canvasId}`);
+            return false;
+        }
+        
+        if (!data || data.length === 0) {
+            console.log('❌ Sem dados para o gráfico mixed-type-chart');
+            return false;
+        }
+
+        try {
             destroyChart('mixedTypeChart');
             
-            if (!data || data.length === 0) {
-                console.log('❌ Sem dados para o gráfico mixed-type-chart');
-                return false;
-            }
-
             console.log('📊 Renderizando gráfico de comparação pessoal vs empresarial:', data);
             
             // Filtrar contas que têm pelo menos um valor > 0
@@ -1748,7 +1801,10 @@ document.addEventListener('DOMContentLoaded', function() {
             
             console.log('✅ Gráfico mixed-type-chart renderizado com sucesso');
             return true;
-        }, data, 'Sem dados para comparação pessoal vs empresarial.');
+        } catch (error) {
+            console.error('❌ Erro ao renderizar mixed-type-chart:', error);
+            return false;
+        }
     }
 
     function renderPlanChart(data = []) {
@@ -2073,6 +2129,42 @@ document.addEventListener('DOMContentLoaded', function() {
             if(reportGenerateText) reportGenerateText.classList.remove('hidden');
             if(reportLoadingText) reportLoadingText.classList.add('hidden');
             if(submitButton) submitButton.disabled = false;
+        }
+    }
+
+    function populateYearAndMonthFilters() {
+        const yearSelect = document.getElementById('filter-year');
+        const monthSelect = document.getElementById('filter-month');
+        
+        if (yearSelect) {
+            const currentYear = new Date().getFullYear();
+            yearSelect.innerHTML = '';
+            
+            // Adicionar anos (atual e próximos 2 anos, e 3 anos anteriores)
+            for (let year = currentYear - 3; year <= currentYear + 2; year++) {
+                const option = document.createElement('option');
+                option.value = year;
+                option.textContent = year;
+                if (year === currentYear) option.selected = true;
+                yearSelect.appendChild(option);
+            }
+        }
+        
+        if (monthSelect) {
+            const currentMonth = new Date().getMonth() + 1;
+            const months = [
+                'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+                'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
+            ];
+            
+            monthSelect.innerHTML = '';
+            months.forEach((month, index) => {
+                const option = document.createElement('option');
+                option.value = index + 1;
+                option.textContent = month;
+                if (index + 1 === currentMonth) option.selected = true;
+                monthSelect.appendChild(option);
+            });
         }
     }
 
@@ -3418,6 +3510,125 @@ document.addEventListener('DOMContentLoaded', function() {
             showNotification('Erro ao carregar análise empresarial', 'error');
         }
     }
+
+    // ========== FUNÇÕES UTILITÁRIAS ==========
+    
+    function formatCurrency(value) {
+        if (value === null || value === undefined || isNaN(value)) {
+            return 'R$ 0,00';
+        }
+        
+        const numValue = typeof value === 'string' ? parseFloat(value) : value;
+        return new Intl.NumberFormat('pt-BR', {
+            style: 'currency',
+            currency: 'BRL'
+        }).format(numValue);
+    }
+
+    function formatDate(dateString) {
+        if (!dateString) return '';
+        const date = new Date(dateString);
+        return date.toLocaleDateString('pt-BR');
+    }
+
+    function formatNumber(value) {
+        if (value === null || value === undefined || isNaN(value)) {
+            return '0';
+        }
+        return new Intl.NumberFormat('pt-BR').format(value);
+    }
+
+    // Função para exibir modais customizados
+    function showModal(title, content) {
+        // Remover modal existente se houver
+        const existingModal = document.getElementById('custom-modal');
+        if (existingModal) {
+            existingModal.remove();
+        }
+
+        // Criar modal
+        const modal = document.createElement('div');
+        modal.id = 'custom-modal';
+        modal.className = 'fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50';
+        modal.innerHTML = `
+            <div class="relative top-20 mx-auto p-5 border w-11/12 md:w-1/2 lg:w-1/3 shadow-lg rounded-md bg-white">
+                <div class="mt-3">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="text-lg font-bold text-gray-900">${title}</h3>
+                        <button onclick="closeModal()" class="text-gray-400 hover:text-gray-600 focus:outline-none">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                            </svg>
+                        </button>
+                    </div>
+                    <div class="text-sm text-gray-500">
+                        ${content}
+                    </div>
+                </div>
+            </div>
+        `;
+
+        document.body.appendChild(modal);
+
+        // Fechar modal ao clicar fora
+        modal.addEventListener('click', function(e) {
+            if (e.target === modal) {
+                closeModal();
+            }
+        });
+    }
+
+    // Função para fechar modal
+    function closeModal() {
+        const modal = document.getElementById('custom-modal');
+        if (modal) {
+            modal.remove();
+        }
+    }
+
+    // Tornar função global para uso nos botões
+    window.closeModal = closeModal;
+
+    // Função para gerar relatório PDF
+    async function generatePDFReport() {
+        try {
+            showNotification('Gerando relatório PDF...', 'info');
+            
+            const currentYear = filterYear.value;
+            const currentMonth = filterMonth.value;
+            
+            const response = await authenticatedFetch(`${API_BASE_URL}/api/reports/pdf?year=${currentYear}&month=${currentMonth}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
+            
+            if (!response.ok) {
+                throw new Error('Erro ao gerar relatório');
+            }
+            
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.style.display = 'none';
+            a.href = url;
+            a.download = `relatorio_${currentYear}_${currentMonth}.pdf`;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+            
+            showNotification('Relatório PDF gerado com sucesso!', 'success');
+            closeModal();
+        } catch (error) {
+            console.error('Erro ao gerar PDF:', error);
+            showNotification('Erro ao gerar relatório PDF', 'error');
+        }
+    }
+
+    // Tornar função global para uso nos botões
+    window.generatePDFReport = generatePDFReport;
 
     // ========== CARREGAMENTO DE DADOS DA ABA RELATÓRIOS ==========
     
