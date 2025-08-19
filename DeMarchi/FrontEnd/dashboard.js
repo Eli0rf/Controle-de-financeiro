@@ -4542,28 +4542,297 @@ document.addEventListener('DOMContentLoaded', function() {
             `);
         }
 
-        function showBudgetProjection() {
-            showModal('Projeção Orçamentária', `
-                <div class="space-y-4">
-                    <div class="bg-purple-50 p-4 rounded-lg">
-                        <h4 class="font-semibold text-purple-800">🔮 Análise de Tendências</h4>
-                        <p class="text-sm text-purple-600 mt-2">
-                            Baseado no histórico de gastos, projete cenários futuros 
-                            e identifique oportunidades de otimização.
-                        </p>
+        async function showBudgetProjection() {
+            const btn = document.getElementById('budget-projection');
+            const originalHTML = btn.innerHTML;
+            
+            try {
+                // Mostrar loading
+                btn.innerHTML = `
+                    <div class="text-center">
+                        <svg class="w-8 h-8 mx-auto mb-2 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" class="opacity-25"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        <p class="font-semibold">Gerando PDF...</p>
+                        <p class="text-sm">Análise de tendências</p>
                     </div>
-                    <div class="grid grid-cols-2 gap-4">
-                        <div class="text-center">
-                            <p class="text-sm text-gray-600">Tendência Atual</p>
-                            <p class="text-2xl font-bold text-purple-600">+5.2%</p>
+                `;
+                btn.disabled = true;
+                
+                // Buscar dados atuais
+                const data = await fetchExpenseData();
+                
+                // Gerar relatório PDF
+                await generateTrendAnalysisPDF(data);
+                
+            } catch (error) {
+                console.error('Erro ao gerar projeção:', error);
+                showNotification('❌ Erro ao gerar análise de tendências', 'error');
+            } finally {
+                btn.innerHTML = originalHTML;
+                btn.disabled = false;
+            }
+        }
+
+        // Função para gerar PDF de análise de tendências
+        async function generateTrendAnalysisPDF(expenseData) {
+            try {
+                // Analisar dados e calcular tendências
+                const analysis = analyzeTrends(expenseData);
+                
+                // Preparar dados para o backend
+                const reportData = {
+                    title: 'Análise de Tendências Financeiras',
+                    period: `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`,
+                    generatedAt: new Date().toISOString(),
+                    analysis: analysis,
+                    expenses: expenseData,
+                    charts: {
+                        trendChart: await captureChartAsBase64('expenses-line-chart'),
+                        distributionChart: await captureChartAsBase64('expenses-pie-chart')
+                    }
+                };
+
+                // Chamar backend para gerar PDF
+                const response = await fetch(`${API_BASE_URL}/api/reports/trend-analysis`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${getToken()}`
+                    },
+                    body: JSON.stringify(reportData)
+                });
+
+                if (!response.ok) {
+                    throw new Error(`Erro no servidor: ${response.status}`);
+                }
+
+                // Download do PDF
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = `analise_tendencias_${new Date().getTime()}.pdf`;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                window.URL.revokeObjectURL(url);
+
+                showNotification('📊 Análise de tendências gerada com sucesso!', 'success');
+                
+            } catch (error) {
+                console.error('Erro ao gerar PDF:', error);
+                
+                // Fallback: gerar versão simplificada
+                await generateFallbackTrendReport(expenseData);
+            }
+        }
+
+        // Função para analisar tendências dos dados
+        function analyzeTrends(data) {
+            if (!data || data.length === 0) {
+                return {
+                    trend: 'stable',
+                    growth: 0,
+                    projection: 0,
+                    insights: ['Dados insuficientes para análise'],
+                    recommendations: ['Adicione mais dados para obter insights precisos']
+                };
+            }
+
+            // Agrupar por mês
+            const monthlyData = {};
+            data.forEach(expense => {
+                const date = new Date(expense.transaction_date || expense.date);
+                const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+                
+                if (!monthlyData[monthKey]) {
+                    monthlyData[monthKey] = 0;
+                }
+                monthlyData[monthKey] += parseFloat(expense.amount || 0);
+            });
+
+            const months = Object.keys(monthlyData).sort();
+            const values = months.map(month => monthlyData[month]);
+            
+            // Calcular tendência
+            let trend = 'stable';
+            let growth = 0;
+            
+            if (values.length >= 2) {
+                const firstHalf = values.slice(0, Math.floor(values.length / 2));
+                const secondHalf = values.slice(Math.floor(values.length / 2));
+                
+                const avgFirst = firstHalf.reduce((a, b) => a + b, 0) / firstHalf.length;
+                const avgSecond = secondHalf.reduce((a, b) => a + b, 0) / secondHalf.length;
+                
+                growth = ((avgSecond - avgFirst) / avgFirst) * 100;
+                
+                if (growth > 5) trend = 'increasing';
+                else if (growth < -5) trend = 'decreasing';
+            }
+
+            // Calcular projeção para próximos 3 meses
+            const lastMonthValue = values[values.length - 1] || 0;
+            const projection = lastMonthValue * (1 + (growth / 100));
+
+            // Gerar insights
+            const insights = [];
+            const recommendations = [];
+
+            if (trend === 'increasing') {
+                insights.push(`Gastos em tendência crescente (+${growth.toFixed(1)}%)`);
+                insights.push('Aumento observado nos últimos meses');
+                recommendations.push('Revisar categorias com maior crescimento');
+                recommendations.push('Estabelecer limites mais rigorosos');
+            } else if (trend === 'decreasing') {
+                insights.push(`Gastos em tendência decrescente (${growth.toFixed(1)}%)`);
+                insights.push('Redução observada nos gastos');
+                recommendations.push('Manter práticas de economia atuais');
+                recommendations.push('Considerar realocar economia para investimentos');
+            } else {
+                insights.push('Gastos mantendo estabilidade');
+                insights.push('Padrão consistente de gastos');
+                recommendations.push('Monitorar para manter estabilidade');
+                recommendations.push('Buscar oportunidades de otimização');
+            }
+
+            // Análise por categoria (top 3 categorias)
+            const categoryData = {};
+            data.forEach(expense => {
+                const category = expense.account_plan_code || expense.plan_conta || 'Outros';
+                if (!categoryData[category]) {
+                    categoryData[category] = 0;
+                }
+                categoryData[category] += parseFloat(expense.amount || 0);
+            });
+
+            const topCategories = Object.entries(categoryData)
+                .sort(([,a], [,b]) => b - a)
+                .slice(0, 3);
+
+            insights.push(`Top 3 categorias: ${topCategories.map(([cat, val]) => `Plano ${cat} (${formatCurrency(val)})`).join(', ')}`);
+
+            return {
+                trend,
+                growth: growth.toFixed(1),
+                projection: projection.toFixed(2),
+                currentMonth: lastMonthValue.toFixed(2),
+                totalPeriod: values.reduce((a, b) => a + b, 0).toFixed(2),
+                avgMonthly: (values.reduce((a, b) => a + b, 0) / values.length).toFixed(2),
+                insights,
+                recommendations,
+                monthlyData: months.map(month => ({
+                    month,
+                    value: monthlyData[month].toFixed(2)
+                })),
+                topCategories: topCategories.map(([category, value]) => ({
+                    category: `Plano ${category}`,
+                    value: value.toFixed(2),
+                    percentage: ((value / values.reduce((a, b) => a + b, 0)) * 100).toFixed(1)
+                }))
+            };
+        }
+
+        // Função para capturar gráfico como base64
+        async function captureChartAsBase64(canvasId) {
+            try {
+                const canvas = document.getElementById(canvasId);
+                if (!canvas) return null;
+                
+                return canvas.toDataURL('image/png', 0.8);
+            } catch (error) {
+                console.error('Erro ao capturar gráfico:', error);
+                return null;
+            }
+        }
+
+        // Função fallback para gerar relatório simplificado
+        async function generateFallbackTrendReport(data) {
+            const analysis = analyzeTrends(data);
+            
+            // Criar conteúdo HTML do relatório
+            const reportHTML = `
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <meta charset="UTF-8">
+                    <title>Análise de Tendências Financeiras</title>
+                    <style>
+                        body { font-family: Arial, sans-serif; margin: 20px; }
+                        .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 10px; text-align: center; }
+                        .section { margin: 20px 0; padding: 15px; border-left: 4px solid #667eea; background: #f8f9ff; }
+                        .metric { display: inline-block; margin: 10px; padding: 15px; background: white; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+                        .trend-up { color: #e53e3e; } .trend-down { color: #38a169; } .trend-stable { color: #3182ce; }
+                        .insights li { margin: 8px 0; }
+                        .footer { text-align: center; margin-top: 30px; color: #666; font-size: 12px; }
+                    </style>
+                </head>
+                <body>
+                    <div class="header">
+                        <h1>📊 Análise de Tendências Financeiras</h1>
+                        <p>Relatório gerado em ${new Date().toLocaleDateString('pt-BR')} às ${new Date().toLocaleTimeString('pt-BR')}</p>
+                    </div>
+                    
+                    <div class="section">
+                        <h2>📈 Resumo Executivo</h2>
+                        <div class="metric">
+                            <strong>Tendência Atual:</strong> 
+                            <span class="trend-${analysis.trend}">${analysis.trend === 'increasing' ? '📈 Crescente' : analysis.trend === 'decreasing' ? '📉 Decrescente' : '📊 Estável'}</span>
                         </div>
-                        <div class="text-center">
-                            <p class="text-sm text-gray-600">Projeção 3 meses</p>
-                            <p class="text-2xl font-bold text-orange-600">R$ 15.240</p>
+                        <div class="metric">
+                            <strong>Variação:</strong> ${analysis.growth}%
+                        </div>
+                        <div class="metric">
+                            <strong>Projeção Próximo Mês:</strong> ${formatCurrency(analysis.projection)}
+                        </div>
+                        <div class="metric">
+                            <strong>Média Mensal:</strong> ${formatCurrency(analysis.avgMonthly)}
                         </div>
                     </div>
-                </div>
-            `);
+                    
+                    <div class="section">
+                        <h2>💡 Insights Principais</h2>
+                        <ul class="insights">
+                            ${analysis.insights.map(insight => `<li>${insight}</li>`).join('')}
+                        </ul>
+                    </div>
+                    
+                    <div class="section">
+                        <h2>🎯 Recomendações</h2>
+                        <ul class="insights">
+                            ${analysis.recommendations.map(rec => `<li>${rec}</li>`).join('')}
+                        </ul>
+                    </div>
+                    
+                    <div class="section">
+                        <h2>📊 Top Categorias</h2>
+                        ${analysis.topCategories.map(cat => `
+                            <div class="metric">
+                                <strong>${cat.category}:</strong> ${formatCurrency(cat.value)} (${cat.percentage}%)
+                            </div>
+                        `).join('')}
+                    </div>
+                    
+                    <div class="footer">
+                        <p>Relatório gerado automaticamente pelo Sistema de Controle Financeiro</p>
+                    </div>
+                </body>
+                </html>
+            `;
+            
+            // Abrir em nova janela para impressão/PDF
+            const newWindow = window.open('', '_blank');
+            newWindow.document.write(reportHTML);
+            newWindow.document.close();
+            
+            // Aguardar carregamento e imprimir
+            setTimeout(() => {
+                newWindow.print();
+            }, 1000);
+            
+            showNotification('📄 Relatório de tendências aberto para impressão/PDF', 'success');
         }
 
         function showBudgetOptimizer() {

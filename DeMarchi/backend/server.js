@@ -1238,6 +1238,141 @@ app.get('/api/reports/weekly', authenticateToken, async (req, res) => {
     }
 });
 
+// Rota para análise de tendências em PDF
+app.post('/api/reports/trend-analysis', authenticateToken, async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const { title, period, analysis, expenses, charts } = req.body;
+        
+        console.log('📊 Gerando análise de tendências PDF para usuário:', userId);
+        
+        // Criar documento PDF
+        const doc = new pdfkit({ size: 'A4', margin: 50 });
+        
+        // Headers para download
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename="analise_tendencias_${Date.now()}.pdf"`);
+        
+        // Pipe do PDF para a resposta
+        doc.pipe(res);
+        
+        // --- CABEÇALHO ---
+        doc.fontSize(24).fillColor('#4A5568').text('📊 Análise de Tendências Financeiras', 50, 50);
+        doc.fontSize(12).fillColor('#718096').text(`Período: ${period || 'N/A'}`, 50, 80);
+        doc.text(`Gerado em: ${new Date().toLocaleDateString('pt-BR')} às ${new Date().toLocaleTimeString('pt-BR')}`, 50, 95);
+        
+        // Linha separadora
+        doc.moveTo(50, 120).lineTo(545, 120).strokeColor('#E2E8F0').stroke();
+        
+        let yPosition = 140;
+        
+        // --- RESUMO EXECUTIVO ---
+        doc.fontSize(16).fillColor('#2D3748').text('📈 Resumo Executivo', 50, yPosition);
+        yPosition += 25;
+        
+        if (analysis) {
+            doc.fontSize(11).fillColor('#4A5568');
+            
+            // Tendência
+            const trendIcon = analysis.trend === 'increasing' ? '📈' : analysis.trend === 'decreasing' ? '📉' : '📊';
+            const trendText = analysis.trend === 'increasing' ? 'Crescente' : analysis.trend === 'decreasing' ? 'Decrescente' : 'Estável';
+            doc.text(`${trendIcon} Tendência Atual: ${trendText} (${analysis.growth}%)`, 70, yPosition);
+            yPosition += 15;
+            
+            // Métricas
+            doc.text(`💰 Média Mensal: R$ ${analysis.avgMonthly}`, 70, yPosition);
+            yPosition += 15;
+            doc.text(`🎯 Projeção Próximo Mês: R$ ${analysis.projection}`, 70, yPosition);
+            yPosition += 15;
+            doc.text(`📊 Total do Período: R$ ${analysis.totalPeriod}`, 70, yPosition);
+            yPosition += 30;
+        }
+        
+        // --- INSIGHTS ---
+        if (analysis && analysis.insights && analysis.insights.length > 0) {
+            doc.fontSize(16).fillColor('#2D3748').text('💡 Insights Principais', 50, yPosition);
+            yPosition += 20;
+            
+            analysis.insights.forEach((insight, index) => {
+                doc.fontSize(10).fillColor('#4A5568').text(`• ${insight}`, 70, yPosition);
+                yPosition += 15;
+            });
+            yPosition += 15;
+        }
+        
+        // --- RECOMENDAÇÕES ---
+        if (analysis && analysis.recommendations && analysis.recommendations.length > 0) {
+            doc.fontSize(16).fillColor('#2D3748').text('🎯 Recomendações', 50, yPosition);
+            yPosition += 20;
+            
+            analysis.recommendations.forEach((rec, index) => {
+                doc.fontSize(10).fillColor('#4A5568').text(`• ${rec}`, 70, yPosition);
+                yPosition += 15;
+            });
+            yPosition += 15;
+        }
+        
+        // --- TOP CATEGORIAS ---
+        if (analysis && analysis.topCategories && analysis.topCategories.length > 0) {
+            doc.fontSize(16).fillColor('#2D3748').text('📊 Principais Categorias', 50, yPosition);
+            yPosition += 20;
+            
+            analysis.topCategories.forEach((cat, index) => {
+                doc.fontSize(10).fillColor('#4A5568')
+                   .text(`${index + 1}. ${cat.category}: R$ ${cat.value} (${cat.percentage}%)`, 70, yPosition);
+                yPosition += 15;
+            });
+            yPosition += 15;
+        }
+        
+        // --- DADOS MENSAIS ---
+        if (analysis && analysis.monthlyData && analysis.monthlyData.length > 0) {
+            // Nova página se necessário
+            if (yPosition > 650) {
+                doc.addPage();
+                yPosition = 50;
+            }
+            
+            doc.fontSize(16).fillColor('#2D3748').text('📅 Evolução Mensal', 50, yPosition);
+            yPosition += 20;
+            
+            // Cabeçalho da tabela
+            doc.fontSize(11).fillColor('#2D3748')
+               .text('Mês', 70, yPosition)
+               .text('Valor', 200, yPosition);
+            yPosition += 20;
+            
+            // Linha separadora
+            doc.moveTo(70, yPosition - 5).lineTo(350, yPosition - 5).strokeColor('#E2E8F0').stroke();
+            
+            analysis.monthlyData.forEach((monthData, index) => {
+                doc.fontSize(10).fillColor('#4A5568')
+                   .text(monthData.month, 70, yPosition)
+                   .text(`R$ ${monthData.value}`, 200, yPosition);
+                yPosition += 15;
+            });
+        }
+        
+        // --- RODAPÉ ---
+        doc.fontSize(8).fillColor('#A0AEC0')
+           .text('Relatório gerado automaticamente pelo Sistema de Controle Financeiro', 50, 750, {
+               align: 'center'
+           });
+        
+        // Finalizar documento
+        doc.end();
+        
+        console.log('✅ PDF de análise de tendências gerado com sucesso');
+        
+    } catch (error) {
+        console.error('❌ Erro ao gerar PDF de análise:', error);
+        res.status(500).json({ 
+            message: 'Erro ao gerar análise de tendências',
+            error: error.message 
+        });
+    }
+});
+
 // --- ROTAS PARA ANÁLISE EMPRESARIAL ---
 app.get('/api/business/summary', authenticateToken, async (req, res) => {
     try {
