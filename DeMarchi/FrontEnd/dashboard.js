@@ -3376,9 +3376,13 @@ document.addEventListener('DOMContentLoaded', function() {
                     
                     // Load specific content based on tab
                     if (targetTab === 'business-analysis') {
+                        console.log('🏢 Carregando aba: Análise Empresarial');
                         loadBusinessAnalysis();
                     } else if (targetTab === 'reports') {
+                        console.log('📊 Carregando aba: Dashboard Executivo');
                         loadReportsData();
+                    } else {
+                        console.log(`📋 Aba ativada: ${targetTab}`);
                     }
                 }
             });
@@ -3727,17 +3731,33 @@ document.addEventListener('DOMContentLoaded', function() {
 
     async function loadReportsData() {
         try {
-            if (!checkAuthentication()) return;
+            console.log('🔄 Iniciando loadReportsData...');
+            
+            if (!checkAuthentication()) {
+                console.error('❌ Usuário não autenticado');
+                return;
+            }
 
-            console.log('🔄 Carregando dados modernos dos relatórios...');
+            console.log('✅ Usuário autenticado, carregando dados...');
             showNotification('Carregando dashboard executivo...', 'info', 2000);
+
+            // Verificar se os filtros estão disponíveis
+            if (!filterYear || !filterMonth) {
+                console.error('❌ Filtros de ano/mês não encontrados');
+                showNotification('Erro: Filtros não inicializados', 'error');
+                return;
+            }
+
+            console.log(`📅 Buscando dados para: ${filterYear.value}/${filterMonth.value}`);
 
             // Aguardar Chart.js estar carregado
             if (!await waitForChartJs()) {
-                console.warn('Chart.js não carregado para relatórios');
+                console.warn('⚠️ Chart.js não carregado para relatórios');
                 showNotification('Carregando biblioteca de gráficos...', 'info', 3000);
                 return;
             }
+
+            console.log('✅ Chart.js carregado, buscando dados...');
 
             // Buscar dados atualizados
             const [expenses, dashboardData] = await Promise.all([
@@ -3745,18 +3765,31 @@ document.addEventListener('DOMContentLoaded', function() {
                 fetchDashboardData()
             ]);
 
-            console.log('📊 Dados obtidos:', { expenses: expenses?.length, dashboardData });
+            console.log('📊 Dados obtidos:', { 
+                expenses: expenses?.length || 0, 
+                dashboardData: !!dashboardData,
+                expensesType: typeof expenses
+            });
+
+            if (!expenses || expenses.length === 0) {
+                console.warn('⚠️ Nenhuma despesa encontrada para o período');
+                showNotification('Nenhuma despesa encontrada para o período selecionado', 'warning');
+            }
 
             // Atualizar indicadores principais
+            console.log('📊 Atualizando indicadores principais...');
             updateMainIndicators(expenses);
             
             // Renderizar todos os gráficos com dados reais
+            console.log('🎨 Renderizando gráficos...');
             await renderAllReportsCharts(expenses, dashboardData);
             
             // Atualizar análise empresarial
+            console.log('🏢 Atualizando análise empresarial...');
             updateBusinessAnalysis(expenses);
             
             // Gerar tabela de alertas
+            console.log('⚠️ Gerando tabela de alertas...');
             generateAlertsTable(expenses);
 
             console.log('✅ Dashboard executivo carregado com sucesso');
@@ -3764,7 +3797,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
         } catch (error) {
             console.error('❌ Erro ao carregar dados de relatórios:', error);
-            showNotification('Erro ao carregar dados de relatórios', 'error');
+            showNotification(`Erro ao carregar dados: ${error.message}`, 'error');
         }
     }
 
@@ -3782,27 +3815,69 @@ document.addEventListener('DOMContentLoaded', function() {
 
         if (!expenses || expenses.length === 0) {
             console.warn('⚠️ Nenhum dado de despesas para atualizar indicadores');
+            // Atualizar UI com valores zero
+            const safePlansEl = document.getElementById('safe-plans');
+            const warningPlansEl = document.getElementById('warning-plans');
+            const exceededPlansEl = document.getElementById('exceeded-plans');
+            const generalUsageEl = document.getElementById('general-usage');
+            const totalBudgetEl = document.getElementById('total-budget');
+
+            if (safePlansEl) safePlansEl.textContent = '0';
+            if (warningPlansEl) warningPlansEl.textContent = '0';
+            if (exceededPlansEl) exceededPlansEl.textContent = '0';
+            if (generalUsageEl) generalUsageEl.textContent = '0%';
+            if (totalBudgetEl) totalBudgetEl.textContent = 'R$ 0,00';
+            
+            console.log('📊 Indicadores zerados');
             return;
+        }
+
+        console.log('📊 Processando', expenses.length, 'despesas...');
+        
+        // Verificar estrutura das despesas
+        if (expenses.length > 0) {
+            console.log('📋 Exemplo de despesa:', {
+                date: expenses[0].date,
+                transaction_date: expenses[0].transaction_date,
+                plan_conta: expenses[0].plan_conta,
+                account_plan_code: expenses[0].account_plan_code,
+                amount: expenses[0].amount
+            });
         }
 
         const currentMonth = new Date().getMonth() + 1;
         const currentYear = new Date().getFullYear();
         
-        // Filtrar gastos do mês atual
+        console.log(`📅 Filtrando para mês/ano: ${currentMonth}/${currentYear}`);
+        
+        // Filtrar gastos do mês atual - usar transaction_date se date não existir
         const monthlyExpenses = expenses.filter(expense => {
-            const expenseDate = new Date(expense.date);
-            return expenseDate.getMonth() + 1 === currentMonth && 
-                   expenseDate.getFullYear() === currentYear;
+            const dateField = expense.transaction_date || expense.date;
+            if (!dateField) {
+                console.warn('⚠️ Despesa sem data:', expense);
+                return false;
+            }
+            
+            const expenseDate = new Date(dateField);
+            const matchesMonth = expenseDate.getMonth() + 1 === currentMonth;
+            const matchesYear = expenseDate.getFullYear() === currentYear;
+            
+            return matchesMonth && matchesYear;
         });
 
-        console.log('📅 Gastos do mês atual:', monthlyExpenses.length);
+        console.log(`📅 Gastos do mês atual (${currentMonth}/${currentYear}):`, monthlyExpenses.length);
 
         // Calcular totais por plano
         const planTotals = {};
         monthlyExpenses.forEach(expense => {
-            const planId = expense.plan_conta;
-            planTotals[planId] = (planTotals[planId] || 0) + parseFloat(expense.amount);
+            // Usar account_plan_code se plan_conta não existir
+            const planId = expense.account_plan_code || expense.plan_conta;
+            if (planId) {
+                planTotals[planId] = (planTotals[planId] || 0) + parseFloat(expense.amount || 0);
+            }
         });
+
+        console.log('💰 Totais por plano:', planTotals);
 
         // Analisar status dos planos
         let safePlans = 0;
