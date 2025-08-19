@@ -295,6 +295,15 @@ document.addEventListener('DOMContentLoaded', function() {
         const themeToggle = document.getElementById('theme-toggle');
         if (themeToggle) themeToggle.addEventListener('click', toggleTheme);
         
+        // Event listener para botão de análise de tendências
+        const budgetProjectionBtn = document.getElementById('budget-projection');
+        if (budgetProjectionBtn) {
+            budgetProjectionBtn.addEventListener('click', showBudgetProjection);
+            console.log('📊 Event listener do botão Projeção Mensal adicionado');
+        } else {
+            console.warn('⚠️ Botão budget-projection não encontrado no DOM');
+        }
+        
         // Event listeners para botões de refresh dos gráficos
         const refreshBudgetBtn = document.getElementById('refresh-budget-btn');
         if (refreshBudgetBtn) refreshBudgetBtn.addEventListener('click', refreshBudgetChart);
@@ -4508,13 +4517,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 });
             }
             
-            const budgetProjectionBtn = document.getElementById('budget-projection');
-            if (budgetProjectionBtn) {
-                budgetProjectionBtn.addEventListener('click', () => {
-                    showBudgetProjection();
-                });
-            }
-            
             const budgetOptimizerBtn = document.getElementById('budget-optimizer');
             if (budgetOptimizerBtn) {
                 budgetOptimizerBtn.addEventListener('click', () => {
@@ -4561,7 +4563,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 btn.disabled = true;
                 
                 // Buscar dados atuais
-                const data = await fetchExpenseData();
+                const data = await fetchExpenses();
                 
                 // Gerar relatório PDF
                 await generateTrendAnalysisPDF(data);
