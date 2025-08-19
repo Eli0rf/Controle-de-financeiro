@@ -1353,53 +1353,150 @@ document.addEventListener('DOMContentLoaded', function() {
         return safeRenderChart('mixed-type-chart', (canvas, ctx, data) => {
             destroyChart('mixedTypeChart');
             
-            const max = Math.max(...data.map(d => d.personal_total + d.business_total));
-            mixedTypeChart = new Chart(ctx, {
+            if (!data || data.length === 0) {
+                console.log('❌ Sem dados para o gráfico mixed-type-chart');
+                return false;
+            }
+
+            console.log('📊 Renderizando gráfico de comparação pessoal vs empresarial:', data);
+            
+            // Filtrar contas que têm pelo menos um valor > 0
+            const filteredData = data.filter(d => 
+                (d.personal_total > 0 || d.business_total > 0)
+            );
+
+            if (filteredData.length === 0) {
+                console.log('❌ Nenhuma conta com gastos para exibir');
+                return false;
+            }
+
+            const accounts = filteredData.map(d => d.account);
+            const personalData = filteredData.map(d => parseFloat(d.personal_total) || 0);
+            const businessData = filteredData.map(d => parseFloat(d.business_total) || 0);
+            
+            const max = Math.max(...filteredData.map(d => 
+                (parseFloat(d.personal_total) || 0) + (parseFloat(d.business_total) || 0)
+            ));
+            const maxAccount = filteredData.find(d => 
+                (parseFloat(d.personal_total) || 0) + (parseFloat(d.business_total) || 0) === max
+            )?.account || '-';
+
+            chartRegistry.mixedTypeChart = new Chart(ctx, {
                 type: 'bar',
                 data: {
-                    labels: data.map(d => d.account),
+                    labels: accounts,
                     datasets: [
-                        { label: 'Gastos Pessoais', data: data.map(d => d.personal_total), backgroundColor: 'rgba(59, 130, 246, 0.7)' },
-                        { label: 'Gastos Empresariais', data: data.map(d => d.business_total), backgroundColor: 'rgba(239, 68, 68, 0.7)' }
+                        {
+                            label: '🏠 Gastos Pessoais',
+                            data: personalData,
+                            backgroundColor: 'rgba(59, 130, 246, 0.8)',
+                            borderColor: 'rgba(59, 130, 246, 1)',
+                            borderWidth: 1
+                        },
+                        {
+                            label: '💼 Gastos Empresariais',
+                            data: businessData,
+                            backgroundColor: 'rgba(239, 68, 68, 0.8)',
+                            borderColor: 'rgba(239, 68, 68, 1)',
+                            borderWidth: 1
+                        }
                     ]
                 },
                 options: {
                     responsive: true,
+                    maintainAspectRatio: false,
                     plugins: {
                         title: {
                             display: true,
-                            text: 'Comparação: Pessoal vs. Empresarial por Conta',
-                            color: getThemeColor('#222', '#fff'),
-                            font: { size: 18 }
+                            text: '🏠 vs. 💼 Comparação: Pessoal vs. Empresarial por Conta',
+                            color: getThemeColor('#374151', '#f9fafb'),
+                            font: { size: 16, weight: 'bold' }
                         },
                         subtitle: {
                             display: true,
-                            text: `Conta com maior gasto: ${data.find(d => d.personal_total + d.business_total === max)?.account || '-'}`,
-                            color: getThemeColor('#666', '#ccc'),
-                            font: { size: 13 }
+                            text: `Conta com maior gasto total: ${maxAccount} (R$ ${max.toFixed(2)})`,
+                            color: getThemeColor('#6b7280', '#d1d5db'),
+                            font: { size: 12 }
                         },
                         legend: {
                             position: 'bottom',
-                        labels: { color: getThemeColor('#222', '#fff') }
-                    },
-                    tooltip: {
-                        callbacks: {
-                            label: ctx => `${ctx.dataset.label}: R$ ${ctx.parsed.y.toFixed(2)}`
+                            labels: { 
+                                color: getThemeColor('#374151', '#f9fafb'),
+                                usePointStyle: true,
+                                padding: 20
+                            }
+                        },
+                        tooltip: {
+                            backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                            titleColor: '#fff',
+                            bodyColor: '#fff',
+                            borderColor: '#374151',
+                            borderWidth: 1,
+                            callbacks: {
+                                label: function(context) {
+                                    const value = context.parsed.y;
+                                    const total = personalData[context.dataIndex] + businessData[context.dataIndex];
+                                    const percentage = total > 0 ? ((value / total) * 100).toFixed(1) : '0.0';
+                                    return `${context.dataset.label}: R$ ${value.toFixed(2)} (${percentage}%)`;
+                                },
+                                footer: function(context) {
+                                    if (context.length > 0) {
+                                        const index = context[0].dataIndex;
+                                        const total = personalData[index] + businessData[index];
+                                        return `Total da conta: R$ ${total.toFixed(2)}`;
+                                    }
+                                    return '';
+                                }
+                            }
+                        },
+                        datalabels: {
+                            display: function(context) {
+                                return context.parsed.y > 0;
+                            },
+                            color: getThemeColor('#374151', '#f9fafb'),
+                            anchor: 'end',
+                            align: 'top',
+                            font: { weight: 'bold', size: 10 },
+                            formatter: function(value) {
+                                return value > 0 ? `R$ ${value.toFixed(0)}` : '';
+                            }
                         }
                     },
-                    datalabels: {
-                        color: getThemeColor('#222', '#fff'),
-                        anchor: 'end', align: 'top', font: { weight: 'bold' },
-                        formatter: v => {
-                            const val = getNumberValue(v);
-                            return val > 0 ? `R$ ${val.toFixed(2)}` : '';
+                    scales: {
+                        x: {
+                            stacked: false,
+                            ticks: {
+                                color: getThemeColor('#6b7280', '#d1d5db'),
+                                maxRotation: 45,
+                                minRotation: 0
+                            },
+                            grid: {
+                                color: getThemeColor('#e5e7eb', '#374151')
+                            }
+                        },
+                        y: {
+                            beginAtZero: true,
+                            stacked: false,
+                            ticks: {
+                                color: getThemeColor('#6b7280', '#d1d5db'),
+                                callback: function(value) {
+                                    return `R$ ${value.toFixed(0)}`;
+                                }
+                            },
+                            grid: {
+                                color: getThemeColor('#e5e7eb', '#374151')
+                            }
                         }
+                    },
+                    interaction: {
+                        mode: 'index',
+                        intersect: false
                     }
                 },
-                scales: { x: { stacked: false }, y: { beginAtZero: true } }
-            },
-            plugins: [ChartDataLabels]
-        });
+                plugins: [ChartDataLabels]
+            });
+            
+            console.log('✅ Gráfico mixed-type-chart renderizado com sucesso');
             return true;
         }, data, 'Sem dados para comparação pessoal vs empresarial.');
     }
