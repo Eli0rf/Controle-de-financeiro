@@ -76,6 +76,29 @@ document.addEventListener('DOMContentLoaded', function() {
         accounts: null,
         categories: null
     };
+    
+    // Elementos para alertas de orçamento
+    const budgetLimitInput = document.getElementById('monthly-budget-limit');
+    const budgetAlertPercentage = document.getElementById('budget-alert-percentage');
+    const saveBudgetConfigBtn = document.getElementById('save-budget-config');
+    const budgetAlertsContainer = document.getElementById('budget-alerts');
+    
+    // Elementos para análise de plano de contas
+    const chartAnalysisPeriod = document.getElementById('chart-analysis-period');
+    const chartAnalysisType = document.getElementById('chart-analysis-type');
+    const analyzeChartUsageBtn = document.getElementById('analyze-chart-usage');
+    const chartUsageChart = document.getElementById('chart-usage-chart');
+    const chartUsageInsights = document.getElementById('chart-usage-insights');
+    const chartDetailsTbody = document.getElementById('chart-details-tbody');
+    
+    // Charts para análise de plano de contas
+    let chartAnalysisChart = null;
+    
+    // Configurações de orçamento (localStorage)
+    let budgetConfig = {
+        monthlyLimit: 0,
+        alertPercentage: 80
+    };
 
     // ========== SISTEMA DE INSIGHTS ==========
     const refreshInsightsBtn = document.getElementById('refresh-insights-btn');
@@ -309,6 +332,13 @@ document.addEventListener('DOMContentLoaded', function() {
                 });
             });
         }
+        
+        // Event listeners para alertas de orçamento
+        if (saveBudgetConfigBtn) saveBudgetConfigBtn.addEventListener('click', saveBudgetConfiguration);
+        if (analyzeChartUsageBtn) analyzeChartUsageBtn.addEventListener('click', analyzeChartUsage);
+        
+        // Carregar configuração de orçamento salva
+        loadBudgetConfiguration();
         
         // Event listener para redimensionamento da janela (ajustar modais em dispositivos móveis)
         window.addEventListener('resize', () => {
@@ -1251,6 +1281,9 @@ document.addEventListener('DOMContentLoaded', function() {
             
             // Recarregar dados e gráficos
             await fetchAllData();
+            
+            // Verificar alertas de orçamento
+            await checkBudgetAlerts();
             
             showNotification('💡 Insights atualizados com sucesso!', 'success');
         } catch (error) {
@@ -2615,14 +2648,21 @@ document.addEventListener('DOMContentLoaded', function() {
             { name: '📝 Gastos', tab: 'expenses', description: 'Listagem e gerenciamento de despesas' },
             { name: '📈 Relatórios', tab: 'reports', description: 'Relatórios detalhados e exportações' },
             { name: '🚨 Alertas Financeiros', section: 'insights', subsection: 'alerts', description: 'Alertas e notificações importantes' },
-            { name: '💡 Recomendações', section: 'insights', subsection: 'recommendations', description: 'Sugestões para otimização financeira' },
+            { name: '� Alertas de Orçamento', section: 'insights', subsection: 'alerts', description: 'Monitoramento e alertas de limites orçamentários' },
+            { name: '📊 Análise Plano de Contas', section: 'insights', subsection: 'alerts', description: 'Análise detalhada do uso de categorias' },
+            { name: '�💡 Recomendações', section: 'insights', subsection: 'recommendations', description: 'Sugestões para otimização financeira' },
             { name: '🎯 Decisões Estratégicas', section: 'insights', subsection: 'decisions', description: 'Análises para tomada de decisões' },
             { name: '⚡ Ações Rápidas', section: 'insights', subsection: 'actions', description: 'Ações e comandos rápidos' },
             { name: '📊 Análise por Período', action: 'period-analysis', description: 'Análise detalhada por período da fatura' },
             { name: '🔄 Gastos Recorrentes', action: 'recurring-expenses', description: 'Gerenciamento de despesas recorrentes' },
             { name: '📅 Relatório Mensal', action: 'monthly-report', description: 'Relatório mensal em PDF' },
             { name: '🗓️ Relatório Semanal', action: 'weekly-report', description: 'Relatório semanal em PDF' },
-            { name: '📊 Relatório Interativo', action: 'interactive-report', description: 'Relatório interativo com gráficos' }
+            { name: '📊 Relatório Interativo', action: 'interactive-report', description: 'Relatório interativo com gráficos' },
+            { name: '⚙️ Configurar Orçamento', section: 'insights', subsection: 'alerts', description: 'Definir limites e alertas de orçamento mensal' },
+            { name: '🔍 Frequência de Uso', section: 'insights', subsection: 'alerts', description: 'Análise de frequência de categorias' },
+            { name: '💲 Distribuição de Valores', section: 'insights', subsection: 'alerts', description: 'Análise de distribuição financeira por categoria' },
+            { name: '📈 Análise de Tendências', section: 'insights', subsection: 'alerts', description: 'Tendências de uso de plano de contas' },
+            { name: '⚡ Eficiência de Categorização', section: 'insights', subsection: 'alerts', description: 'Análise de eficiência do plano de contas' }
         ];
         
         tabSearchInput.addEventListener('input', (e) => {
@@ -7130,6 +7170,552 @@ document.addEventListener('DOMContentLoaded', function() {
         // Aguardar um pouco para garantir que outros sistemas foram inicializados
         setTimeout(initInsightSystem, 1000);
     });
+
+    // ========== SISTEMA DE ALERTAS DE ORÇAMENTO ==========
+    
+    function loadBudgetConfiguration() {
+        const savedConfig = localStorage.getItem('budgetConfig');
+        if (savedConfig) {
+            budgetConfig = JSON.parse(savedConfig);
+            if (budgetLimitInput) budgetLimitInput.value = budgetConfig.monthlyLimit || '';
+            if (budgetAlertPercentage) budgetAlertPercentage.value = budgetConfig.alertPercentage || 80;
+        }
+        
+        // Verificar alertas de orçamento
+        checkBudgetAlerts();
+    }
+    
+    function saveBudgetConfiguration() {
+        if (!budgetLimitInput || !budgetAlertPercentage) return;
+        
+        const monthlyLimit = parseFloat(budgetLimitInput.value) || 0;
+        const alertPercentage = parseInt(budgetAlertPercentage.value) || 80;
+        
+        if (monthlyLimit <= 0) {
+            showNotification('Por favor, insira um limite mensal válido.', 'error');
+            return;
+        }
+        
+        budgetConfig = {
+            monthlyLimit: monthlyLimit,
+            alertPercentage: alertPercentage
+        };
+        
+        localStorage.setItem('budgetConfig', JSON.stringify(budgetConfig));
+        showNotification('✅ Configuração de orçamento salva com sucesso!', 'success');
+        
+        // Atualizar alertas
+        checkBudgetAlerts();
+    }
+    
+    async function checkBudgetAlerts() {
+        if (budgetConfig.monthlyLimit <= 0) return;
+        
+        try {
+            const token = getToken();
+            if (!token) return;
+            
+            // Buscar gastos do mês atual
+            const currentDate = new Date();
+            const startOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1).toISOString().split('T')[0];
+            const endOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0).toISOString().split('T')[0];
+            
+            const response = await authenticatedFetch(`${API_BASE_URL}/api/expenses/period?start=${startOfMonth}&end=${endOfMonth}`);
+            
+            if (!response.ok) return;
+            
+            const expenses = await response.json();
+            const totalSpent = expenses.reduce((sum, expense) => sum + (expense.Valor || 0), 0);
+            const percentageUsed = (totalSpent / budgetConfig.monthlyLimit) * 100;
+            
+            updateBudgetAlerts(totalSpent, percentageUsed);
+            
+        } catch (error) {
+            console.error('Erro ao verificar alertas de orçamento:', error);
+        }
+    }
+    
+    function updateBudgetAlerts(totalSpent, percentageUsed) {
+        if (!budgetAlertsContainer) return;
+        
+        const remainingBudget = budgetConfig.monthlyLimit - totalSpent;
+        const alertThreshold = budgetConfig.alertPercentage;
+        
+        let alertLevel = 'success';
+        let alertIcon = '✅';
+        let alertTitle = 'Orçamento Controlado';
+        let alertMessage = `Você gastou ${formatCurrency(totalSpent)} de ${formatCurrency(budgetConfig.monthlyLimit)} (${percentageUsed.toFixed(1)}%)`;
+        
+        if (percentageUsed >= 100) {
+            alertLevel = 'danger';
+            alertIcon = '🚨';
+            alertTitle = 'ORÇAMENTO EXCEDIDO!';
+            alertMessage = `Você excedeu seu orçamento em ${formatCurrency(totalSpent - budgetConfig.monthlyLimit)}!`;
+        } else if (percentageUsed >= 95) {
+            alertLevel = 'danger';
+            alertIcon = '⚠️';
+            alertTitle = 'Orçamento Quase Esgotado';
+            alertMessage = `Restam apenas ${formatCurrency(remainingBudget)} do seu orçamento mensal.`;
+        } else if (percentageUsed >= alertThreshold) {
+            alertLevel = 'warning';
+            alertIcon = '⚠️';
+            alertTitle = 'Atenção: Limite de Alerta Atingido';
+            alertMessage = `Você atingiu ${percentageUsed.toFixed(1)}% do seu orçamento mensal.`;
+        } else if (percentageUsed >= 50) {
+            alertLevel = 'info';
+            alertIcon = '💡';
+            alertTitle = 'Meio Caminho do Orçamento';
+            alertMessage = `Você está na metade do seu orçamento mensal. Restam ${formatCurrency(remainingBudget)}.`;
+        }
+        
+        const alertColorClass = {
+            'success': 'border-green-500 bg-green-50',
+            'info': 'border-blue-500 bg-blue-50',
+            'warning': 'border-yellow-500 bg-yellow-50',
+            'danger': 'border-red-500 bg-red-50'
+        }[alertLevel];
+        
+        const textColorClass = {
+            'success': 'text-green-800',
+            'info': 'text-blue-800',
+            'warning': 'text-yellow-800',
+            'danger': 'text-red-800'
+        }[alertLevel];
+        
+        budgetAlertsContainer.innerHTML = `
+            <div class="border-l-4 p-4 rounded-lg ${alertColorClass}">
+                <div class="flex items-start gap-3">
+                    <div class="text-2xl">${alertIcon}</div>
+                    <div class="flex-1">
+                        <h4 class="font-bold ${textColorClass} mb-2">${alertTitle}</h4>
+                        <p class="${textColorClass} mb-3">${alertMessage}</p>
+                        <div class="w-full bg-white rounded-full h-3 border">
+                            <div class="h-3 rounded-full transition-all duration-500 ${percentageUsed >= 100 ? 'bg-red-500' : percentageUsed >= alertThreshold ? 'bg-yellow-500' : 'bg-green-500'}" 
+                                 style="width: ${Math.min(percentageUsed, 100)}%"></div>
+                        </div>
+                        <div class="flex justify-between text-sm ${textColorClass} mt-2">
+                            <span>Gasto: ${formatCurrency(totalSpent)}</span>
+                            <span>Limite: ${formatCurrency(budgetConfig.monthlyLimit)}</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+    
+    // ========== SISTEMA DE ANÁLISE DE PLANO DE CONTAS ==========
+    
+    async function analyzeChartUsage() {
+        if (!chartAnalysisPeriod || !chartAnalysisType) return;
+        
+        const period = chartAnalysisPeriod.value;
+        const analysisType = chartAnalysisType.value;
+        
+        try {
+            showNotification('🔍 Analisando plano de contas...', 'info');
+            
+            // Buscar dados baseado no período
+            const { startDate, endDate } = getPeriodDates(period);
+            const expenses = await fetchExpensesForAnalysis(startDate, endDate);
+            
+            // Processar dados baseado no tipo de análise
+            const analysisData = processChartAnalysis(expenses, analysisType);
+            
+            // Atualizar visualizações
+            updateChartAnalysisVisualization(analysisData, analysisType);
+            updateChartAnalysisInsights(analysisData, analysisType);
+            updateChartDetailsTable(analysisData);
+            
+            showNotification('✅ Análise concluída com sucesso!', 'success');
+            
+        } catch (error) {
+            console.error('Erro na análise do plano de contas:', error);
+            showNotification('Erro ao analisar plano de contas: ' + error.message, 'error');
+        }
+    }
+    
+    function getPeriodDates(period) {
+        const now = new Date();
+        let startDate, endDate;
+        
+        switch (period) {
+            case 'current-month':
+                startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+                endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+                break;
+            case 'last-month':
+                startDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+                endDate = new Date(now.getFullYear(), now.getMonth(), 0);
+                break;
+            case 'last-3-months':
+                startDate = new Date(now.getFullYear(), now.getMonth() - 2, 1);
+                endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+                break;
+            case 'last-6-months':
+                startDate = new Date(now.getFullYear(), now.getMonth() - 5, 1);
+                endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+                break;
+            case 'current-year':
+                startDate = new Date(now.getFullYear(), 0, 1);
+                endDate = new Date(now.getFullYear(), 11, 31);
+                break;
+            default:
+                startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+                endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+        }
+        
+        return {
+            startDate: startDate.toISOString().split('T')[0],
+            endDate: endDate.toISOString().split('T')[0]
+        };
+    }
+    
+    async function fetchExpensesForAnalysis(startDate, endDate) {
+        const token = getToken();
+        if (!token) throw new Error('Token não encontrado');
+        
+        const response = await authenticatedFetch(`${API_BASE_URL}/api/expenses/period?start=${startDate}&end=${endDate}`);
+        
+        if (!response.ok) {
+            throw new Error('Erro ao buscar dados para análise');
+        }
+        
+        return await response.json();
+    }
+    
+    function processChartAnalysis(expenses, analysisType) {
+        const categoriesMap = new Map();
+        
+        // Agrupar por categoria (PlanoContasDescricao ou PlanoContasID)
+        expenses.forEach(expense => {
+            const category = expense.PlanoContasDescricao || expense.PlanoContasID || 'Sem Categoria';
+            
+            if (!categoriesMap.has(category)) {
+                categoriesMap.set(category, {
+                    name: category,
+                    frequency: 0,
+                    totalAmount: 0,
+                    expenses: []
+                });
+            }
+            
+            const categoryData = categoriesMap.get(category);
+            categoryData.frequency++;
+            categoryData.totalAmount += expense.Valor || 0;
+            categoryData.expenses.push(expense);
+        });
+        
+        // Converter para array e calcular métricas
+        const categories = Array.from(categoriesMap.values()).map(category => ({
+            ...category,
+            averageAmount: category.totalAmount / category.frequency,
+            percentage: 0 // Será calculado abaixo
+        }));
+        
+        // Calcular percentuais
+        const totalAmount = categories.reduce((sum, cat) => sum + cat.totalAmount, 0);
+        categories.forEach(category => {
+            category.percentage = totalAmount > 0 ? (category.totalAmount / totalAmount) * 100 : 0;
+        });
+        
+        // Ordenar baseado no tipo de análise
+        switch (analysisType) {
+            case 'usage-frequency':
+                categories.sort((a, b) => b.frequency - a.frequency);
+                break;
+            case 'amount-distribution':
+                categories.sort((a, b) => b.totalAmount - a.totalAmount);
+                break;
+            case 'trend-analysis':
+                categories.sort((a, b) => b.percentage - a.percentage);
+                break;
+            case 'efficiency-analysis':
+                categories.sort((a, b) => b.averageAmount - a.averageAmount);
+                break;
+        }
+        
+        return {
+            categories,
+            totalExpenses: expenses.length,
+            totalAmount,
+            uniqueCategories: categories.length,
+            analysisType
+        };
+    }
+    
+    function updateChartAnalysisVisualization(data, analysisType) {
+        if (!chartUsageChart) return;
+        
+        // Destruir gráfico anterior se existir
+        if (chartAnalysisChart) {
+            chartAnalysisChart.destroy();
+        }
+        
+        const ctx = chartUsageChart.getContext('2d');
+        const topCategories = data.categories.slice(0, 10); // Top 10
+        
+        let chartData, chartConfig;
+        
+        switch (analysisType) {
+            case 'usage-frequency':
+                chartData = {
+                    labels: topCategories.map(cat => cat.name),
+                    datasets: [{
+                        label: 'Frequência de Uso',
+                        data: topCategories.map(cat => cat.frequency),
+                        backgroundColor: [
+                            '#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6',
+                            '#06b6d4', '#84cc16', '#f97316', '#ec4899', '#6b7280'
+                        ]
+                    }]
+                };
+                chartConfig = {
+                    type: 'bar',
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            title: {
+                                display: true,
+                                text: 'Frequência de Uso por Categoria'
+                            }
+                        }
+                    }
+                };
+                break;
+                
+            case 'amount-distribution':
+                chartData = {
+                    labels: topCategories.map(cat => cat.name),
+                    datasets: [{
+                        data: topCategories.map(cat => cat.totalAmount),
+                        backgroundColor: [
+                            '#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6',
+                            '#06b6d4', '#84cc16', '#f97316', '#ec4899', '#6b7280'
+                        ]
+                    }]
+                };
+                chartConfig = {
+                    type: 'doughnut',
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            title: {
+                                display: true,
+                                text: 'Distribuição de Valores por Categoria'
+                            },
+                            legend: {
+                                position: 'bottom'
+                            }
+                        }
+                    }
+                };
+                break;
+                
+            case 'trend-analysis':
+                chartData = {
+                    labels: topCategories.map(cat => cat.name),
+                    datasets: [{
+                        label: 'Percentual do Total (%)',
+                        data: topCategories.map(cat => cat.percentage),
+                        borderColor: '#3b82f6',
+                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                        tension: 0.1,
+                        fill: true
+                    }]
+                };
+                chartConfig = {
+                    type: 'line',
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            title: {
+                                display: true,
+                                text: 'Análise de Tendências por Categoria'
+                            }
+                        },
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                ticks: {
+                                    callback: function(value) {
+                                        return value.toFixed(1) + '%';
+                                    }
+                                }
+                            }
+                        }
+                    }
+                };
+                break;
+                
+            case 'efficiency-analysis':
+                chartData = {
+                    labels: topCategories.map(cat => cat.name),
+                    datasets: [{
+                        label: 'Valor Médio por Uso',
+                        data: topCategories.map(cat => cat.averageAmount),
+                        backgroundColor: '#10b981',
+                        borderColor: '#059669',
+                        borderWidth: 1
+                    }]
+                };
+                chartConfig = {
+                    type: 'bar',
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            title: {
+                                display: true,
+                                text: 'Eficiência de Categorização (Valor Médio)'
+                            }
+                        },
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                ticks: {
+                                    callback: function(value) {
+                                        return formatCurrency(value);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                };
+                break;
+        }
+        
+        chartAnalysisChart = new Chart(ctx, {
+            ...chartConfig,
+            data: chartData
+        });
+    }
+    
+    function updateChartAnalysisInsights(data, analysisType) {
+        if (!chartUsageInsights) return;
+        
+        const insights = generateChartInsights(data, analysisType);
+        
+        chartUsageInsights.innerHTML = `
+            <div class="space-y-3">
+                ${insights.map(insight => `
+                    <div class="p-3 rounded-lg border-l-4 ${insight.color} bg-gray-50">
+                        <div class="flex items-start gap-2">
+                            <span class="text-lg">${insight.icon}</span>
+                            <div>
+                                <h5 class="font-semibold text-gray-800">${insight.title}</h5>
+                                <p class="text-gray-600 text-sm mt-1">${insight.description}</p>
+                                ${insight.recommendation ? `<p class="text-blue-600 text-sm mt-2"><strong>💡 Recomendação:</strong> ${insight.recommendation}</p>` : ''}
+                            </div>
+                        </div>
+                    </div>
+                `).join('')}
+            </div>
+        `;
+    }
+    
+    function generateChartInsights(data, analysisType) {
+        const insights = [];
+        const topCategory = data.categories[0];
+        const bottomCategory = data.categories[data.categories.length - 1];
+        
+        // Insight básico sobre categorias
+        insights.push({
+            icon: '📊',
+            title: 'Resumo Geral',
+            description: `Foram analisadas ${data.uniqueCategories} categorias com ${data.totalExpenses} transações totais no valor de ${formatCurrency(data.totalAmount)}.`,
+            color: 'border-blue-500',
+            recommendation: null
+        });
+        
+        // Insights específicos por tipo de análise
+        switch (analysisType) {
+            case 'usage-frequency':
+                insights.push({
+                    icon: '🔥',
+                    title: 'Categoria Mais Utilizada',
+                    description: `"${topCategory.name}" é sua categoria mais frequente com ${topCategory.frequency} usos (${topCategory.percentage.toFixed(1)}% do total).`,
+                    color: 'border-green-500',
+                    recommendation: 'Considere subcategorizar esta categoria para melhor controle.'
+                });
+                break;
+                
+            case 'amount-distribution':
+                insights.push({
+                    icon: '💰',
+                    title: 'Maior Concentração de Gastos',
+                    description: `"${topCategory.name}" concentra ${topCategory.percentage.toFixed(1)}% dos seus gastos (${formatCurrency(topCategory.totalAmount)}).`,
+                    color: 'border-yellow-500',
+                    recommendation: topCategory.percentage > 40 ? 'Alta concentração pode indicar necessidade de revisão orçamentária.' : null
+                });
+                break;
+                
+            case 'trend-analysis':
+                const trendingUp = data.categories.filter(cat => cat.percentage > 10).length;
+                insights.push({
+                    icon: '📈',
+                    title: 'Tendências Identificadas',
+                    description: `${trendingUp} categorias representam mais de 10% cada uma dos seus gastos.`,
+                    color: 'border-purple-500',
+                    recommendation: trendingUp > 5 ? 'Muitas categorias principais podem dificultar o controle financeiro.' : null
+                });
+                break;
+                
+            case 'efficiency-analysis':
+                insights.push({
+                    icon: '⚡',
+                    title: 'Eficiência de Categorização',
+                    description: `"${topCategory.name}" tem o maior valor médio por uso: ${formatCurrency(topCategory.averageAmount)}.`,
+                    color: 'border-orange-500',
+                    recommendation: 'Categorias com valores muito altos podem precisar de subdivisão.'
+                });
+                break;
+        }
+        
+        // Insight sobre categorização
+        if (data.categories.some(cat => cat.name.includes('Sem Categoria'))) {
+            insights.push({
+                icon: '⚠️',
+                title: 'Problema de Categorização',
+                description: 'Existem transações sem categoria definida.',
+                color: 'border-red-500',
+                recommendation: 'Defina categorias para todas as transações para melhor análise.'
+            });
+        }
+        
+        return insights;
+    }
+    
+    function updateChartDetailsTable(data) {
+        if (!chartDetailsTbody) return;
+        
+        chartDetailsTbody.innerHTML = '';
+        
+        data.categories.forEach((category, index) => {
+            const row = document.createElement('tr');
+            row.className = index % 2 === 0 ? 'bg-white' : 'bg-gray-50';
+            
+            const statusIcon = category.frequency > 10 ? '🔥' : category.frequency > 5 ? '📊' : '📉';
+            const statusText = category.frequency > 10 ? 'Alta' : category.frequency > 5 ? 'Média' : 'Baixa';
+            
+            row.innerHTML = `
+                <td class="px-3 py-2 font-medium">${category.name}</td>
+                <td class="px-3 py-2 text-center">${category.frequency}</td>
+                <td class="px-3 py-2 text-center font-semibold">${formatCurrency(category.totalAmount)}</td>
+                <td class="px-3 py-2 text-center">${formatCurrency(category.averageAmount)}</td>
+                <td class="px-3 py-2 text-center">${category.percentage.toFixed(1)}%</td>
+                <td class="px-3 py-2 text-center">
+                    <span class="flex items-center justify-center gap-1">
+                        ${statusIcon} ${statusText}
+                    </span>
+                </td>
+            `;
+            
+            chartDetailsTbody.appendChild(row);
+        });
+    }
 
     // ========== FIM SISTEMA DE INSIGHTS ==========
 
