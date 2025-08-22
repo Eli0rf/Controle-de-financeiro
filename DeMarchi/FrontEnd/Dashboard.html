@@ -485,6 +485,9 @@
                         <button id="recurring-expenses-btn-mobile" class="w-full text-left p-2 rounded hover:bg-gray-100 flex items-center gap-2">
                             <i class="fas fa-sync-alt"></i> Gastos Recorrentes
                         </button>
+                        <button id="period-analysis-btn-mobile" class="w-full text-left p-2 rounded hover:bg-gray-100 flex items-center gap-2">
+                            <i class="fas fa-calendar-alt"></i> Análise por Período da Fatura
+                        </button>
                         <hr class="my-2">
                         <button id="logout-button-mobile" class="w-full text-left p-2 rounded hover:bg-red-100 text-red-600 flex items-center gap-2">
                             <i class="bi bi-box-arrow-right"></i> Sair
@@ -505,6 +508,9 @@
                     </button>
                     <button id="recurring-expenses-btn" class="bg-orange-500 text-white px-2 md:px-4 py-2 rounded-lg flex items-center gap-1 md:gap-2 text-xs md:text-sm btn-touch">
                         <i class="fas fa-sync-alt"></i><span class="hidden lg:inline">🔄 Recorrentes</span>
+                    </button>
+                    <button id="period-analysis-btn" class="bg-indigo-500 text-white px-2 md:px-4 py-2 rounded-lg flex items-center gap-1 md:gap-2 text-xs md:text-sm btn-touch">
+                        <i class="fas fa-calendar-alt"></i><span class="hidden lg:inline">📊 Período</span>
                     </button>
                     <button id="logout-button" class="bg-red-500 text-white px-2 md:px-4 py-2 rounded-lg flex items-center gap-1 md:gap-2 text-xs md:text-sm btn-touch">
                         <i class="bi bi-box-arrow-right"></i><span class="hidden md:inline"> Sair</span>
@@ -1753,6 +1759,144 @@
 
             <div class="flex justify-end">
                 <button id="close-recurring-modal" class="bg-gray-300 px-6 py-2 rounded-lg">Fechar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal para Análise por Período da Fatura -->
+    <div id="period-analysis-modal" class="modal-overlay fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-2 sm:p-4 hidden opacity-0 z-50">
+        <div class="bg-white p-4 sm:p-6 md:p-8 rounded-lg shadow-xl w-full max-w-sm sm:max-w-2xl md:max-w-4xl lg:max-w-6xl max-h-[90vh] overflow-y-auto">
+            <h3 class="text-lg sm:text-xl md:text-2xl font-bold mb-4 sm:mb-6">📊 Análise por Período da Fatura</h3>
+            
+            <!-- Formulário de Filtros -->
+            <form id="period-analysis-form" class="mb-4 sm:mb-6">
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-4">
+                    <div>
+                        <label class="block text-xs sm:text-sm font-medium mb-1">Data Início</label>
+                        <input type="date" id="period-start-date" class="form-control-touch w-full p-2 sm:p-3 border rounded-lg text-base" required>
+                    </div>
+                    <div>
+                        <label class="block text-xs sm:text-sm font-medium mb-1">Data Fim</label>
+                        <input type="date" id="period-end-date" class="form-control-touch w-full p-2 sm:p-3 border rounded-lg text-base" required>
+                    </div>
+                    <div>
+                        <label class="block text-xs sm:text-sm font-medium mb-1">Conta</label>
+                        <select id="period-account" class="form-control-touch w-full p-2 sm:p-3 border rounded-lg text-base">
+                            <option value="">Todas as Contas</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs sm:text-sm font-medium mb-1">Tipo</label>
+                        <select id="period-type" class="form-control-touch w-full p-2 sm:p-3 border rounded-lg text-base">
+                            <option value="">Todos</option>
+                            <option value="personal">Pessoal</option>
+                            <option value="business">Empresarial</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <div class="flex flex-col sm:flex-row gap-2 sm:gap-3">
+                    <button type="submit" class="bg-blue-600 text-white px-4 py-2 sm:py-3 rounded-lg btn-touch text-base font-medium">
+                        📊 Analisar Período
+                    </button>
+                    <button type="button" id="period-export-pdf" class="bg-green-600 text-white px-4 py-2 sm:py-3 rounded-lg btn-touch text-base font-medium" disabled>
+                        📄 Exportar PDF
+                    </button>
+                    <button type="button" id="close-period-analysis-modal" class="bg-gray-300 text-gray-800 px-4 py-2 sm:py-3 rounded-lg btn-touch text-base font-medium">
+                        Fechar
+                    </button>
+                </div>
+            </form>
+
+            <!-- Abas de Visualização -->
+            <div class="tab-buttons flex flex-wrap border-b border-gray-200 mb-4 sm:mb-6 gap-1">
+                <button class="period-tab-btn tab-button active px-2 sm:px-4 py-2 text-xs sm:text-sm font-medium text-blue-600 border-b-2 border-blue-600 btn-touch" data-tab="summary">
+                    <span class="sm:hidden">📊</span><span class="hidden sm:inline">📊 Resumo</span>
+                </button>
+                <button class="period-tab-btn tab-button px-2 sm:px-4 py-2 text-xs sm:text-sm font-medium text-gray-500 hover:text-gray-700 btn-touch" data-tab="charts">
+                    <span class="sm:hidden">📈</span><span class="hidden sm:inline">📈 Gráficos</span>
+                </button>
+                <button class="period-tab-btn tab-button px-2 sm:px-4 py-2 text-xs sm:text-sm font-medium text-gray-500 hover:text-gray-700 btn-touch" data-tab="details">
+                    <span class="sm:hidden">📋</span><span class="hidden sm:inline">📋 Detalhes</span>
+                </button>
+                <button class="period-tab-btn tab-button px-2 sm:px-4 py-2 text-xs sm:text-sm font-medium text-gray-500 hover:text-gray-700 btn-touch" data-tab="comparison">
+                    <span class="sm:hidden">⚖️</span><span class="hidden sm:inline">⚖️ Comparação</span>
+                </button>
+            </div>
+
+            <!-- Conteúdo das Abas -->
+            <div id="period-content">
+                <!-- Aba Resumo -->
+                <div id="period-summary-content" class="period-tab-content">
+                    <div id="period-summary-cards" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-4 sm:mb-6">
+                        <!-- Cards de resumo serão preenchidos dinamicamente -->
+                    </div>
+                    <div id="period-summary-text" class="bg-gray-50 p-3 sm:p-4 rounded-lg">
+                        <p class="text-gray-600 text-sm sm:text-base">Selecione um período para ver o resumo das faturas.</p>
+                    </div>
+                </div>
+
+                <!-- Aba Gráficos -->
+                <div id="period-charts-content" class="period-tab-content hidden">
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4">
+                        <div class="bg-gray-50 p-3 sm:p-4 rounded-lg">
+                            <h4 class="font-semibold mb-3 text-sm sm:text-base">📈 Evolução por Dia</h4>
+                            <div class="chart-container h-64 sm:h-80">
+                                <canvas id="period-daily-chart" class="chart-canvas w-full h-full"></canvas>
+                            </div>
+                        </div>
+                        <div class="bg-gray-50 p-3 sm:p-4 rounded-lg">
+                            <h4 class="font-semibold mb-3 text-sm sm:text-base">🏦 Distribuição por Conta</h4>
+                            <div class="chart-container h-64 sm:h-80">
+                                <canvas id="period-accounts-chart" class="chart-canvas w-full h-full"></canvas>
+                            </div>
+                        </div>
+                        <div class="bg-gray-50 p-3 sm:p-4 rounded-lg lg:col-span-2">
+                            <h4 class="font-semibold mb-3 text-sm sm:text-base">📊 Categorias por Valor</h4>
+                            <div class="chart-container h-64 sm:h-80">
+                                <canvas id="period-categories-chart" class="chart-canvas w-full h-full"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Aba Detalhes -->
+                <div id="period-details-content" class="period-tab-content hidden">
+                    <div class="overflow-x-auto">
+                        <table id="period-details-table" class="min-w-full bg-white table-responsive">
+                            <thead class="bg-gray-50 sticky-top">
+                                <tr>
+                                    <th class="px-2 sm:px-4 py-2 sm:py-3 text-left text-xs sm:text-sm font-medium text-gray-500 uppercase tracking-wider">Data</th>
+                                    <th class="px-2 sm:px-4 py-2 sm:py-3 text-left text-xs sm:text-sm font-medium text-gray-500 uppercase tracking-wider">Descrição</th>
+                                    <th class="px-2 sm:px-4 py-2 sm:py-3 text-left text-xs sm:text-sm font-medium text-gray-500 uppercase tracking-wider">Conta</th>
+                                    <th class="px-2 sm:px-4 py-2 sm:py-3 text-left text-xs sm:text-sm font-medium text-gray-500 uppercase tracking-wider">Valor</th>
+                                    <th class="px-2 sm:px-4 py-2 sm:py-3 text-left text-xs sm:text-sm font-medium text-gray-500 uppercase tracking-wider">Tipo</th>
+                                </tr>
+                            </thead>
+                            <tbody id="period-details-tbody">
+                                <!-- Dados serão preenchidos dinamicamente -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Aba Comparação -->
+                <div id="period-comparison-content" class="period-tab-content hidden">
+                    <div class="space-y-3 sm:space-y-4">
+                        <div class="bg-blue-50 p-3 sm:p-4 rounded-lg">
+                            <h4 class="font-semibold mb-2 text-sm sm:text-base">📊 Comparação com Período Anterior</h4>
+                            <div id="period-comparison-data">
+                                <!-- Dados de comparação serão preenchidos dinamicamente -->
+                            </div>
+                        </div>
+                        <div class="bg-green-50 p-3 sm:p-4 rounded-lg">
+                            <h4 class="font-semibold mb-2 text-sm sm:text-base">📈 Análise de Tendências</h4>
+                            <div id="period-trends-data">
+                                <!-- Dados de tendências serão preenchidos dinamicamente -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>

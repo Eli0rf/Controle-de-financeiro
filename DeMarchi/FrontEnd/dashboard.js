@@ -62,6 +62,21 @@ document.addEventListener('DOMContentLoaded', function() {
     // ========== TESTE DE GRÁFICO ==========
     const testTrendChartBtn = document.getElementById('test-trend-chart-btn');
 
+    // ========== ANÁLISE POR PERÍODO DA FATURA ==========
+    const periodAnalysisBtn = document.getElementById('period-analysis-btn');
+    const periodAnalysisModal = document.getElementById('period-analysis-modal');
+    const closePeriodAnalysisModalBtn = document.getElementById('close-period-analysis-modal');
+    const periodAnalysisForm = document.getElementById('period-analysis-form');
+    const periodExportPdfBtn = document.getElementById('period-export-pdf-btn');
+    const periodTabBtns = document.querySelectorAll('.period-tab-btn');
+    
+    // Charts para análise por período
+    let periodCharts = {
+        daily: null,
+        accounts: null,
+        categories: null
+    };
+
     // ========== SISTEMA DE INSIGHTS ==========
     const refreshInsightsBtn = document.getElementById('refresh-insights-btn');
     const insightTabBtns = document.querySelectorAll('.insight-tab-btn');
@@ -279,6 +294,21 @@ document.addEventListener('DOMContentLoaded', function() {
         
         // Event listener para teste do gráfico de tendências
         if (testTrendChartBtn) testTrendChartBtn.addEventListener('click', testTrendAnalysisChart);
+        
+        // Event listeners para análise por período da fatura
+        if (periodAnalysisBtn) periodAnalysisBtn.addEventListener('click', openPeriodAnalysisModal);
+        if (closePeriodAnalysisModalBtn) closePeriodAnalysisModalBtn.addEventListener('click', closePeriodAnalysisModal);
+        if (periodAnalysisForm) periodAnalysisForm.addEventListener('submit', handlePeriodAnalysis);
+        if (periodExportPdfBtn) periodExportPdfBtn.addEventListener('click', exportPeriodAnalysisPdf);
+        
+        // Event listeners para abas de análise por período
+        if (periodTabBtns) {
+            periodTabBtns.forEach(btn => {
+                btn.addEventListener('click', function() {
+                    switchPeriodTab(this.dataset.tab);
+                });
+            });
+        }
         
         // Event listener para redimensionamento da janela (ajustar modais em dispositivos móveis)
         window.addEventListener('resize', () => {
@@ -2466,6 +2496,7 @@ document.addEventListener('DOMContentLoaded', function() {
             { id: 'weekly-report-btn-mobile', original: 'weekly-report-btn' },
             { id: 'interactive-report-btn-mobile', original: 'interactive-report-btn' },
             { id: 'recurring-expenses-btn-mobile', original: 'recurring-expenses-btn' },
+            { id: 'period-analysis-btn-mobile', original: 'period-analysis-btn' },
             { id: 'logout-button-mobile', original: 'logout-button' }
         ];
         
@@ -6883,6 +6914,472 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     // ========== FIM SISTEMA DE INSIGHTS ==========
+
+    // ========== ANÁLISE POR PERÍODO DA FATURA ==========
+    
+    function openPeriodAnalysisModal() {
+        if (periodAnalysisModal) {
+            // Preencher opções de contas
+            populatePeriodAccounts();
+            
+            // Definir datas padrão
+            const today = new Date();
+            const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+            const endOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+            
+            const startDateInput = document.getElementById('period-start-date');
+            const endDateInput = document.getElementById('period-end-date');
+            
+            if (startDateInput) startDateInput.value = startOfMonth.toISOString().split('T')[0];
+            if (endDateInput) endDateInput.value = endOfMonth.toISOString().split('T')[0];
+            
+            periodAnalysisModal.classList.remove('hidden');
+            setTimeout(() => periodAnalysisModal.classList.remove('opacity-0'), 10);
+            adjustModalForMobile(periodAnalysisModal);
+        }
+    }
+    
+    function closePeriodAnalysisModal() {
+        if (periodAnalysisModal) {
+            periodAnalysisModal.classList.add('opacity-0');
+            setTimeout(() => periodAnalysisModal.classList.add('hidden'), 300);
+        }
+    }
+    
+    function populatePeriodAccounts() {
+        const accountSelect = document.getElementById('period-account');
+        const filterAccountSelect = document.getElementById('filter-account');
+        
+        if (accountSelect && filterAccountSelect) {
+            accountSelect.innerHTML = '<option value="">Todas as Contas</option>';
+            
+            // Copiar opções do filtro principal
+            for (let i = 1; i < filterAccountSelect.options.length; i++) {
+                const option = filterAccountSelect.options[i];
+                const newOption = document.createElement('option');
+                newOption.value = option.value;
+                newOption.textContent = option.textContent;
+                accountSelect.appendChild(newOption);
+            }
+        }
+    }
+    
+    async function handlePeriodAnalysis(e) {
+        e.preventDefault();
+        
+        const startDate = document.getElementById('period-start-date')?.value;
+        const endDate = document.getElementById('period-end-date')?.value;
+        const account = document.getElementById('period-account')?.value || '';
+        const type = document.getElementById('period-type')?.value || '';
+        
+        if (!startDate || !endDate) {
+            showNotification('Por favor, selecione as datas de início e fim.', 'error');
+            return;
+        }
+        
+        if (new Date(startDate) > new Date(endDate)) {
+            showNotification('A data de início deve ser anterior à data de fim.', 'error');
+            return;
+        }
+        
+        try {
+            // Buscar dados do período
+            const periodData = await fetchPeriodData(startDate, endDate, account, type);
+            
+            // Atualizar interface
+            updatePeriodSummary(periodData);
+            updatePeriodCharts(periodData);
+            updatePeriodDetails(periodData);
+            updatePeriodComparison(periodData, startDate, endDate);
+            
+            // Habilitar botão de exportação
+            if (periodExportPdfBtn) {
+                periodExportPdfBtn.disabled = false;
+            }
+            
+            showNotification('✅ Análise por período gerada com sucesso!', 'success');
+            
+        } catch (error) {
+            console.error('Erro ao gerar análise por período:', error);
+            showNotification('Erro ao gerar análise: ' + error.message, 'error');
+        }
+    }
+    
+    async function fetchPeriodData(startDate, endDate, account, type) {
+        const token = getToken();
+        if (!token) throw new Error('Token não encontrado');
+        
+        let url = `${API_BASE_URL}/api/expenses/period?start=${startDate}&end=${endDate}`;
+        if (account) url += `&account=${account}`;
+        if (type) url += `&type=${type}`;
+        
+        const response = await authenticatedFetch(url);
+        
+        if (!response.ok) {
+            throw new Error('Erro ao buscar dados do período');
+        }
+        
+        return await response.json();
+    }
+    
+    function updatePeriodSummary(data) {
+        const summaryCards = document.getElementById('period-summary-cards');
+        const summaryText = document.getElementById('period-summary-text');
+        
+        if (!summaryCards || !data) return;
+        
+        const total = data.reduce((sum, item) => sum + (item.Valor || 0), 0);
+        const totalPersonal = data.filter(item => item.Tipo === 'personal').reduce((sum, item) => sum + (item.Valor || 0), 0);
+        const totalBusiness = data.filter(item => item.Tipo === 'business').reduce((sum, item) => sum + (item.Valor || 0), 0);
+        const transactionCount = data.length;
+        
+        const avgDaily = total / Math.max(1, getDaysBetweenDates(data[0]?.Data, data[data.length - 1]?.Data));
+        
+        summaryCards.innerHTML = `
+            <div class="stats-card bg-blue-50 p-3 sm:p-4 rounded-lg text-center">
+                <h4 class="text-sm sm:text-base font-semibold text-blue-800">💰 Total Gasto</h4>
+                <p class="value text-lg sm:text-xl md:text-2xl font-bold text-blue-600">${formatCurrency(total)}</p>
+            </div>
+            <div class="stats-card bg-green-50 p-3 sm:p-4 rounded-lg text-center">
+                <h4 class="text-sm sm:text-base font-semibold text-green-800">🏠 Pessoal</h4>
+                <p class="value text-lg sm:text-xl md:text-2xl font-bold text-green-600">${formatCurrency(totalPersonal)}</p>
+            </div>
+            <div class="stats-card bg-purple-50 p-3 sm:p-4 rounded-lg text-center">
+                <h4 class="text-sm sm:text-base font-semibold text-purple-800">💼 Empresarial</h4>
+                <p class="value text-lg sm:text-xl md:text-2xl font-bold text-purple-600">${formatCurrency(totalBusiness)}</p>
+            </div>
+            <div class="stats-card bg-gray-50 p-3 sm:p-4 rounded-lg text-center">
+                <h4 class="text-sm sm:text-base font-semibold text-gray-800">📊 Transações</h4>
+                <p class="value text-lg sm:text-xl md:text-2xl font-bold text-gray-600">${transactionCount}</p>
+            </div>
+        `;
+        
+        if (summaryText) {
+            summaryText.innerHTML = `
+                <div class="text-sm sm:text-base">
+                    <p class="mb-2"><strong>📈 Média Diária:</strong> ${formatCurrency(avgDaily)}</p>
+                    <p class="mb-2"><strong>🏦 Contas Utilizadas:</strong> ${[...new Set(data.map(item => item.ContaNome))].length}</p>
+                    <p><strong>📅 Período:</strong> ${data.length > 0 ? formatDate(data[0].Data) + ' até ' + formatDate(data[data.length - 1].Data) : 'N/A'}</p>
+                </div>
+            `;
+        }
+    }
+    
+    function updatePeriodCharts(data) {
+        if (!data || data.length === 0) return;
+        
+        // Gráfico de evolução diária
+        createPeriodDailyChart(data);
+        
+        // Gráfico de distribuição por conta
+        createPeriodAccountsChart(data);
+        
+        // Gráfico de categorias
+        createPeriodCategoriesChart(data);
+    }
+    
+    function createPeriodDailyChart(data) {
+        const ctx = document.getElementById('period-daily-chart');
+        if (!ctx) return;
+        
+        // Destruir gráfico anterior se existir
+        if (periodCharts.daily) {
+            periodCharts.daily.destroy();
+        }
+        
+        // Agrupar por data
+        const dailyData = {};
+        data.forEach(item => {
+            const date = item.Data.split('T')[0];
+            dailyData[date] = (dailyData[date] || 0) + (item.Valor || 0);
+        });
+        
+        const labels = Object.keys(dailyData).sort();
+        const values = labels.map(date => dailyData[date]);
+        
+        periodCharts.daily = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels.map(date => formatDate(date)),
+                datasets: [{
+                    label: 'Gastos Diários',
+                    data: values,
+                    borderColor: '#3b82f6',
+                    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                    tension: 0.1,
+                    fill: true
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        display: false
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            callback: function(value) {
+                                return formatCurrency(value);
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+    
+    function createPeriodAccountsChart(data) {
+        const ctx = document.getElementById('period-accounts-chart');
+        if (!ctx) return;
+        
+        // Destruir gráfico anterior se existir
+        if (periodCharts.accounts) {
+            periodCharts.accounts.destroy();
+        }
+        
+        // Agrupar por conta
+        const accountData = {};
+        data.forEach(item => {
+            const account = item.ContaNome || 'Sem Conta';
+            accountData[account] = (accountData[account] || 0) + (item.Valor || 0);
+        });
+        
+        const labels = Object.keys(accountData);
+        const values = Object.values(accountData);
+        const colors = [
+            '#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6',
+            '#06b6d4', '#84cc16', '#f97316', '#ec4899', '#6b7280'
+        ];
+        
+        periodCharts.accounts = new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: labels,
+                datasets: [{
+                    data: values,
+                    backgroundColor: colors.slice(0, labels.length),
+                    borderWidth: 2,
+                    borderColor: '#fff'
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'bottom',
+                        labels: {
+                            padding: 10,
+                            usePointStyle: true
+                        }
+                    }
+                }
+            }
+        });
+    }
+    
+    function createPeriodCategoriesChart(data) {
+        const ctx = document.getElementById('period-categories-chart');
+        if (!ctx) return;
+        
+        // Destruir gráfico anterior se existir
+        if (periodCharts.categories) {
+            periodCharts.categories.destroy();
+        }
+        
+        // Agrupar por plano de conta
+        const categoryData = {};
+        data.forEach(item => {
+            const category = item.PlanoContasDescricao || item.PlanoContasID || 'Outros';
+            categoryData[category] = (categoryData[category] || 0) + (item.Valor || 0);
+        });
+        
+        // Ordenar por valor
+        const sortedEntries = Object.entries(categoryData)
+            .sort(([,a], [,b]) => b - a)
+            .slice(0, 10); // Top 10
+        
+        const labels = sortedEntries.map(([label]) => label);
+        const values = sortedEntries.map(([,value]) => value);
+        
+        periodCharts.categories = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Valor Total',
+                    data: values,
+                    backgroundColor: '#10b981',
+                    borderColor: '#059669',
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        display: false
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            callback: function(value) {
+                                return formatCurrency(value);
+                            }
+                        }
+                    },
+                    x: {
+                        ticks: {
+                            maxRotation: 45
+                        }
+                    }
+                }
+            }
+        });
+    }
+    
+    function updatePeriodDetails(data) {
+        const tbody = document.getElementById('period-details-tbody');
+        if (!tbody || !data) return;
+        
+        tbody.innerHTML = '';
+        
+        data.forEach(item => {
+            const row = document.createElement('tr');
+            row.className = 'hover:bg-gray-50';
+            
+            row.innerHTML = `
+                <td class="px-2 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm">${formatDate(item.Data)}</td>
+                <td class="px-2 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm">${item.Descricao || 'N/A'}</td>
+                <td class="px-2 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm">${item.ContaNome || 'N/A'}</td>
+                <td class="px-2 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm font-semibold">${formatCurrency(item.Valor || 0)}</td>
+                <td class="px-2 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm">
+                    <span class="px-2 py-1 rounded-full text-xs ${item.Tipo === 'business' ? 'bg-purple-100 text-purple-800' : 'bg-green-100 text-green-800'}">
+                        ${item.Tipo === 'business' ? '💼 Empresarial' : '🏠 Pessoal'}
+                    </span>
+                </td>
+            `;
+            
+            tbody.appendChild(row);
+        });
+    }
+    
+    function updatePeriodComparison(data, startDate, endDate) {
+        const comparisonData = document.getElementById('period-comparison-data');
+        const trendsData = document.getElementById('period-trends-data');
+        
+        if (!comparisonData || !trendsData) return;
+        
+        // Análise básica
+        const total = data.reduce((sum, item) => sum + (item.Valor || 0), 0);
+        const avgDaily = total / getDaysBetweenDates(startDate, endDate);
+        
+        comparisonData.innerHTML = `
+            <div class="text-sm sm:text-base space-y-2">
+                <p>📊 <strong>Total do Período:</strong> ${formatCurrency(total)}</p>
+                <p>📈 <strong>Média Diária:</strong> ${formatCurrency(avgDaily)}</p>
+                <p>📅 <strong>Dias Analisados:</strong> ${getDaysBetweenDates(startDate, endDate)} dias</p>
+            </div>
+        `;
+        
+        trendsData.innerHTML = `
+            <div class="text-sm sm:text-base space-y-2">
+                <p>📈 <strong>Tendência:</strong> ${avgDaily > 100 ? 'Alto volume de gastos' : 'Volume controlado'}</p>
+                <p>🎯 <strong>Recomendação:</strong> ${getRecommendation(avgDaily)}</p>
+            </div>
+        `;
+    }
+    
+    function switchPeriodTab(tabName) {
+        // Atualizar botões
+        periodTabBtns.forEach(btn => {
+            btn.classList.remove('active', 'text-blue-600', 'border-blue-600');
+            btn.classList.add('text-gray-500');
+        });
+        
+        const activeBtn = document.querySelector(`[data-tab="${tabName}"]`);
+        if (activeBtn) {
+            activeBtn.classList.add('active', 'text-blue-600', 'border-blue-600');
+            activeBtn.classList.remove('text-gray-500');
+        }
+        
+        // Atualizar conteúdo
+        document.querySelectorAll('.period-tab-content').forEach(content => {
+            content.classList.add('hidden');
+        });
+        
+        const activeContent = document.getElementById(`period-${tabName}-content`);
+        if (activeContent) {
+            activeContent.classList.remove('hidden');
+        }
+    }
+    
+    async function exportPeriodAnalysisPdf() {
+        const startDate = document.getElementById('period-start-date')?.value;
+        const endDate = document.getElementById('period-end-date')?.value;
+        const account = document.getElementById('period-account')?.value || '';
+        const type = document.getElementById('period-type')?.value || '';
+        
+        if (!startDate || !endDate) {
+            showNotification('Por favor, gere uma análise antes de exportar.', 'error');
+            return;
+        }
+        
+        try {
+            let url = `${API_BASE_URL}/api/expenses/period-report?start=${startDate}&end=${endDate}`;
+            if (account) url += `&account=${account}`;
+            if (type) url += `&type=${type}`;
+            
+            const response = await authenticatedFetch(url);
+            
+            if (!response.ok) {
+                throw new Error('Erro ao gerar relatório PDF');
+            }
+            
+            const blob = await response.blob();
+            const downloadUrl = window.URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = downloadUrl;
+            link.download = `analise-periodo-${startDate}-${endDate}.pdf`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            window.URL.revokeObjectURL(downloadUrl);
+            
+            showNotification('✅ Relatório PDF baixado com sucesso!', 'success');
+            
+        } catch (error) {
+            console.error('Erro ao exportar PDF:', error);
+            showNotification('Erro ao exportar PDF: ' + error.message, 'error');
+        }
+    }
+    
+    // Funções utilitárias
+    function getDaysBetweenDates(date1, date2) {
+        const d1 = new Date(date1);
+        const d2 = new Date(date2);
+        const diffTime = Math.abs(d2 - d1);
+        return Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+    }
+    
+    function getRecommendation(avgDaily) {
+        if (avgDaily > 200) {
+            return 'Considere revisar gastos desnecessários';
+        } else if (avgDaily > 100) {
+            return 'Gastos dentro da média, mantenha o controle';
+        } else {
+            return 'Excelente controle de gastos!';
+        }
+    }
+    
+    // ========== FIM ANÁLISE POR PERÍODO DA FATURA ==========
 
     // Chamar inicialização
     init();
