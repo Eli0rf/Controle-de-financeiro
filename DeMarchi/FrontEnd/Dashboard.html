@@ -1354,31 +1354,31 @@
         </main>
     </div>
 
-    <div id="report-modal" class="modal-overlay fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden opacity-0 z-50">
-        <div class="bg-white p-8 rounded-lg shadow-xl w-full max-w-2xl md:max-w-2xl sm:max-w-full" style="max-width:98vw;">
-            <h3 class="text-2xl font-bold mb-6">📅 Gerar Relatório Mensal</h3>
+    <div id="report-modal" class="modal-overlay fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-2 sm:p-4 hidden opacity-0 z-50">
+        <div class="bg-white p-4 sm:p-6 md:p-8 rounded-lg shadow-xl w-full max-w-sm sm:max-w-md md:max-w-2xl" style="max-width:95vw; max-height:90vh; overflow-y:auto;">
+            <h3 class="text-lg sm:text-xl md:text-2xl font-bold mb-4 sm:mb-6">📅 Gerar Relatório Mensal</h3>
             <form id="report-form">
-                <div class="grid grid-cols-2 gap-4">
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                     <div>
-                        <label for="report-year" class="block text-sm font-medium text-gray-700">Ano</label>
-                        <select id="report-year" class="mt-1 block w-full p-2 border rounded-lg"></select>
+                        <label for="report-year" class="block text-sm font-medium text-gray-700 mb-1">Ano</label>
+                        <select id="report-year" class="mt-1 block w-full p-2 sm:p-3 border rounded-lg text-base"></select>
                     </div>
                     <div>
-                        <label for="report-month" class="block text-sm font-medium text-gray-700">Mês</label>
-                        <select id="report-month" class="mt-1 block w-full p-2 border rounded-lg"></select>
+                        <label for="report-month" class="block text-sm font-medium text-gray-700 mb-1">Mês</label>
+                        <select id="report-month" class="mt-1 block w-full p-2 sm:p-3 border rounded-lg text-base"></select>
                     </div>
-                    <div class="col-span-2">
-                        <label for="report-account" class="block text-sm font-medium text-gray-700">Conta</label>
-                        <select id="report-account" class="mt-1 block w-full p-2 border rounded-lg">
+                    <div class="col-span-1 sm:col-span-2">
+                        <label for="report-account" class="block text-sm font-medium text-gray-700 mb-1">Conta</label>
+                        <select id="report-account" class="mt-1 block w-full p-2 sm:p-3 border rounded-lg text-base">
                             <option value="">Todas as Contas</option>
                         </select>
                     </div>
                 </div>
 
                 <!-- Prévia das informações que serão incluídas no relatório -->
-                <div class="mt-6 p-4 bg-blue-50 rounded-lg">
-                    <h4 class="text-lg font-semibold text-blue-800 mb-2">📊 O que será incluído no relatório:</h4>
-                    <div class="text-sm text-blue-700 space-y-1">
+                <div class="mt-4 sm:mt-6 p-3 sm:p-4 bg-blue-50 rounded-lg">
+                    <h4 class="text-sm sm:text-base md:text-lg font-semibold text-blue-800 mb-2">📊 O que será incluído no relatório:</h4>
+                    <div class="text-xs sm:text-sm text-blue-700 space-y-1">
                         <p>✅ Resumo geral de gastos (Pessoal vs Empresarial)</p>
                         <p>✅ Gastos detalhados por plano de conta</p>
                         <p>✅ <strong>🎯 Análise de limites vs gastos por plano</strong></p>
@@ -1392,16 +1392,16 @@
                 </div>
 
                 <!-- Prévia dos tetos (será preenchida dinamicamente) -->
-                <div id="report-ceiling-preview" class="mt-4 p-4 bg-green-50 rounded-lg hidden">
-                    <h4 class="text-lg font-semibold text-green-800 mb-2">🎯 Prévia dos Limites Monitorados:</h4>
-                    <div id="ceiling-preview-content" class="text-sm text-green-700">
+                <div id="report-ceiling-preview" class="mt-3 sm:mt-4 p-3 sm:p-4 bg-green-50 rounded-lg hidden">
+                    <h4 class="text-sm sm:text-base md:text-lg font-semibold text-green-800 mb-2">🎯 Prévia dos Limites Monitorados:</h4>
+                    <div id="ceiling-preview-content" class="text-xs sm:text-sm text-green-700">
                         <!-- Será preenchido dinamicamente -->
                     </div>
                 </div>
 
-                <div class="mt-8 flex flex-col md:flex-row justify-end gap-4">
-                    <button type="button" id="cancel-report-btn" class="bg-gray-200 text-gray-800 px-4 py-2 rounded-lg">Cancelar</button>
-                    <button type="submit" class="bg-blue-600 text-white font-semibold px-4 py-2 rounded-lg">
+                <div class="mt-6 sm:mt-8 flex flex-col sm:flex-row justify-end gap-3 sm:gap-4">
+                    <button type="button" id="cancel-report-btn" class="bg-gray-200 text-gray-800 px-4 py-2 sm:py-3 rounded-lg text-base font-medium">Cancelar</button>
+                    <button type="submit" class="bg-blue-600 text-white font-semibold px-4 py-2 sm:py-3 rounded-lg text-base">
                         <span id="report-generate-text">📄 Gerar PDF</span>
                         <span id="report-loading-text" class="hidden">📄 Gerando...</span>
                     </button>
@@ -1410,38 +1410,40 @@
         </div>
     </div>
 
-    <div id="interactive-report-modal" class="modal-overlay fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden opacity-0 z-50">
-        <div class="bg-white p-8 rounded-lg shadow-xl w-full max-w-6xl max-h-[90vh] overflow-y-auto">
-            <h3 class="text-2xl font-bold mb-6">Relatório Interativo</h3>
-            <form id="interactive-report-form" class="mb-4 flex flex-wrap gap-4 items-end">
+    <div id="interactive-report-modal" class="modal-overlay fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-2 sm:p-4 hidden opacity-0 z-50">
+        <div class="bg-white p-4 sm:p-6 md:p-8 rounded-lg shadow-xl w-full max-w-sm sm:max-w-2xl md:max-w-4xl lg:max-w-6xl max-h-[90vh] overflow-y-auto">
+            <h3 class="text-lg sm:text-xl md:text-2xl font-bold mb-4 sm:mb-6">Relatório Interativo</h3>
+            <form id="interactive-report-form" class="mb-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3 sm:gap-4 items-end">
                 <div>
-                    <label class="block text-sm font-medium">Período 1</label>
-                    <input type="month" id="ir-period-1" class="form-control" required>
+                    <label class="block text-xs sm:text-sm font-medium mb-1">Período 1</label>
+                    <input type="month" id="ir-period-1" class="form-control w-full p-2 border rounded text-base" required>
                 </div>
                 <div>
-                    <label class="block text-sm font-medium">Período 2</label>
-                    <input type="month" id="ir-period-2" class="form-control">
+                    <label class="block text-xs sm:text-sm font-medium mb-1">Período 2</label>
+                    <input type="month" id="ir-period-2" class="form-control w-full p-2 border rounded text-base">
                 </div>
                 <div>
-                    <label class="block text-sm font-medium">Conta</label>
-                    <select id="ir-account" class="form-control">
+                    <label class="block text-xs sm:text-sm font-medium mb-1">Conta</label>
+                    <select id="ir-account" class="form-control w-full p-2 border rounded text-base">
                         <option value="">Todas</option>
                     </select>
                 </div>
                 <div>
-                    <label class="block text-sm font-medium">Tipo</label>
-                    <select id="ir-type" class="form-control">
+                    <label class="block text-xs sm:text-sm font-medium mb-1">Tipo</label>
+                    <select id="ir-type" class="form-control w-full p-2 border rounded text-base">
                         <option value="">Todos</option>
                         <option value="pessoal">Pessoal</option>
                         <option value="empresa">Empresarial</option>
                     </select>
                 </div>
                 <div>
-                    <label class="block text-sm font-medium">Categoria</label>
-                    <input type="text" id="ir-category" class="form-control" placeholder="Plano de Conta">
+                    <label class="block text-xs sm:text-sm font-medium mb-1">Categoria</label>
+                    <input type="text" id="ir-category" class="form-control w-full p-2 border rounded text-base" placeholder="Plano de Conta">
                 </div>
-                <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded-lg">Gerar</button>
-                <button type="button" id="close-ir-modal" class="bg-gray-300 px-4 py-2 rounded-lg">Fechar</button>
+                <div class="col-span-1 sm:col-span-2 lg:col-span-1 flex flex-col sm:flex-row gap-2">
+                    <button type="submit" class="bg-blue-600 text-white px-3 sm:px-4 py-2 rounded-lg text-sm sm:text-base">Gerar</button>
+                    <button type="button" id="close-ir-modal" class="bg-gray-300 px-3 sm:px-4 py-2 rounded-lg text-sm sm:text-base">Fechar</button>
+                </div>
             </form>
             <div id="ir-charts" class="grid grid-cols-1 md:grid-cols-2 gap-6"></div>
             <div id="ir-details" class="mt-6"></div>
@@ -1467,17 +1469,38 @@
             z-index: 2;
         }
         @media (max-width: 900px) {
-            #interactive-report-modal .max-w-6xl { max-width: 98vw; }
+            #interactive-report-modal .max-w-6xl { max-width: 95vw; }
             #ir-charts { grid-template-columns: 1fr !important; }
         }
-        @media (max-width: 600px) {
-            #report-modal .max-w-md, #report-modal .max-w-full, #report-modal form {
-                max-width: 98vw !important;
-                width: 100% !important;
+        @media (max-width: 640px) {
+            /* Modal de relatório mensal */
+            #report-modal .bg-white {
+                padding: 1rem;
+                margin: 0.5rem;
             }
-            #report-modal form > .grid {
+            #report-modal select,
+            #report-modal input,
+            #report-modal button {
+                font-size: 16px !important; /* Evita zoom no iOS */
+                min-height: 44px;
+            }
+            
+            /* Modal de relatório interativo */
+            #interactive-report-modal .bg-white {
+                padding: 1rem;
+                margin: 0.5rem;
+            }
+            #interactive-report-modal form {
                 grid-template-columns: 1fr !important;
             }
+            #interactive-report-modal select,
+            #interactive-report-modal input,
+            #interactive-report-modal button {
+                font-size: 16px !important; /* Evita zoom no iOS */
+                min-height: 44px;
+            }
+            
+            /* Ajustes gerais para tabelas */
             .overflow-x-auto table {
                 min-width: 600px;
             }

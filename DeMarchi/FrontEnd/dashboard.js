@@ -261,6 +261,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 interactiveReportModal.classList.remove('hidden');
                 setTimeout(() => interactiveReportModal.classList.remove('opacity-0'), 10);
                 populateIrAccounts();
+                adjustModalForMobile(interactiveReportModal);
             }
         });
         if (closeIrModalBtn) closeIrModalBtn.addEventListener('click', () => {
@@ -278,6 +279,20 @@ document.addEventListener('DOMContentLoaded', function() {
         
         // Event listener para teste do gráfico de tendências
         if (testTrendChartBtn) testTrendChartBtn.addEventListener('click', testTrendAnalysisChart);
+        
+        // Event listener para redimensionamento da janela (ajustar modais em dispositivos móveis)
+        window.addEventListener('resize', () => {
+            const reportModal = document.getElementById('report-modal');
+            const interactiveModal = document.getElementById('interactive-report-modal');
+            
+            if (reportModal && !reportModal.classList.contains('hidden')) {
+                adjustModalForMobile(reportModal);
+            }
+            
+            if (interactiveModal && !interactiveModal.classList.contains('hidden')) {
+                adjustModalForMobile(interactiveModal);
+            }
+        });
         
         // Event listener para refresh de insights
         if (refreshInsightsBtn) refreshInsightsBtn.addEventListener('click', refreshInsights);
@@ -2302,6 +2317,9 @@ document.addEventListener('DOMContentLoaded', function() {
             modal.classList.remove('hidden', 'opacity-0');
             modal.classList.add('flex');
             setTimeout(() => modal.classList.remove('opacity-0'), 10);
+            
+            // Melhoria para dispositivos móveis
+            adjustModalForMobile(modal);
         }
     }
 
@@ -2392,6 +2410,28 @@ document.addEventListener('DOMContentLoaded', function() {
         if(reportModal) {
             reportModal.classList.add('opacity-0');
             setTimeout(() => reportModal.classList.add('hidden'), 300);
+        }
+    }
+
+    // Função para ajustar modais para dispositivos móveis
+    function adjustModalForMobile(modal) {
+        if (!modal) return;
+        
+        if (window.innerWidth <= 640) {
+            // Em dispositivos móveis, posicionar o modal no topo
+            modal.style.alignItems = 'flex-start';
+            modal.style.paddingTop = '1rem';
+            
+            // Garantir que o modal seja rolável
+            const modalContent = modal.querySelector('.bg-white');
+            if (modalContent) {
+                modalContent.style.maxHeight = '85vh';
+                modalContent.style.overflowY = 'auto';
+            }
+        } else {
+            // Em desktop, centralizar
+            modal.style.alignItems = 'center';
+            modal.style.paddingTop = '';
         }
     }
 
