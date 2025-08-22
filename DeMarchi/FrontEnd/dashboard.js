@@ -7452,9 +7452,12 @@ document.addEventListener('DOMContentLoaded', function() {
     function processChartAnalysis(expenses, analysisType) {
         const categoriesMap = new Map();
         
+        // Normalizar dados
+        const normalizedExpenses = expenses.map(normalizeExpenseData);
+        
         // Agrupar por categoria (PlanoContasDescricao ou PlanoContasID)
-        expenses.forEach(expense => {
-            const category = expense.PlanoContasDescricao || expense.PlanoContasID || 'Sem Categoria';
+        normalizedExpenses.forEach(expense => {
+            const category = expense.accountPlanDescription || expense.accountPlanCode || 'Sem Categoria';
             
             if (!categoriesMap.has(category)) {
                 categoriesMap.set(category, {
@@ -7467,7 +7470,7 @@ document.addEventListener('DOMContentLoaded', function() {
             
             const categoryData = categoriesMap.get(category);
             categoryData.frequency++;
-            categoryData.totalAmount += expense.Valor || 0;
+            categoryData.totalAmount += expense.amount;
             categoryData.expenses.push(expense);
         });
         
@@ -7787,6 +7790,20 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // ========== ANÁLISE POR PERÍODO DA FATURA ==========
     
+    // Função utilitária para normalizar dados do backend
+    function normalizeExpenseData(item) {
+        return {
+            id: item.id,
+            date: item.transaction_date || item.Data || item.date,
+            amount: parseFloat(item.amount) || parseFloat(item.Valor) || 0,
+            description: item.description || item.Descricao || '',
+            account: item.account || item.ContaNome || '',
+            type: item.expense_type || item.Tipo || '',
+            accountPlanCode: item.account_plan_code || item.PlanoContasID || '',
+            accountPlanDescription: item.account_plan_description || item.PlanoContasDescricao || ''
+        };
+    }
+    
     function openPeriodAnalysisModal() {
         if (periodAnalysisModal) {
             // Preencher opções de contas
@@ -7904,12 +7921,15 @@ document.addEventListener('DOMContentLoaded', function() {
         
         if (!summaryCards || !data) return;
         
-        const total = data.reduce((sum, item) => sum + (item.Valor || 0), 0);
-        const totalPersonal = data.filter(item => item.Tipo === 'personal').reduce((sum, item) => sum + (item.Valor || 0), 0);
-        const totalBusiness = data.filter(item => item.Tipo === 'business').reduce((sum, item) => sum + (item.Valor || 0), 0);
-        const transactionCount = data.length;
+        // Normalizar dados
+        const normalizedData = data.map(normalizeExpenseData);
         
-        const avgDaily = total / Math.max(1, getDaysBetweenDates(data[0]?.Data, data[data.length - 1]?.Data));
+        const total = normalizedData.reduce((sum, item) => sum + item.amount, 0);
+        const totalPersonal = normalizedData.filter(item => item.type === 'personal').reduce((sum, item) => sum + item.amount, 0);
+        const totalBusiness = normalizedData.filter(item => item.type === 'business').reduce((sum, item) => sum + item.amount, 0);
+        const transactionCount = normalizedData.length;
+        
+        const avgDaily = total / Math.max(1, getDaysBetweenDates(normalizedData[0]?.date, normalizedData[normalizedData.length - 1]?.date));
         
         summaryCards.innerHTML = `
             <div class="stats-card bg-blue-50 p-3 sm:p-4 rounded-lg text-center">
@@ -7934,8 +7954,8 @@ document.addEventListener('DOMContentLoaded', function() {
             summaryText.innerHTML = `
                 <div class="text-sm sm:text-base">
                     <p class="mb-2"><strong>📈 Média Diária:</strong> ${formatCurrency(avgDaily)}</p>
-                    <p class="mb-2"><strong>🏦 Contas Utilizadas:</strong> ${[...new Set(data.map(item => item.ContaNome))].length}</p>
-                    <p><strong>📅 Período:</strong> ${data.length > 0 ? formatDate(data[0].Data) + ' até ' + formatDate(data[data.length - 1].Data) : 'N/A'}</p>
+                    <p class="mb-2"><strong>🏦 Contas Utilizadas:</strong> ${[...new Set(normalizedData.map(item => item.account))].length}</p>
+                    <p><strong>📅 Período:</strong> ${normalizedData.length > 0 ? formatDate(normalizedData[0].date) + ' até ' + formatDate(normalizedData[normalizedData.length - 1].date) : 'N/A'}</p>
                 </div>
             `;
         }
@@ -7963,11 +7983,16 @@ document.addEventListener('DOMContentLoaded', function() {
             periodCharts.daily.destroy();
         }
         
+        // Normalizar dados
+        const normalizedData = data.map(normalizeExpenseData);
+        
         // Agrupar por data
         const dailyData = {};
-        data.forEach(item => {
-            const date = item.Data.split('T')[0];
-            dailyData[date] = (dailyData[date] || 0) + (item.Valor || 0);
+        normalizedData.forEach(item => {
+            if (item.date) {
+                const date = item.date.includes('T') ? item.date.split('T')[0] : item.date;
+                dailyData[date] = (dailyData[date] || 0) + item.amount;
+            }
         });
         
         const labels = Object.keys(dailyData).sort();
@@ -8017,11 +8042,14 @@ document.addEventListener('DOMContentLoaded', function() {
             periodCharts.accounts.destroy();
         }
         
+        // Normalizar dados
+        const normalizedData = data.map(normalizeExpenseData);
+        
         // Agrupar por conta
         const accountData = {};
-        data.forEach(item => {
-            const account = item.ContaNome || 'Sem Conta';
-            accountData[account] = (accountData[account] || 0) + (item.Valor || 0);
+        normalizedData.forEach(item => {
+            const account = item.account || 'Sem Conta';
+            accountData[account] = (accountData[account] || 0) + item.amount;
         });
         
         const labels = Object.keys(accountData);
@@ -8067,11 +8095,14 @@ document.addEventListener('DOMContentLoaded', function() {
             periodCharts.categories.destroy();
         }
         
+        // Normalizar dados
+        const normalizedData = data.map(normalizeExpenseData);
+        
         // Agrupar por plano de conta
         const categoryData = {};
-        data.forEach(item => {
-            const category = item.PlanoContasDescricao || item.PlanoContasID || 'Outros';
-            categoryData[category] = (categoryData[category] || 0) + (item.Valor || 0);
+        normalizedData.forEach(item => {
+            const category = item.accountPlanDescription || item.accountPlanCode || 'Outros';
+            categoryData[category] = (categoryData[category] || 0) + item.amount;
         });
         
         // Ordenar por valor
@@ -8127,18 +8158,21 @@ document.addEventListener('DOMContentLoaded', function() {
         
         tbody.innerHTML = '';
         
-        data.forEach(item => {
+        // Normalizar dados
+        const normalizedData = data.map(normalizeExpenseData);
+        
+        normalizedData.forEach(item => {
             const row = document.createElement('tr');
             row.className = 'hover:bg-gray-50';
             
             row.innerHTML = `
-                <td class="px-2 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm">${formatDate(item.Data)}</td>
-                <td class="px-2 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm">${item.Descricao || 'N/A'}</td>
-                <td class="px-2 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm">${item.ContaNome || 'N/A'}</td>
-                <td class="px-2 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm font-semibold">${formatCurrency(item.Valor || 0)}</td>
+                <td class="px-2 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm">${formatDate(item.date)}</td>
+                <td class="px-2 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm">${item.description || 'N/A'}</td>
+                <td class="px-2 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm">${item.account || 'N/A'}</td>
+                <td class="px-2 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm font-semibold">${formatCurrency(item.amount)}</td>
                 <td class="px-2 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm">
-                    <span class="px-2 py-1 rounded-full text-xs ${item.Tipo === 'business' ? 'bg-purple-100 text-purple-800' : 'bg-green-100 text-green-800'}">
-                        ${item.Tipo === 'business' ? '💼 Empresarial' : '🏠 Pessoal'}
+                    <span class="px-2 py-1 rounded-full text-xs ${item.type === 'business' ? 'bg-purple-100 text-purple-800' : 'bg-green-100 text-green-800'}">
+                        ${item.type === 'business' ? '💼 Empresarial' : '🏠 Pessoal'}
                     </span>
                 </td>
             `;
@@ -8153,8 +8187,11 @@ document.addEventListener('DOMContentLoaded', function() {
         
         if (!comparisonData || !trendsData) return;
         
+        // Normalizar dados
+        const normalizedData = data.map(normalizeExpenseData);
+        
         // Análise básica
-        const total = data.reduce((sum, item) => sum + (item.Valor || 0), 0);
+        const total = normalizedData.reduce((sum, item) => sum + item.amount, 0);
         const avgDaily = total / getDaysBetweenDates(startDate, endDate);
         
         comparisonData.innerHTML = `
