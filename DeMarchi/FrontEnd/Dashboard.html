@@ -98,8 +98,157 @@
         /* Canvas Chart Styles - Fix for infinite height */
         canvas {
             max-width: 100% !important;
+            height: auto !important;
+        }
+        
+        /* ====== ESTILOS DE RESPONSIVIDADE MÓVEL ====== */
+        
+        /* Layout responsivo geral */
+        @media (max-width: 768px) {
+            /* Sidebar colapsado por padrão em mobile */
+            .sidebar {
+                transform: translateX(-100%);
+                transition: transform 0.3s ease;
+            }
+            .sidebar.active {
+                transform: translateX(0);
+            }
+            
+            /* Main content ajustado */
+            .main-content {
+                margin-left: 0 !important;
+                padding: 0.5rem !important;
+            }
+            
+            /* Cards responsivos */
+            .card {
+                margin-bottom: 1rem;
+            }
+            
+            /* Grids responsivos */
+            .grid-cols-3 {
+                grid-template-columns: 1fr !important;
+            }
+            .grid-cols-2 {
+                grid-template-columns: 1fr !important;
+            }
+            .md\\:grid-cols-2 {
+                grid-template-columns: 1fr !important;
+            }
+            .lg\\:grid-cols-3 {
+                grid-template-columns: 1fr !important;
+            }
+        }
+        
+        /* Abas responsivas */
+        @media (max-width: 640px) {
+            .tab-buttons {
+                flex-wrap: wrap;
+                gap: 0.25rem;
+            }
+            .tab-button {
+                font-size: 0.875rem;
+                padding: 0.5rem 0.75rem;
+                min-width: auto;
+                flex: 1;
+                text-align: center;
+            }
+            
+            /* Gráficos responsivos */
+            .chart-container {
+                height: 250px !important;
+                margin-bottom: 1rem;
+            }
+            
+            /* Tabelas responsivas */
+            .table-responsive {
+                font-size: 0.875rem;
+            }
+            .table th,
+            .table td {
+                padding: 0.5rem 0.25rem;
+                font-size: 0.75rem;
+            }
+            
+            /* Filtros responsivos */
+            .filters-container {
+                gap: 0.5rem;
+            }
+            .filter-item {
+                flex-basis: 100%;
+            }
+            .filter-item select,
+            .filter-item input {
+                font-size: 16px; /* Evita zoom no iOS */
+                min-height: 44px;
+            }
+        }
+        
+        /* Menu hambúrguer */
+        .mobile-menu-btn {
+            display: none;
+            position: fixed;
+            top: 1rem;
+            left: 1rem;
+            z-index: 1000;
+            background: #3b82f6;
+            color: white;
+            border: none;
+            border-radius: 0.5rem;
+            padding: 0.75rem;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+        }
+        
+        @media (max-width: 768px) {
+            .mobile-menu-btn {
+                display: block;
+            }
+        }
+        
+        /* Overlay para sidebar móvel */
+        .sidebar-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 999;
+        }
+        .sidebar-overlay.active {
+            display: block;
+        }
+        
+        /* Melhorias de acessibilidade */
+        .btn-touch {
+            min-height: 44px;
+            min-width: 44px;
+            font-size: 16px;
+        }
+        
+        .form-control-touch {
+            min-height: 44px;
+            font-size: 16px;
+            padding: 0.75rem;
+        }
+        
+        /* Cards de estatísticas responsivos */
+        @media (max-width: 640px) {
+            .stats-card {
+                text-align: center;
+                padding: 1rem;
+            }
+            .stats-card h3 {
+                font-size: 1.125rem;
+            }
+            .stats-card .value {
+                font-size: 1.5rem;
+            }
+        }
+        
+        /* Correção para gráficos */
+        .chart-canvas {
             height: 300px !important;
             min-height: 200px !important;
+            max-height: 400px !important;
         }
         
         .bg-white canvas {
@@ -298,37 +447,73 @@
 
     <!-- =========== Conteúdo Principal do Dashboard =========== -->
     <div id="dashboard-content" class="hidden">
-        <header class="bg-white shadow-md p-4 flex justify-between items-center sticky top-0 z-10">
-            <h1 class="text-2xl md:text-3xl font-bold text-gray-800 d-flex align-items-center gap-2">
-                <i class="bi bi-bar-chart-fill text-primary"></i> Dashboard
+        <!-- Botão de menu móvel -->
+        <button id="mobile-menu-btn" class="mobile-menu-btn">
+            <i class="fas fa-bars"></i>
+        </button>
+        
+        <!-- Overlay para sidebar móvel -->
+        <div id="sidebar-overlay" class="sidebar-overlay"></div>
+        
+        <header class="bg-white shadow-md p-2 sm:p-4 flex justify-between items-center sticky top-0 z-10">
+            <h1 class="text-lg sm:text-xl md:text-2xl lg:text-3xl font-bold text-gray-800 flex items-center gap-2">
+                <i class="bi bi-bar-chart-fill text-primary"></i> 
+                <span class="hidden sm:inline">Dashboard</span>
+                <span class="sm:hidden">💰</span>
             </h1>
-            <div class="flex items-center gap-2 md:gap-4">
-                <button id="theme-toggle" class="theme-toggle-btn text-2xl me-2" title="Alternar modo claro/escuro">
+            <div class="flex items-center gap-1 sm:gap-2 md:gap-4">
+                <button id="theme-toggle" class="theme-toggle-btn text-xl sm:text-2xl btn-touch" title="Alternar modo claro/escuro">
                     <i class="bi bi-moon-stars-fill" id="theme-icon"></i>
                 </button>
-                <span id="welcome-user" class="text-gray-600 hidden md:block"></span>
-                <button id="monthly-report-btn" class="bg-blue-600 text-white px-4 py-2 rounded-lg d-flex align-items-center gap-2">
-                    <i class="fas fa-chart-pie me-2"></i>📅 Mensal
-                </button>
-                <button id="weekly-report-btn" class="bg-teal-500 text-white px-4 py-2 rounded-lg d-flex align-items-center gap-2">
-                    <i class="fas fa-file-pdf me-2"></i>🗓️ Semanal
-                </button>
-                <button id="interactive-report-btn" class="bg-purple-500 text-white px-4 py-2 rounded-lg d-flex align-items-center gap-2">
-                    <i class="fas fa-chart-bar me-2"></i>📊 Relatório Interativo
-                </button>
-                <button id="recurring-expenses-btn" class="bg-orange-500 text-white px-4 py-2 rounded-lg d-flex align-items-center gap-2">
-                    <i class="fas fa-sync-alt me-2"></i>🔄 Gastos Recorrentes
-                </button>
-                <button id="test-trend-chart-btn" class="bg-yellow-500 text-white px-4 py-2 rounded-lg d-flex align-items-center gap-2" title="Testar Gráfico de Tendências">
-                    <i class="fas fa-chart-line me-2"></i>🧪 Teste Gráfico
-                </button>
-                <button id="logout-button" class="bg-red-500 text-white px-4 py-2 rounded-lg d-flex align-items-center gap-2">
-                    <i class="bi bi-box-arrow-right"></i> Sair
-                </button>
+                <span id="welcome-user" class="text-gray-600 hidden lg:block text-sm"></span>
+                
+                <!-- Menu dropdown para mobile -->
+                <div class="relative sm:hidden">
+                    <button id="mobile-dropdown-btn" class="bg-blue-600 text-white p-2 rounded-lg btn-touch">
+                        <i class="fas fa-ellipsis-v"></i>
+                    </button>
+                    <div id="mobile-dropdown-menu" class="hidden absolute right-0 top-full mt-2 bg-white shadow-lg rounded-lg p-2 min-w-48 z-50">
+                        <button id="monthly-report-btn-mobile" class="w-full text-left p-2 rounded hover:bg-gray-100 flex items-center gap-2">
+                            <i class="fas fa-chart-pie"></i> Relatório Mensal
+                        </button>
+                        <button id="weekly-report-btn-mobile" class="w-full text-left p-2 rounded hover:bg-gray-100 flex items-center gap-2">
+                            <i class="fas fa-file-pdf"></i> Relatório Semanal
+                        </button>
+                        <button id="interactive-report-btn-mobile" class="w-full text-left p-2 rounded hover:bg-gray-100 flex items-center gap-2">
+                            <i class="fas fa-chart-bar"></i> Relatório Interativo
+                        </button>
+                        <button id="recurring-expenses-btn-mobile" class="w-full text-left p-2 rounded hover:bg-gray-100 flex items-center gap-2">
+                            <i class="fas fa-sync-alt"></i> Gastos Recorrentes
+                        </button>
+                        <hr class="my-2">
+                        <button id="logout-button-mobile" class="w-full text-left p-2 rounded hover:bg-red-100 text-red-600 flex items-center gap-2">
+                            <i class="bi bi-box-arrow-right"></i> Sair
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- Botões desktop (ocultos em mobile) -->
+                <div class="hidden sm:flex items-center gap-1 md:gap-2">
+                    <button id="monthly-report-btn" class="bg-blue-600 text-white px-2 md:px-4 py-2 rounded-lg flex items-center gap-1 md:gap-2 text-xs md:text-sm btn-touch">
+                        <i class="fas fa-chart-pie"></i><span class="hidden md:inline">📅 Mensal</span>
+                    </button>
+                    <button id="weekly-report-btn" class="bg-teal-500 text-white px-2 md:px-4 py-2 rounded-lg flex items-center gap-1 md:gap-2 text-xs md:text-sm btn-touch">
+                        <i class="fas fa-file-pdf"></i><span class="hidden md:inline">🗓️ Semanal</span>
+                    </button>
+                    <button id="interactive-report-btn" class="bg-purple-500 text-white px-2 md:px-4 py-2 rounded-lg flex items-center gap-1 md:gap-2 text-xs md:text-sm btn-touch">
+                        <i class="fas fa-chart-bar"></i><span class="hidden lg:inline">📊 Interativo</span>
+                    </button>
+                    <button id="recurring-expenses-btn" class="bg-orange-500 text-white px-2 md:px-4 py-2 rounded-lg flex items-center gap-1 md:gap-2 text-xs md:text-sm btn-touch">
+                        <i class="fas fa-sync-alt"></i><span class="hidden lg:inline">🔄 Recorrentes</span>
+                    </button>
+                    <button id="logout-button" class="bg-red-500 text-white px-2 md:px-4 py-2 rounded-lg flex items-center gap-1 md:gap-2 text-xs md:text-sm btn-touch">
+                        <i class="bi bi-box-arrow-right"></i><span class="hidden md:inline"> Sair</span>
+                    </button>
+                </div>
             </div>
         </header>
 
-        <main class="p-4 md:p-8">
+        <main class="p-2 sm:p-4 md:p-8 main-content">
             <!-- Navegação por Abas -->
             <div class="bg-white rounded-lg shadow-md mb-8 overflow-hidden">
                 <nav class="flex space-x-0 border-b">
@@ -383,21 +568,27 @@
                 </div>
             </div>
 
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-                <div class="bg-white p-6 rounded-lg shadow-md">
-                    <h3 class="text-xl font-semibold text-gray-700 mb-4">📉 Evolução dos Gastos</h3>
-                    <canvas id="expenses-line-chart"></canvas>
+            <!-- Gráficos Principais -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4 md:gap-6 mb-4 sm:mb-6 md:mb-8">
+                <div class="bg-white p-3 sm:p-4 md:p-6 rounded-lg shadow-md">
+                    <h3 class="text-lg sm:text-xl font-semibold text-gray-700 mb-3 sm:mb-4">📉 Evolução dos Gastos</h3>
+                    <div class="chart-container h-64 sm:h-72 md:h-80">
+                        <canvas id="expenses-line-chart" class="chart-canvas w-full h-full"></canvas>
+                    </div>
                 </div>
-                <div class="bg-white p-6 rounded-lg shadow-md">
-                    <h3 class="text-xl font-semibold text-gray-700 mb-4">🏦 Distribuição por Conta</h3>
-                    <canvas id="expenses-pie-chart"></canvas>
+                <div class="bg-white p-3 sm:p-4 md:p-6 rounded-lg shadow-md">
+                    <h3 class="text-lg sm:text-xl font-semibold text-gray-700 mb-3 sm:mb-4">🏦 Distribuição por Conta</h3>
+                    <div class="chart-container h-64 sm:h-72 md:h-80">
+                        <canvas id="expenses-pie-chart" class="chart-canvas w-full h-full"></canvas>
+                    </div>
                 </div>
             </div>
 
-            <div class="bg-white p-6 rounded-lg shadow-md mb-8">
-                <h3 class="text-xl font-semibold text-gray-700 mb-4">🏠 vs. 💼 Comparação: Pessoal vs. Empresarial por Conta</h3>
-                <div class="relative h-96">
-                    <canvas id="mixed-type-chart" class="w-full h-full"></canvas>
+            <!-- Gráfico de Comparação -->
+            <div class="bg-white p-3 sm:p-4 md:p-6 rounded-lg shadow-md mb-4 sm:mb-6 md:mb-8">
+                <h3 class="text-lg sm:text-xl font-semibold text-gray-700 mb-3 sm:mb-4">🏠 vs. 💼 Comparação: Pessoal vs. Empresarial por Conta</h3>
+                <div class="chart-container h-64 sm:h-80 md:h-96">
+                    <canvas id="mixed-type-chart" class="chart-canvas w-full h-full"></canvas>
                 </div>
             </div>
 
@@ -854,40 +1045,40 @@
                 </div>
 
                 <!-- Alertas e Recomendações Inteligentes -->
-                <div class="bg-white p-6 rounded-lg shadow-md">
-                    <div class="flex items-center justify-between mb-6">
-                        <h3 class="text-xl font-semibold text-gray-700">🎯 Centro de Inteligência Financeira</h3>
-                        <button id="refresh-insights-btn" class="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 transition-colors">
-                            <i class="fas fa-sync-alt mr-2"></i>Atualizar
+                <div class="bg-white p-3 sm:p-4 md:p-6 rounded-lg shadow-md">
+                    <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-4 sm:mb-6 gap-3 sm:gap-0">
+                        <h3 class="text-lg sm:text-xl font-semibold text-gray-700">🎯 Centro de Inteligência Financeira</h3>
+                        <button id="refresh-insights-btn" class="bg-blue-500 text-white px-3 sm:px-4 py-2 rounded-lg hover:bg-blue-600 transition-colors btn-touch w-full sm:w-auto">
+                            <i class="fas fa-sync-alt mr-2"></i><span class="text-sm">Atualizar</span>
                         </button>
                     </div>
                     
-                    <!-- Navegação por Abas -->
-                    <div class="flex border-b border-gray-200 mb-6">
-                        <button class="insight-tab-btn active px-4 py-2 text-sm font-medium text-blue-600 border-b-2 border-blue-600" data-tab="alerts">
-                            🚨 Alertas Críticos
+                    <!-- Navegação por Abas Responsiva -->
+                    <div class="tab-buttons flex flex-wrap border-b border-gray-200 mb-4 sm:mb-6 gap-1">
+                        <button class="insight-tab-btn tab-button active px-2 sm:px-4 py-2 text-xs sm:text-sm font-medium text-blue-600 border-b-2 border-blue-600 btn-touch" data-tab="alerts">
+                            <span class="sm:hidden">🚨</span><span class="hidden sm:inline">🚨 Alertas Críticos</span>
                         </button>
-                        <button class="insight-tab-btn px-4 py-2 text-sm font-medium text-gray-500 hover:text-gray-700" data-tab="recommendations">
-                            💡 Recomendações
+                        <button class="insight-tab-btn tab-button px-2 sm:px-4 py-2 text-xs sm:text-sm font-medium text-gray-500 hover:text-gray-700 btn-touch" data-tab="recommendations">
+                            <span class="sm:hidden">💡</span><span class="hidden sm:inline">💡 Recomendações</span>
                         </button>
-                        <button class="insight-tab-btn px-4 py-2 text-sm font-medium text-gray-500 hover:text-gray-700" data-tab="decisions">
-                            📊 Apoio à Decisão
+                        <button class="insight-tab-btn tab-button px-2 sm:px-4 py-2 text-xs sm:text-sm font-medium text-gray-500 hover:text-gray-700 btn-touch" data-tab="decisions">
+                            <span class="sm:hidden">📊</span><span class="hidden sm:inline">📊 Apoio à Decisão</span>
                         </button>
-                        <button class="insight-tab-btn px-4 py-2 text-sm font-medium text-gray-500 hover:text-gray-700" data-tab="actions">
-                            ✅ Plano de Ação
+                        <button class="insight-tab-btn tab-button px-2 sm:px-4 py-2 text-xs sm:text-sm font-medium text-gray-500 hover:text-gray-700 btn-touch" data-tab="actions">
+                            <span class="sm:hidden">✅</span><span class="hidden sm:inline">✅ Plano de Ação</span>
                         </button>
                     </div>
 
                     <!-- Aba: Alertas Críticos -->
                     <div id="alerts-content" class="insight-content">
-                        <div id="critical-alerts" class="space-y-4 mb-6">
+                        <div id="critical-alerts" class="space-y-3 sm:space-y-4 mb-4 sm:mb-6">
                             <!-- Alertas críticos serão preenchidos dinamicamente -->
                         </div>
                         
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div class="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4">
                             <!-- Status Geral -->
-                            <div class="bg-gray-50 p-4 rounded-lg">
-                                <h4 class="font-semibold text-gray-700 mb-3">📈 Status Financeiro</h4>
+                            <div class="bg-gray-50 p-3 sm:p-4 rounded-lg">
+                                <h4 class="font-semibold text-gray-700 mb-2 sm:mb-3 text-sm sm:text-base">📈 Status Financeiro</h4>
                                 <div id="financial-status" class="space-y-2">
                                     <!-- Status será preenchido dinamicamente -->
                                 </div>
@@ -1065,34 +1256,34 @@
                 </div>
 
                 <!-- Lista de Gastos -->
-                <div class="bg-white p-6 rounded-lg shadow-md mb-8">
-                    <h3 class="text-xl font-semibold text-gray-700 mb-4">📝 Histórico de Gastos</h3>
-                    <!-- Filtros simplificados -->
-                    <div class="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
-                        <div>
-                            <label class="block text-sm font-medium">Ano</label>
-                            <select id="filter-year" class="mt-1 block w-full p-2 border rounded-lg"></select>
+                <div class="bg-white p-3 sm:p-4 md:p-6 rounded-lg shadow-md mb-4 sm:mb-6 md:mb-8">
+                    <h3 class="text-lg sm:text-xl font-semibold text-gray-700 mb-3 sm:mb-4">📝 Histórico de Gastos</h3>
+                    <!-- Filtros responsivos -->
+                    <div class="filters-container grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2 sm:gap-3 md:gap-4 mb-4 sm:mb-6">
+                        <div class="filter-item">
+                            <label class="block text-xs sm:text-sm font-medium mb-1">Ano</label>
+                            <select id="filter-year" class="form-control-touch mt-1 block w-full p-2 sm:p-3 border rounded-lg"></select>
                         </div>
-                        <div>
-                            <label class="block text-sm font-medium">Mês</label>
-                            <select id="filter-month" class="mt-1 block w-full p-2 border rounded-lg"></select>
+                        <div class="filter-item">
+                            <label class="block text-xs sm:text-sm font-medium mb-1">Mês</label>
+                            <select id="filter-month" class="form-control-touch mt-1 block w-full p-2 sm:p-3 border rounded-lg"></select>
                         </div>
-                        <div>
-                            <label class="block text-sm font-medium">Conta</label>
-                            <select id="filter-account" class="mt-1 block w-full p-2 border rounded-lg">
+                        <div class="filter-item">
+                            <label class="block text-xs sm:text-sm font-medium mb-1">Conta</label>
+                            <select id="filter-account" class="form-control-touch mt-1 block w-full p-2 sm:p-3 border rounded-lg">
                                 <option value="">Todas</option>
                             </select>
                         </div>
-                        <div>
-                            <label class="block text-sm font-medium">Tipo</label>
-                            <select id="filter-type" class="mt-1 block w-full p-2 border rounded-lg">
+                        <div class="filter-item">
+                            <label class="block text-xs sm:text-sm font-medium mb-1">Tipo</label>
+                            <select id="filter-type" class="form-control-touch mt-1 block w-full p-2 sm:p-3 border rounded-lg">
                                 <option value="">Todos</option>
                                 <option value="personal">Pessoal</option>
                                 <option value="business">Empresarial</option>
                             </select>
                         </div>
-                        <div>
-                            <label class="block text-sm font-medium">Buscar</label>
+                        <div class="filter-item">
+                            <label class="block text-xs sm:text-sm font-medium mb-1">Buscar</label>
                             <input type="text" id="filter-search" placeholder="Descrição..." class="mt-1 block w-full p-2 border rounded-lg">
                         </div>
                     </div>

@@ -297,6 +297,9 @@ document.addEventListener('DOMContentLoaded', function() {
         // Event listener para refresh de insights
         if (refreshInsightsBtn) refreshInsightsBtn.addEventListener('click', refreshInsights);
         
+        // Event listeners para menu móvel
+        setupMobileMenu();
+        
         // Event listeners para as abas de insights
         if (insightTabBtns) {
             insightTabBtns.forEach(btn => {
@@ -2432,6 +2435,82 @@ document.addEventListener('DOMContentLoaded', function() {
             // Em desktop, centralizar
             modal.style.alignItems = 'center';
             modal.style.paddingTop = '';
+        }
+    }
+
+    // Função para configurar o menu móvel
+    function setupMobileMenu() {
+        const mobileMenuBtn = document.getElementById('mobile-menu-btn');
+        const mobileDropdownBtn = document.getElementById('mobile-dropdown-btn');
+        const mobileDropdownMenu = document.getElementById('mobile-dropdown-menu');
+        const sidebarOverlay = document.getElementById('sidebar-overlay');
+        
+        // Botão do menu dropdown móvel
+        if (mobileDropdownBtn && mobileDropdownMenu) {
+            mobileDropdownBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                mobileDropdownMenu.classList.toggle('hidden');
+            });
+            
+            // Fechar menu ao clicar fora
+            document.addEventListener('click', (e) => {
+                if (!mobileDropdownMenu.contains(e.target) && !mobileDropdownBtn.contains(e.target)) {
+                    mobileDropdownMenu.classList.add('hidden');
+                }
+            });
+        }
+        
+        // Event listeners para botões mobile duplicados
+        const mobileBtns = [
+            { id: 'monthly-report-btn-mobile', original: 'monthly-report-btn' },
+            { id: 'weekly-report-btn-mobile', original: 'weekly-report-btn' },
+            { id: 'interactive-report-btn-mobile', original: 'interactive-report-btn' },
+            { id: 'recurring-expenses-btn-mobile', original: 'recurring-expenses-btn' },
+            { id: 'logout-button-mobile', original: 'logout-button' }
+        ];
+        
+        mobileBtns.forEach(btn => {
+            const mobileBtn = document.getElementById(btn.id);
+            const originalBtn = document.getElementById(btn.original);
+            
+            if (mobileBtn && originalBtn) {
+                mobileBtn.addEventListener('click', () => {
+                    originalBtn.click();
+                    // Fechar o menu dropdown
+                    if (mobileDropdownMenu) {
+                        mobileDropdownMenu.classList.add('hidden');
+                    }
+                });
+            }
+        });
+        
+        // Ajustar layout em redimensionamento
+        window.addEventListener('resize', adjustLayoutForScreenSize);
+        adjustLayoutForScreenSize(); // Executar na inicialização
+    }
+    
+    // Função para ajustar layout baseado no tamanho da tela
+    function adjustLayoutForScreenSize() {
+        const isMobile = window.innerWidth <= 768;
+        const mainContent = document.querySelector('.main-content');
+        
+        if (mainContent) {
+            if (isMobile) {
+                mainContent.style.marginLeft = '0';
+                mainContent.style.padding = '0.5rem';
+            } else {
+                mainContent.style.marginLeft = '';
+                mainContent.style.padding = '';
+            }
+        }
+        
+        // Redimensionar gráficos quando a tela muda
+        if (typeof Chart !== 'undefined') {
+            Object.values(chartRegistry).forEach(chart => {
+                if (chart && typeof chart.resize === 'function') {
+                    setTimeout(() => chart.resize(), 100);
+                }
+            });
         }
     }
 
