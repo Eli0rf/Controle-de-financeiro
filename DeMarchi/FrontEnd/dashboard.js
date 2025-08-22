@@ -2475,7 +2475,34 @@ document.addEventListener('DOMContentLoaded', function() {
         const mobileDropdownMenu = document.getElementById('mobile-dropdown-menu');
         const sidebarOverlay = document.getElementById('sidebar-overlay');
         
-        // Botão do menu dropdown móvel
+        // Botão de menu hamburger (mobile-menu-btn) para alternar o dropdown
+        if (mobileMenuBtn && mobileDropdownMenu) {
+            mobileMenuBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const isOpen = !mobileDropdownMenu.classList.contains('hidden');
+                
+                if (isOpen) {
+                    // Fechar menu
+                    mobileDropdownMenu.classList.add('hidden');
+                    mobileMenuBtn.innerHTML = '<i class="fas fa-bars"></i>';
+                    mobileMenuBtn.setAttribute('title', 'Abrir menu de navegação');
+                } else {
+                    // Abrir menu
+                    mobileDropdownMenu.classList.remove('hidden');
+                    mobileMenuBtn.innerHTML = '<i class="fas fa-times"></i>';
+                    mobileMenuBtn.setAttribute('title', 'Fechar menu de navegação');
+                    
+                    // Posicionar o menu próximo ao botão
+                    const rect = mobileMenuBtn.getBoundingClientRect();
+                    mobileDropdownMenu.style.position = 'fixed';
+                    mobileDropdownMenu.style.top = `${rect.bottom + 5}px`;
+                    mobileDropdownMenu.style.right = '10px';
+                    mobileDropdownMenu.style.left = 'auto';
+                }
+            });
+        }
+        
+        // Botão do menu dropdown móvel (manter funcionalidade existente)
         if (mobileDropdownBtn && mobileDropdownMenu) {
             mobileDropdownBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
@@ -2484,8 +2511,14 @@ document.addEventListener('DOMContentLoaded', function() {
             
             // Fechar menu ao clicar fora
             document.addEventListener('click', (e) => {
-                if (!mobileDropdownMenu.contains(e.target) && !mobileDropdownBtn.contains(e.target)) {
+                if (!mobileDropdownMenu.contains(e.target) && 
+                    !mobileDropdownBtn.contains(e.target) && 
+                    !mobileMenuBtn.contains(e.target)) {
                     mobileDropdownMenu.classList.add('hidden');
+                    if (mobileMenuBtn) {
+                        mobileMenuBtn.innerHTML = '<i class="fas fa-bars"></i>';
+                        mobileMenuBtn.setAttribute('title', 'Abrir menu de navegação');
+                    }
                 }
             });
         }
@@ -2510,14 +2543,199 @@ document.addEventListener('DOMContentLoaded', function() {
                     // Fechar o menu dropdown
                     if (mobileDropdownMenu) {
                         mobileDropdownMenu.classList.add('hidden');
+                        // Resetar ícone do menu hamburger
+                        if (mobileMenuBtn) {
+                            mobileMenuBtn.innerHTML = '<i class="fas fa-bars"></i>';
+                            mobileMenuBtn.setAttribute('title', 'Abrir menu de navegação');
+                        }
                     }
                 });
             }
         });
         
+        // Configurar navegação por abas
+        setupTabNavigation(mobileDropdownMenu);
+        
+        // Configurar busca de abas
+        setupTabSearch(mobileDropdownMenu);
+        
         // Ajustar layout em redimensionamento
         window.addEventListener('resize', adjustLayoutForScreenSize);
         adjustLayoutForScreenSize(); // Executar na inicialização
+    }
+    
+    // Função para configurar navegação por abas no mobile
+    function setupTabNavigation(mobileDropdownMenu) {
+        const tabButtons = document.querySelectorAll('[data-mobile-tab]');
+        const mobileMenuBtn = document.getElementById('mobile-menu-btn');
+        
+        tabButtons.forEach(btn => {
+            btn.addEventListener('click', () => {
+                const tabName = btn.getAttribute('data-mobile-tab');
+                
+                // Encontrar o botão da aba principal correspondente
+                const mainTabBtn = document.querySelector(`[data-tab="${tabName}"]`);
+                
+                if (mainTabBtn) {
+                    // Simular clique no botão principal
+                    mainTabBtn.click();
+                    
+                    // Fechar o menu dropdown
+                    if (mobileDropdownMenu) {
+                        mobileDropdownMenu.classList.add('hidden');
+                        // Resetar ícone do menu hamburger
+                        if (mobileMenuBtn) {
+                            mobileMenuBtn.innerHTML = '<i class="fas fa-bars"></i>';
+                            mobileMenuBtn.setAttribute('title', 'Abrir menu de navegação');
+                        }
+                    }
+                    
+                    // Scroll suave para o topo
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                    
+                    // Feedback visual
+                    showNotification(`📱 Navegando para: ${btn.textContent.trim()}`, 'success');
+                }
+            });
+        });
+    }
+    
+    // Função para configurar busca de abas
+    function setupTabSearch(mobileDropdownMenu) {
+        const tabSearchInput = document.getElementById('tab-search-input');
+        const tabSearchResults = document.getElementById('tab-search-results');
+        
+        if (!tabSearchInput || !tabSearchResults) return;
+        
+        // Lista de todas as abas e funcionalidades disponíveis
+        const allTabs = [
+            { name: '📊 Dashboard', tab: 'dashboard', description: 'Visão geral e estatísticas principais' },
+            { name: '💳 PIX & Boleto', tab: 'pix-boleto', description: 'Pagamentos via PIX e boletos' },
+            { name: '💼 Análise Empresarial', tab: 'business-analysis', description: 'Relatórios e análises empresariais' },
+            { name: '📝 Gastos', tab: 'expenses', description: 'Listagem e gerenciamento de despesas' },
+            { name: '📈 Relatórios', tab: 'reports', description: 'Relatórios detalhados e exportações' },
+            { name: '🚨 Alertas Financeiros', section: 'insights', subsection: 'alerts', description: 'Alertas e notificações importantes' },
+            { name: '💡 Recomendações', section: 'insights', subsection: 'recommendations', description: 'Sugestões para otimização financeira' },
+            { name: '🎯 Decisões Estratégicas', section: 'insights', subsection: 'decisions', description: 'Análises para tomada de decisões' },
+            { name: '⚡ Ações Rápidas', section: 'insights', subsection: 'actions', description: 'Ações e comandos rápidos' },
+            { name: '📊 Análise por Período', action: 'period-analysis', description: 'Análise detalhada por período da fatura' },
+            { name: '🔄 Gastos Recorrentes', action: 'recurring-expenses', description: 'Gerenciamento de despesas recorrentes' },
+            { name: '📅 Relatório Mensal', action: 'monthly-report', description: 'Relatório mensal em PDF' },
+            { name: '🗓️ Relatório Semanal', action: 'weekly-report', description: 'Relatório semanal em PDF' },
+            { name: '📊 Relatório Interativo', action: 'interactive-report', description: 'Relatório interativo com gráficos' }
+        ];
+        
+        tabSearchInput.addEventListener('input', (e) => {
+            const searchTerm = e.target.value.toLowerCase().trim();
+            
+            if (searchTerm.length === 0) {
+                tabSearchResults.classList.add('hidden');
+                return;
+            }
+            
+            // Filtrar resultados
+            const filteredTabs = allTabs.filter(tab => 
+                tab.name.toLowerCase().includes(searchTerm) || 
+                tab.description.toLowerCase().includes(searchTerm)
+            );
+            
+            if (filteredTabs.length === 0) {
+                tabSearchResults.innerHTML = `
+                    <div class="p-3 text-center text-gray-500 text-sm">
+                        <i class="fas fa-search"></i> Nenhum resultado encontrado
+                    </div>
+                `;
+                tabSearchResults.classList.remove('hidden');
+                return;
+            }
+            
+            // Renderizar resultados
+            tabSearchResults.innerHTML = filteredTabs.map(tab => `
+                <button class="tab-search-result w-full text-left p-2 rounded hover:bg-blue-50 border-l-2 border-blue-500 mb-1" 
+                        data-tab-target="${tab.tab || ''}" 
+                        data-section="${tab.section || ''}" 
+                        data-subsection="${tab.subsection || ''}"
+                        data-action="${tab.action || ''}">
+                    <div class="font-medium text-sm">${tab.name}</div>
+                    <div class="text-xs text-gray-500 mt-1">${tab.description}</div>
+                </button>
+            `).join('');
+            
+            tabSearchResults.classList.remove('hidden');
+            
+            // Adicionar event listeners aos resultados
+            const resultButtons = tabSearchResults.querySelectorAll('.tab-search-result');
+            resultButtons.forEach(btn => {
+                btn.addEventListener('click', () => {
+                    handleTabSearchNavigation(btn, mobileDropdownMenu);
+                    tabSearchInput.value = '';
+                    tabSearchResults.classList.add('hidden');
+                });
+            });
+        });
+        
+        // Limpar busca ao clicar fora
+        document.addEventListener('click', (e) => {
+            if (!tabSearchInput.contains(e.target) && !tabSearchResults.contains(e.target)) {
+                tabSearchResults.classList.add('hidden');
+            }
+        });
+    }
+    
+    // Função para navegar baseado na busca
+    function handleTabSearchNavigation(btn, mobileDropdownMenu) {
+        const tab = btn.getAttribute('data-tab-target');
+        const section = btn.getAttribute('data-section');
+        const subsection = btn.getAttribute('data-subsection');
+        const action = btn.getAttribute('data-action');
+        const mobileMenuBtn = document.getElementById('mobile-menu-btn');
+        
+        // Fechar menu dropdown
+        if (mobileDropdownMenu) {
+            mobileDropdownMenu.classList.add('hidden');
+            // Resetar ícone do menu hamburger
+            if (mobileMenuBtn) {
+                mobileMenuBtn.innerHTML = '<i class="fas fa-bars"></i>';
+                mobileMenuBtn.setAttribute('title', 'Abrir menu de navegação');
+            }
+        }
+        
+        if (tab) {
+            // Navegar para aba principal
+            const mainTabBtn = document.querySelector(`[data-tab="${tab}"]`);
+            if (mainTabBtn) {
+                mainTabBtn.click();
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            }
+        } else if (section && subsection) {
+            // Navegar para seção específica (ex: insights)
+            const mainTabBtn = document.querySelector('[data-tab="dashboard"]');
+            if (mainTabBtn) {
+                mainTabBtn.click();
+                
+                // Aguardar um pouco para garantir que a aba foi carregada
+                setTimeout(() => {
+                    const insightTabBtn = document.querySelector(`[data-tab="${subsection}"]`);
+                    if (insightTabBtn) {
+                        insightTabBtn.click();
+                        // Scroll para a seção de insights
+                        const insightsSection = document.querySelector('.insights-section');
+                        if (insightsSection) {
+                            insightsSection.scrollIntoView({ behavior: 'smooth' });
+                        }
+                    }
+                }, 100);
+            }
+        } else if (action) {
+            // Executar ação específica
+            const actionBtn = document.getElementById(`${action}-btn`);
+            if (actionBtn) {
+                actionBtn.click();
+            }
+        }
+        
+        // Feedback visual
+        showNotification(`🎯 Navegando para: ${btn.querySelector('.font-medium').textContent}`, 'success');
     }
     
     // Função para ajustar layout baseado no tamanho da tela

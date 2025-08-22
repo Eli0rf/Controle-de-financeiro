@@ -420,6 +420,71 @@
             font-size: 0.75rem;
             font-weight: 500;
         }
+        
+        /* Estilos para busca de abas */
+        #tab-search-input {
+            transition: all 0.3s ease;
+        }
+        
+        #tab-search-input:focus {
+            transform: scale(1.02);
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+        }
+        
+        .tab-search-result {
+            transition: all 0.2s ease;
+            border-left: 2px solid transparent;
+        }
+        
+        .tab-search-result:hover {
+            border-left-color: #3b82f6;
+            background-color: #eff6ff;
+            transform: translateX(2px);
+        }
+        
+        #tab-search-results {
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            background: white;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+        
+        /* Animação para dropdown mobile */
+        #mobile-dropdown-menu {
+            animation: slideDown 0.3s ease-out;
+            max-height: 70vh;
+            overflow-y: auto;
+        }
+        
+        @keyframes slideDown {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        /* Scrollbar personalizada para mobile dropdown */
+        #mobile-dropdown-menu::-webkit-scrollbar {
+            width: 4px;
+        }
+        
+        #mobile-dropdown-menu::-webkit-scrollbar-track {
+            background: #f1f5f9;
+            border-radius: 2px;
+        }
+        
+        #mobile-dropdown-menu::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 2px;
+        }
+        
+        #mobile-dropdown-menu::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
     </style>
 </head>
 <body class="bg-gray-100 font-sans">
@@ -473,22 +538,55 @@
                         <i class="fas fa-ellipsis-v"></i>
                     </button>
                     <div id="mobile-dropdown-menu" class="hidden absolute right-0 top-full mt-2 bg-white shadow-lg rounded-lg p-2 min-w-48 z-50">
-                        <button id="monthly-report-btn-mobile" class="w-full text-left p-2 rounded hover:bg-gray-100 flex items-center gap-2">
-                            <i class="fas fa-chart-pie"></i> Relatório Mensal
-                        </button>
-                        <button id="weekly-report-btn-mobile" class="w-full text-left p-2 rounded hover:bg-gray-100 flex items-center gap-2">
-                            <i class="fas fa-file-pdf"></i> Relatório Semanal
-                        </button>
-                        <button id="interactive-report-btn-mobile" class="w-full text-left p-2 rounded hover:bg-gray-100 flex items-center gap-2">
-                            <i class="fas fa-chart-bar"></i> Relatório Interativo
-                        </button>
-                        <button id="recurring-expenses-btn-mobile" class="w-full text-left p-2 rounded hover:bg-gray-100 flex items-center gap-2">
-                            <i class="fas fa-sync-alt"></i> Gastos Recorrentes
-                        </button>
-                        <button id="period-analysis-btn-mobile" class="w-full text-left p-2 rounded hover:bg-gray-100 flex items-center gap-2">
-                            <i class="fas fa-calendar-alt"></i> Análise por Período da Fatura
-                        </button>
-                        <hr class="my-2">
+                        <!-- Campo de busca de abas -->
+                        <div class="border-b pb-2 mb-2">
+                            <div class="relative">
+                                <input type="text" id="tab-search-input" placeholder="🔍 Buscar abas..." class="w-full p-2 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                <div id="tab-search-results" class="hidden mt-2 max-h-40 overflow-y-auto">
+                                    <!-- Resultados da busca aparecerão aqui -->
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Navegação rápida por abas -->
+                        <div class="border-b pb-2 mb-2">
+                            <h4 class="text-xs font-semibold text-gray-500 mb-2">🎯 NAVEGAÇÃO RÁPIDA</h4>
+                            <button data-mobile-tab="dashboard" class="w-full text-left p-2 rounded hover:bg-blue-50 flex items-center gap-2 text-sm">
+                                <i class="fas fa-tachometer-alt text-blue-600"></i> 📊 Dashboard
+                            </button>
+                            <button data-mobile-tab="pix-boleto" class="w-full text-left p-2 rounded hover:bg-green-50 flex items-center gap-2 text-sm">
+                                <i class="fas fa-mobile-alt text-green-600"></i> 💳 PIX & Boleto
+                            </button>
+                            <button data-mobile-tab="business-analysis" class="w-full text-left p-2 rounded hover:bg-purple-50 flex items-center gap-2 text-sm">
+                                <i class="fas fa-briefcase text-purple-600"></i> 💼 Análise Empresarial
+                            </button>
+                            <button data-mobile-tab="expenses" class="w-full text-left p-2 rounded hover:bg-orange-50 flex items-center gap-2 text-sm">
+                                <i class="fas fa-list text-orange-600"></i> 📝 Gastos
+                            </button>
+                            <button data-mobile-tab="reports" class="w-full text-left p-2 rounded hover:bg-red-50 flex items-center gap-2 text-sm">
+                                <i class="fas fa-chart-bar text-red-600"></i> 📈 Relatórios
+                            </button>
+                        </div>
+                        
+                        <!-- Funcionalidades -->
+                        <div class="border-b pb-2 mb-2">
+                            <h4 class="text-xs font-semibold text-gray-500 mb-2">⚡ FUNCIONALIDADES</h4>
+                            <button id="monthly-report-btn-mobile" class="w-full text-left p-2 rounded hover:bg-gray-100 flex items-center gap-2 text-sm">
+                                <i class="fas fa-chart-pie"></i> Relatório Mensal
+                            </button>
+                            <button id="weekly-report-btn-mobile" class="w-full text-left p-2 rounded hover:bg-gray-100 flex items-center gap-2 text-sm">
+                                <i class="fas fa-file-pdf"></i> Relatório Semanal
+                            </button>
+                            <button id="interactive-report-btn-mobile" class="w-full text-left p-2 rounded hover:bg-gray-100 flex items-center gap-2 text-sm">
+                                <i class="fas fa-chart-bar"></i> Relatório Interativo
+                            </button>
+                            <button id="recurring-expenses-btn-mobile" class="w-full text-left p-2 rounded hover:bg-gray-100 flex items-center gap-2 text-sm">
+                                <i class="fas fa-sync-alt"></i> Gastos Recorrentes
+                            </button>
+                            <button id="period-analysis-btn-mobile" class="w-full text-left p-2 rounded hover:bg-gray-100 flex items-center gap-2 text-sm">
+                                <i class="fas fa-calendar-alt"></i> Análise por Período da Fatura
+                            </button>
+                        </div>
                         <button id="logout-button-mobile" class="w-full text-left p-2 rounded hover:bg-red-100 text-red-600 flex items-center gap-2">
                             <i class="bi bi-box-arrow-right"></i> Sair
                         </button>
