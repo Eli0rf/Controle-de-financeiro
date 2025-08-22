@@ -1179,41 +1179,80 @@
                             <!-- Alertas críticos serão preenchidos dinamicamente -->
                         </div>
                         
-                        <!-- Seção de Alertas de Orçamento -->
+                        <!-- Seção de Alertas de Orçamento por Plano de Contas -->
                         <div class="bg-gradient-to-r from-orange-50 to-red-50 p-4 rounded-lg mb-6 border-l-4 border-orange-500">
                             <h3 class="font-bold text-orange-800 mb-4 flex items-center gap-2">
                                 <i class="fas fa-exclamation-triangle"></i>
-                                💰 Alertas de Orçamento
+                                💰 Alertas de Orçamento por Plano de Contas
                             </h3>
-                            <div id="budget-alerts" class="space-y-3">
-                                <!-- Alertas de orçamento serão preenchidos dinamicamente -->
-                            </div>
                             
-                            <!-- Configuração de Limites -->
-                            <div class="mt-4 p-3 bg-white rounded-lg border">
-                                <h4 class="font-semibold text-gray-700 mb-3 flex items-center gap-2">
-                                    <i class="fas fa-cog"></i>
-                                    ⚙️ Configurar Limites de Orçamento
-                                </h4>
-                                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <!-- Filtros -->
+                            <div class="bg-white p-3 rounded-lg mb-4 border">
+                                <h4 class="font-semibold text-gray-700 mb-3">🔍 Filtros de Período</h4>
+                                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                                     <div>
-                                        <label class="block text-sm font-medium text-gray-700 mb-2">Limite Mensal Geral (R$)</label>
-                                        <input type="number" id="monthly-budget-limit" placeholder="Ex: 5000" 
-                                               class="w-full p-2 border rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500">
-                                    </div>
-                                    <div>
-                                        <label class="block text-sm font-medium text-gray-700 mb-2">Alerta em (% do limite)</label>
-                                        <select id="budget-alert-percentage" class="w-full p-2 border rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500">
-                                            <option value="70">70% - Atenção</option>
-                                            <option value="80" selected>80% - Cuidado</option>
-                                            <option value="90">90% - Alerta</option>
-                                            <option value="95">95% - Crítico</option>
+                                        <label class="block text-sm font-medium text-gray-700 mb-2">Ano</label>
+                                        <select id="budget-year" class="w-full p-2 border rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500">
+                                            <!-- Opções de ano serão preenchidas dinamicamente -->
                                         </select>
                                     </div>
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700 mb-2">Mês</label>
+                                        <select id="budget-month" class="w-full p-2 border rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500">
+                                            <option value="1">Janeiro</option>
+                                            <option value="2">Fevereiro</option>
+                                            <option value="3">Março</option>
+                                            <option value="4">Abril</option>
+                                            <option value="5">Maio</option>
+                                            <option value="6">Junho</option>
+                                            <option value="7">Julho</option>
+                                            <option value="8">Agosto</option>
+                                            <option value="9">Setembro</option>
+                                            <option value="10">Outubro</option>
+                                            <option value="11">Novembro</option>
+                                            <option value="12">Dezembro</option>
+                                        </select>
+                                    </div>
+                                    <div class="flex items-end">
+                                        <button id="check-chart-budget" class="w-full bg-orange-500 text-white px-4 py-2 rounded-lg hover:bg-orange-600 transition-colors">
+                                            <i class="fas fa-search"></i> Verificar Orçamento
+                                        </button>
+                                    </div>
                                 </div>
-                                <button id="save-budget-config" class="mt-3 bg-orange-500 text-white px-4 py-2 rounded-lg hover:bg-orange-600 transition-colors">
-                                    <i class="fas fa-save"></i> Salvar Configuração
-                                </button>
+                            </div>
+                            
+                            <!-- Resumo Geral -->
+                            <div id="budget-summary" class="bg-white p-4 rounded-lg mb-4 border">
+                                <h4 class="font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                                    <i class="fas fa-chart-bar"></i>
+                                    📊 Resumo Orçamentário
+                                </h4>
+                                <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                                    <div class="text-center p-3 bg-blue-50 rounded-lg">
+                                        <div class="text-2xl font-bold text-blue-600" id="total-categories">-</div>
+                                        <div class="text-sm text-blue-800">📂 Categorias</div>
+                                    </div>
+                                    <div class="text-center p-3 bg-green-50 rounded-lg">
+                                        <div class="text-2xl font-bold text-green-600" id="within-budget">-</div>
+                                        <div class="text-sm text-green-800">✅ Dentro do Orçamento</div>
+                                    </div>
+                                    <div class="text-center p-3 bg-yellow-50 rounded-lg">
+                                        <div class="text-2xl font-bold text-yellow-600" id="near-limit">-</div>
+                                        <div class="text-sm text-yellow-800">⚠️ Próximo do Limite</div>
+                                    </div>
+                                    <div class="text-center p-3 bg-red-50 rounded-lg">
+                                        <div class="text-2xl font-bold text-red-600" id="over-budget">-</div>
+                                        <div class="text-sm text-red-800">🚨 Acima do Orçamento</div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Alertas por Categoria -->
+                            <div id="chart-budget-alerts" class="space-y-3">
+                                <div class="text-center text-gray-500 py-8">
+                                    <i class="fas fa-chart-pie text-4xl mb-2"></i>
+                                    <p>Clique em "Verificar Orçamento" para ver os alertas por categoria</p>
+                                </div>
                             </div>
                         </div>
                         

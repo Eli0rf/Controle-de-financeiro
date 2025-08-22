@@ -77,11 +77,12 @@ document.addEventListener('DOMContentLoaded', function() {
         categories: null
     };
     
-    // Elementos para alertas de orçamento
-    const budgetLimitInput = document.getElementById('monthly-budget-limit');
-    const budgetAlertPercentage = document.getElementById('budget-alert-percentage');
-    const saveBudgetConfigBtn = document.getElementById('save-budget-config');
-    const budgetAlertsContainer = document.getElementById('budget-alerts');
+    // Elementos para alertas de orçamento por plano de contas
+    const budgetYear = document.getElementById('budget-year');
+    const budgetMonth = document.getElementById('budget-month');
+    const checkChartBudgetBtn = document.getElementById('check-chart-budget');
+    const chartBudgetAlertsContainer = document.getElementById('chart-budget-alerts');
+    const budgetSummary = document.getElementById('budget-summary');
     
     // Elementos para análise de plano de contas
     const chartAnalysisPeriod = document.getElementById('chart-analysis-period');
@@ -333,12 +334,12 @@ document.addEventListener('DOMContentLoaded', function() {
             });
         }
         
-        // Event listeners para alertas de orçamento
-        if (saveBudgetConfigBtn) saveBudgetConfigBtn.addEventListener('click', saveBudgetConfiguration);
+        // Event listeners para alertas de orçamento por plano de contas
+        if (checkChartBudgetBtn) checkChartBudgetBtn.addEventListener('click', checkChartBudgetAlerts);
         if (analyzeChartUsageBtn) analyzeChartUsageBtn.addEventListener('click', analyzeChartUsage);
         
-        // Carregar configuração de orçamento salva
-        loadBudgetConfiguration();
+        // Inicializar campos de ano e mês
+        initializeBudgetFilters();
         
         // Event listener para redimensionamento da janela (ajustar modais em dispositivos móveis)
         window.addEventListener('resize', () => {
@@ -1281,9 +1282,6 @@ document.addEventListener('DOMContentLoaded', function() {
             
             // Recarregar dados e gráficos
             await fetchAllData();
-            
-            // Verificar alertas de orçamento
-            await checkBudgetAlerts();
             
             showNotification('💡 Insights atualizados com sucesso!', 'success');
         } catch (error) {
@@ -7171,132 +7169,200 @@ document.addEventListener('DOMContentLoaded', function() {
         setTimeout(initInsightSystem, 1000);
     });
 
-    // ========== SISTEMA DE ALERTAS DE ORÇAMENTO ==========
+    // ========== SISTEMA DE ALERTAS DE ORÇAMENTO POR PLANO DE CONTAS ==========
     
-    function loadBudgetConfiguration() {
-        const savedConfig = localStorage.getItem('budgetConfig');
-        if (savedConfig) {
-            budgetConfig = JSON.parse(savedConfig);
-            if (budgetLimitInput) budgetLimitInput.value = budgetConfig.monthlyLimit || '';
-            if (budgetAlertPercentage) budgetAlertPercentage.value = budgetConfig.alertPercentage || 80;
+    function initializeBudgetFilters() {
+        // Preencher anos (últimos 3 anos + próximo ano)
+        const currentYear = new Date().getFullYear();
+        const currentMonth = new Date().getMonth() + 1;
+        
+        if (budgetYear) {
+            budgetYear.innerHTML = '';
+            for (let year = currentYear - 2; year <= currentYear + 1; year++) {
+                const option = document.createElement('option');
+                option.value = year;
+                option.textContent = year;
+                if (year === currentYear) option.selected = true;
+                budgetYear.appendChild(option);
+            }
         }
         
-        // Verificar alertas de orçamento
-        checkBudgetAlerts();
+        // Definir mês atual
+        if (budgetMonth) {
+            budgetMonth.value = currentMonth;
+        }
     }
     
-    function saveBudgetConfiguration() {
-        if (!budgetLimitInput || !budgetAlertPercentage) return;
+    async function checkChartBudgetAlerts() {
+        if (!budgetYear || !budgetMonth) return;
         
-        const monthlyLimit = parseFloat(budgetLimitInput.value) || 0;
-        const alertPercentage = parseInt(budgetAlertPercentage.value) || 80;
+        const year = budgetYear.value;
+        const month = budgetMonth.value;
         
-        if (monthlyLimit <= 0) {
-            showNotification('Por favor, insira um limite mensal válido.', 'error');
+        try {
+            showNotification('🔍 Verificando orçamento por plano de contas...', 'info');
+            
+            // Buscar dados do backend
+            const response = await authenticatedFetch(`${API_BASE_URL}/api/expenses-goals?year=${year}&month=${month}`);
+            
+            if (!response.ok) {
+                throw new Error('Erro ao buscar dados de orçamento');
+            }
+            
+            const budgetData = await response.json();
+            
+            // Atualizar interface
+            updateBudgetSummary(budgetData);
+            updateChartBudgetAlerts(budgetData);
+            
+            showNotification('✅ Verificação de orçamento concluída!', 'success');
+            
+        } catch (error) {
+            console.error('Erro ao verificar orçamento:', error);
+            showNotification('Erro ao verificar orçamento: ' + error.message, 'error');
+        }
+    }
+    
+    function updateBudgetSummary(budgetData) {
+        const totalCategories = budgetData.length;
+        const withinBudget = budgetData.filter(item => item.Status === 'Dentro do Limite').length;
+        const nearLimit = budgetData.filter(item => item.Status === 'Próximo do Limite').length;
+        const overBudget = budgetData.filter(item => item.Status === 'Acima do Limite').length;
+        
+        // Atualizar contadores
+        const totalCategoriesEl = document.getElementById('total-categories');
+        const withinBudgetEl = document.getElementById('within-budget');
+        const nearLimitEl = document.getElementById('near-limit');
+        const overBudgetEl = document.getElementById('over-budget');
+        
+        if (totalCategoriesEl) totalCategoriesEl.textContent = totalCategories;
+        if (withinBudgetEl) withinBudgetEl.textContent = withinBudget;
+        if (nearLimitEl) nearLimitEl.textContent = nearLimit;
+        if (overBudgetEl) overBudgetEl.textContent = overBudget;
+    }
+    
+    function updateChartBudgetAlerts(budgetData) {
+        if (!chartBudgetAlertsContainer) return;
+        
+        if (budgetData.length === 0) {
+            chartBudgetAlertsContainer.innerHTML = `
+                <div class="text-center text-gray-500 py-8">
+                    <i class="fas fa-info-circle text-4xl mb-2"></i>
+                    <p>Nenhum dado encontrado para o período selecionado</p>
+                </div>
+            `;
             return;
         }
         
-        budgetConfig = {
-            monthlyLimit: monthlyLimit,
-            alertPercentage: alertPercentage
+        // Agrupar por status
+        const categorizedData = {
+            'Acima do Limite': budgetData.filter(item => item.Status === 'Acima do Limite'),
+            'Próximo do Limite': budgetData.filter(item => item.Status === 'Próximo do Limite'),
+            'Dentro do Limite': budgetData.filter(item => item.Status === 'Dentro do Limite')
         };
         
-        localStorage.setItem('budgetConfig', JSON.stringify(budgetConfig));
-        showNotification('✅ Configuração de orçamento salva com sucesso!', 'success');
+        let html = '';
         
-        // Atualizar alertas
-        checkBudgetAlerts();
-    }
-    
-    async function checkBudgetAlerts() {
-        if (budgetConfig.monthlyLimit <= 0) return;
-        
-        try {
-            const token = getToken();
-            if (!token) return;
-            
-            // Buscar gastos do mês atual
-            const currentDate = new Date();
-            const startOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1).toISOString().split('T')[0];
-            const endOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0).toISOString().split('T')[0];
-            
-            const response = await authenticatedFetch(`${API_BASE_URL}/api/expenses/period?start=${startOfMonth}&end=${endOfMonth}`);
-            
-            if (!response.ok) return;
-            
-            const expenses = await response.json();
-            const totalSpent = expenses.reduce((sum, expense) => sum + (expense.Valor || 0), 0);
-            const percentageUsed = (totalSpent / budgetConfig.monthlyLimit) * 100;
-            
-            updateBudgetAlerts(totalSpent, percentageUsed);
-            
-        } catch (error) {
-            console.error('Erro ao verificar alertas de orçamento:', error);
-        }
-    }
-    
-    function updateBudgetAlerts(totalSpent, percentageUsed) {
-        if (!budgetAlertsContainer) return;
-        
-        const remainingBudget = budgetConfig.monthlyLimit - totalSpent;
-        const alertThreshold = budgetConfig.alertPercentage;
-        
-        let alertLevel = 'success';
-        let alertIcon = '✅';
-        let alertTitle = 'Orçamento Controlado';
-        let alertMessage = `Você gastou ${formatCurrency(totalSpent)} de ${formatCurrency(budgetConfig.monthlyLimit)} (${percentageUsed.toFixed(1)}%)`;
-        
-        if (percentageUsed >= 100) {
-            alertLevel = 'danger';
-            alertIcon = '🚨';
-            alertTitle = 'ORÇAMENTO EXCEDIDO!';
-            alertMessage = `Você excedeu seu orçamento em ${formatCurrency(totalSpent - budgetConfig.monthlyLimit)}!`;
-        } else if (percentageUsed >= 95) {
-            alertLevel = 'danger';
-            alertIcon = '⚠️';
-            alertTitle = 'Orçamento Quase Esgotado';
-            alertMessage = `Restam apenas ${formatCurrency(remainingBudget)} do seu orçamento mensal.`;
-        } else if (percentageUsed >= alertThreshold) {
-            alertLevel = 'warning';
-            alertIcon = '⚠️';
-            alertTitle = 'Atenção: Limite de Alerta Atingido';
-            alertMessage = `Você atingiu ${percentageUsed.toFixed(1)}% do seu orçamento mensal.`;
-        } else if (percentageUsed >= 50) {
-            alertLevel = 'info';
-            alertIcon = '💡';
-            alertTitle = 'Meio Caminho do Orçamento';
-            alertMessage = `Você está na metade do seu orçamento mensal. Restam ${formatCurrency(remainingBudget)}.`;
+        // Alertas críticos primeiro
+        if (categorizedData['Acima do Limite'].length > 0) {
+            html += `
+                <div class="border-l-4 border-red-500 bg-red-50 p-4 rounded-lg mb-4">
+                    <h4 class="font-bold text-red-800 mb-3 flex items-center gap-2">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        🚨 CATEGORIAS ACIMA DO ORÇAMENTO
+                    </h4>
+                    <div class="space-y-3">
+                        ${categorizedData['Acima do Limite'].map(item => createBudgetAlertCard(item, 'danger')).join('')}
+                    </div>
+                </div>
+            `;
         }
         
-        const alertColorClass = {
-            'success': 'border-green-500 bg-green-50',
-            'info': 'border-blue-500 bg-blue-50',
-            'warning': 'border-yellow-500 bg-yellow-50',
-            'danger': 'border-red-500 bg-red-50'
-        }[alertLevel];
+        // Alertas de atenção
+        if (categorizedData['Próximo do Limite'].length > 0) {
+            html += `
+                <div class="border-l-4 border-yellow-500 bg-yellow-50 p-4 rounded-lg mb-4">
+                    <h4 class="font-bold text-yellow-800 mb-3 flex items-center gap-2">
+                        <i class="fas fa-exclamation-circle"></i>
+                        ⚠️ CATEGORIAS PRÓXIMAS DO LIMITE
+                    </h4>
+                    <div class="space-y-3">
+                        ${categorizedData['Próximo do Limite'].map(item => createBudgetAlertCard(item, 'warning')).join('')}
+                    </div>
+                </div>
+            `;
+        }
         
-        const textColorClass = {
-            'success': 'text-green-800',
-            'info': 'text-blue-800',
-            'warning': 'text-yellow-800',
-            'danger': 'text-red-800'
-        }[alertLevel];
+        // Categorias dentro do orçamento
+        if (categorizedData['Dentro do Limite'].length > 0) {
+            html += `
+                <div class="border-l-4 border-green-500 bg-green-50 p-4 rounded-lg">
+                    <h4 class="font-bold text-green-800 mb-3 flex items-center gap-2">
+                        <i class="fas fa-check-circle"></i>
+                        ✅ CATEGORIAS DENTRO DO ORÇAMENTO
+                    </h4>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        ${categorizedData['Dentro do Limite'].map(item => createBudgetAlertCard(item, 'success')).join('')}
+                    </div>
+                </div>
+            `;
+        }
         
-        budgetAlertsContainer.innerHTML = `
-            <div class="border-l-4 p-4 rounded-lg ${alertColorClass}">
+        chartBudgetAlertsContainer.innerHTML = html;
+    }
+    
+    function createBudgetAlertCard(item, type) {
+        const percentage = item.Limite > 0 ? (item.Total / item.Limite) * 100 : 0;
+        const remaining = Math.max(0, item.Limite - item.Total);
+        
+        const typeConfig = {
+            'danger': {
+                bgColor: 'bg-red-100',
+                textColor: 'text-red-800',
+                progressColor: 'bg-red-500',
+                icon: '🚨'
+            },
+            'warning': {
+                bgColor: 'bg-yellow-100',
+                textColor: 'text-yellow-800',
+                progressColor: 'bg-yellow-500',
+                icon: '⚠️'
+            },
+            'success': {
+                bgColor: 'bg-green-100',
+                textColor: 'text-green-800',
+                progressColor: 'bg-green-500',
+                icon: '✅'
+            }
+        }[type];
+        
+        return `
+            <div class="${typeConfig.bgColor} p-3 rounded-lg border">
                 <div class="flex items-start gap-3">
-                    <div class="text-2xl">${alertIcon}</div>
+                    <div class="text-xl">${typeConfig.icon}</div>
                     <div class="flex-1">
-                        <h4 class="font-bold ${textColorClass} mb-2">${alertTitle}</h4>
-                        <p class="${textColorClass} mb-3">${alertMessage}</p>
-                        <div class="w-full bg-white rounded-full h-3 border">
-                            <div class="h-3 rounded-full transition-all duration-500 ${percentageUsed >= 100 ? 'bg-red-500' : percentageUsed >= alertThreshold ? 'bg-yellow-500' : 'bg-green-500'}" 
-                                 style="width: ${Math.min(percentageUsed, 100)}%"></div>
+                        <h5 class="font-semibold ${typeConfig.textColor} mb-1">
+                            Plano de Conta ${item.PlanoContasID}
+                        </h5>
+                        <div class="text-sm ${typeConfig.textColor} mb-2">
+                            <div class="flex justify-between">
+                                <span><strong>Gasto:</strong> ${formatCurrency(item.Total)}</span>
+                                <span><strong>Limite:</strong> ${formatCurrency(item.Limite)}</span>
+                            </div>
+                            <div class="mt-1">
+                                <strong>Restante:</strong> ${formatCurrency(remaining)}
+                                <span class="ml-2">(${percentage.toFixed(1)}%)</span>
+                            </div>
                         </div>
-                        <div class="flex justify-between text-sm ${textColorClass} mt-2">
-                            <span>Gasto: ${formatCurrency(totalSpent)}</span>
-                            <span>Limite: ${formatCurrency(budgetConfig.monthlyLimit)}</span>
+                        <div class="w-full bg-white rounded-full h-2 border">
+                            <div class="${typeConfig.progressColor} h-2 rounded-full transition-all duration-500" 
+                                 style="width: ${Math.min(percentage, 100)}%"></div>
                         </div>
+                        ${type === 'danger' && percentage > 100 ? 
+                            `<div class="mt-2 text-xs ${typeConfig.textColor}">
+                                <strong>⚠️ Excedeu em:</strong> ${formatCurrency(item.Total - item.Limite)}
+                            </div>` : ''
+                        }
                     </div>
                 </div>
             </div>
@@ -7374,7 +7440,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const token = getToken();
         if (!token) throw new Error('Token não encontrado');
         
-        const response = await authenticatedFetch(`${API_BASE_URL}/api/expenses/period?start=${startDate}&end=${endDate}`);
+        const response = await authenticatedFetch(`${API_BASE_URL}/api/expenses?start_date=${startDate}&end_date=${endDate}&include_recurring=true`);
         
         if (!response.ok) {
             throw new Error('Erro ao buscar dados para análise');
@@ -7813,9 +7879,8 @@ document.addEventListener('DOMContentLoaded', function() {
         const token = getToken();
         if (!token) throw new Error('Token não encontrado');
         
-        let url = `${API_BASE_URL}/api/expenses/period?start=${startDate}&end=${endDate}`;
+        let url = `${API_BASE_URL}/api/expenses?start_date=${startDate}&end_date=${endDate}&include_recurring=true`;
         if (account) url += `&account=${account}`;
-        if (type) url += `&type=${type}`;
         
         const response = await authenticatedFetch(url);
         
@@ -7823,7 +7888,14 @@ document.addEventListener('DOMContentLoaded', function() {
             throw new Error('Erro ao buscar dados do período');
         }
         
-        return await response.json();
+        const data = await response.json();
+        
+        // Filtrar por tipo se especificado
+        if (type) {
+            return data.filter(item => item.Tipo === type);
+        }
+        
+        return data;
     }
     
     function updatePeriodSummary(data) {
