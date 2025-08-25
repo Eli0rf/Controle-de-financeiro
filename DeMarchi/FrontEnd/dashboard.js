@@ -1679,6 +1679,9 @@ document.addEventListener('DOMContentLoaded', function() {
         const plan = filterPlan?.value.trim().toLowerCase() || '';
         const filterAccountValue = document.getElementById('filter-account')?.value || '';
 
+        // Contador de filtros ativos
+        let activeFilters = [];
+
         filtered = filtered.filter(e => {
             // Busca texto em todas as colunas
             const data = e.transaction_date ? new Date(e.transaction_date).toLocaleDateString('pt-BR', {timeZone: 'UTC'}).toLowerCase() : '';
@@ -1688,33 +1691,161 @@ document.addEventListener('DOMContentLoaded', function() {
             const tipo = e.is_business_expense ? 'empresa' : 'pessoal';
             const plano = e.account_plan_code ? String(e.account_plan_code).toLowerCase() : '';
             const nota = e.invoice_path ? 'sim' : 'não';
+            
             let match = true;
+            
+            // Filtro de busca textual mais inteligente
             if (search) {
-                match = (
-                    data.includes(search) ||
-                    descricao.includes(search) ||
-                    valor.includes(search) ||
-                    conta.includes(search) ||
-                    tipo.includes(search) ||
-                    plano.includes(search) ||
-                    nota.includes(search)
+                const searchTerms = search.split(' ').filter(term => term.length > 0);
+                const searchMatch = searchTerms.every(term => 
+                    data.includes(term) ||
+                    descricao.includes(term) ||
+                    valor.includes(term) ||
+                    conta.includes(term) ||
+                    tipo.includes(term) ||
+                    plano.includes(term) ||
+                    nota.includes(term) ||
+                    // Busca por palavras-chave especiais
+                    (term === 'empresarial' && e.is_business_expense) ||
+                    (term === 'empresa' && e.is_business_expense) ||
+                    (term === 'pessoal' && !e.is_business_expense) ||
+                    (term === 'com-nota' && e.invoice_path) ||
+                    (term === 'sem-nota' && !e.invoice_path) ||
+                    (term === 'sem-categoria' && (!e.account_plan_code || e.account_plan_code === '')) ||
+                    (term === 'com-categoria' && e.account_plan_code && e.account_plan_code !== '')
                 );
+                if (!searchMatch) match = false;
             }
+            
+            // Filtro de tipo
             if (type && tipo !== type) match = false;
+            
+            // Filtro de valor mínimo
             if (min !== null && parseFloat(e.amount) < min) match = false;
+            
+            // Filtro de valor máximo
             if (max !== null && parseFloat(e.amount) > max) match = false;
-            if (plan && !plano.includes(plan)) match = false;
-            // Corrige filtro para ser igual ao banco
+            
+            // Filtro de plano de conta (suporta múltiplos valores separados por vírgula)
+            if (plan) {
+                const planNumbers = plan.split(',').map(p => p.trim()).filter(p => p);
+                const matchesPlan = planNumbers.some(planNum => plano.includes(planNum));
+                if (!matchesPlan) match = false;
+            }
+            
+            // Filtro de conta
             if (filterAccountValue && e.account !== filterAccountValue) match = false;
+            
             return match;
         });
+
+        // Atualizar indicadores de filtros ativos
+        updateActiveFiltersDisplay(search, type, min, max, plan, filterAccountValue);
+        
+        // Renderizar tabela com resultados filtrados
         renderExpensesTable(filtered);
+        
+        // Mostrar estatísticas dos resultados
+        showFilterStats(filtered);
     }
+
+    // Função para exibir indicadores visuais dos filtros ativos
+    function updateActiveFiltersDisplay(search, type, min, max, plan, account) {
+        const activeFiltersContainer = document.getElementById('active-filters');
+        const filterTagsContainer = document.getElementById('filter-tags');
+        
+        if (!activeFiltersContainer || !filterTagsContainer) return;
+        
+        const filters = [];
+        
+        if (search) filters.push(`Busca: "${search}"`);
+        if (type) filters.push(`Tipo: ${type === 'empresa' ? 'Empresarial' : 'Pessoal'}`);
+        if (min !== null) filters.push(`Min: R$ ${min.toFixed(2)}`);
+        if (max !== null) filters.push(`Max: R$ ${max.toFixed(2)}`);
+        if (plan) filters.push(`Plano: ${plan}`);
+        if (account) filters.push(`Conta: ${account}`);
+        
+        if (filters.length > 0) {
+            activeFiltersContainer.classList.remove('hidden');
+            filterTagsContainer.innerHTML = filters.map(filter => 
+                `<span class="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full">${filter}</span>`
+            ).join('');
+        } else {
+            activeFiltersContainer.classList.add('hidden');
+        }
+    }
+
+    // Função para mostrar estatísticas dos resultados filtrados
+    function showFilterStats(filteredData) {
+        if (filteredData.length === 0) return;
+        
+        const total = filteredData.reduce((sum, expense) => sum + parseFloat(expense.amount), 0);
+        const empresariais = filteredData.filter(e => e.is_business_expense).length;
+        const pessoais = filteredData.filter(e => !e.is_business_expense).length;
+        const comNota = filteredData.filter(e => e.invoice_path).length;
+        
+        const statsMessage = `
+            📊 Resultados: ${filteredData.length} gastos | 
+            💰 Total: R$ ${total.toFixed(2)} | 
+            🏢 Empresarial: ${empresariais} | 
+            👤 Pessoal: ${pessoais} | 
+            📄 Com nota: ${comNota}
+        `;
+        
+        // Atualizar ou criar elemento de estatísticas
+        let statsElement = document.getElementById('filter-stats');
+        if (!statsElement) {
+            statsElement = document.createElement('div');
+            statsElement.id = 'filter-stats';
+            statsElement.className = 'bg-gray-50 border rounded-lg p-2 mb-4 text-sm text-gray-600';
+            const tableContainer = document.querySelector('.overflow-x-auto');
+            if (tableContainer) {
+                tableContainer.parentNode.insertBefore(statsElement, tableContainer);
+            }
+        }
+        
+        if (filteredData.length < allExpensesCache.length) {
+            statsElement.textContent = statsMessage;
+            statsElement.classList.remove('hidden');
+        } else {
+            statsElement.classList.add('hidden');
+        }
+    }
+
+    // Função para limpar todos os filtros
+    function clearAllFilters() {
+        if (filterSearchInput) filterSearchInput.value = '';
+        if (filterType) filterType.value = '';
+        if (filterMin) filterMin.value = '';
+        if (filterMax) filterMax.value = '';
+        if (filterPlan) filterPlan.value = '';
+        const filterAccount = document.getElementById('filter-account');
+        if (filterAccount) filterAccount.value = '';
+        
+        applyAllFilters();
+        showNotification('Todos os filtros foram removidos', 'info', 2000);
+    }
+
+    // Event listeners para filtros
     if (filterSearchInput) filterSearchInput.addEventListener('input', applyAllFilters);
     if (filterType) filterType.addEventListener('change', applyAllFilters);
     if (filterMin) filterMin.addEventListener('input', applyAllFilters);
     if (filterMax) filterMax.addEventListener('input', applyAllFilters);
     if (filterPlan) filterPlan.addEventListener('input', applyAllFilters);
+
+    // Event listener para limpar filtros
+    const clearFiltersBtn = document.getElementById('clear-filters');
+    if (clearFiltersBtn) {
+        clearFiltersBtn.addEventListener('click', clearAllFilters);
+    }
+
+    // Função para alternar exibição da ajuda de busca
+    window.toggleSearchHelp = function() {
+        const helpElement = document.getElementById('search-help');
+        if (helpElement) {
+            helpElement.classList.toggle('hidden');
+        }
+    };
 
     async function fetchAndRenderDashboardMetrics() {
         try {
@@ -1753,52 +1884,132 @@ document.addEventListener('DOMContentLoaded', function() {
         if (!expensesTableBody) return;
         expensesTableBody.innerHTML = '';
         let totalSpent = 0;
+        
         if (expenses.length > 0) {
             expenses.forEach(expense => {
                 totalSpent += parseFloat(expense.amount);
                 const invoiceLink = expense.invoice_path ? 
                     `<button onclick="downloadInvoice(${expense.id})" class="text-blue-600 hover:text-blue-800" title="Baixar fatura">
                         <i class="fas fa-file-invoice"></i>
-                    </button>` : 'N/A';
-                // Corrigido: mostra plano de conta corretamente, inclusive string vazia ou null
-                let planCode = '-';
+                    </button>` : '<span class="text-gray-400">N/A</span>';
+                
+                // Melhor tratamento do plano de conta
+                let planCode = '';
                 let planStatus = '';
+                let rowClass = 'border-b hover:bg-gray-50';
+                
                 if (expense.account_plan_code !== null && expense.account_plan_code !== undefined && expense.account_plan_code !== '') {
-                    planCode = expense.account_plan_code;
-                } else if (expense.is_business_expense) {
-                    planCode = '<span class="text-orange-600 font-semibold">Sem Categoria</span>';
-                    planStatus = '<span class="text-xs bg-orange-100 text-orange-800 px-2 py-1 rounded">Classificado Automaticamente</span>';
+                    planCode = `<span class="bg-gray-100 text-gray-800 px-2 py-1 rounded font-mono text-sm">${expense.account_plan_code}</span>`;
+                } else {
+                    if (expense.is_business_expense) {
+                        planCode = '<span class="text-orange-600 font-semibold">Sem Categoria</span>';
+                        planStatus = '<span class="text-xs bg-orange-100 text-orange-800 px-2 py-1 rounded">🤖 Auto-classificado</span>';
+                        rowClass = 'border-b hover:bg-orange-50 bg-orange-25';
+                    } else {
+                        planCode = '<span class="text-gray-400">-</span>';
+                    }
                 }
                 
+                // Badge do tipo de gasto mais informativo
                 const tipoGasto = expense.is_business_expense ? 
-                    '<span class="bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs font-semibold">Empresa</span>' : 
-                    '<span class="bg-green-100 text-green-800 px-2 py-1 rounded text-xs font-semibold">Pessoal</span>';
+                    '<span class="bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs font-semibold flex items-center"><i class="fas fa-building mr-1"></i>Empresa</span>' : 
+                    '<span class="bg-green-100 text-green-800 px-2 py-1 rounded text-xs font-semibold flex items-center"><i class="fas fa-user mr-1"></i>Pessoal</span>';
+                
+                // Valor com indicador visual baseado no valor
+                const valorClass = parseFloat(expense.amount) > 1000 ? 'text-red-700 font-bold' : 'text-red-600 font-semibold';
                 
                 const row = document.createElement('tr');
-                row.className = 'border-b hover:bg-gray-50';
+                row.className = rowClass;
                 row.innerHTML = `
-                    <td class="p-3">${new Date(expense.transaction_date).toLocaleDateString('pt-BR', {timeZone: 'UTC'})}</td>
+                    <td class="p-3 text-sm">${new Date(expense.transaction_date).toLocaleDateString('pt-BR', {timeZone: 'UTC'})}</td>
                     <td class="p-3">
-                        <div>${expense.description}</div>
+                        <div class="font-medium">${expense.description}</div>
                         ${planStatus ? `<div class="mt-1">${planStatus}</div>` : ''}
                     </td>
-                    <td class="p-3 text-red-600 font-semibold">R$ ${parseFloat(expense.amount).toFixed(2)}</td>
-                    <td class="p-3">${expense.account}</td>
+                    <td class="p-3 ${valorClass}">R$ ${parseFloat(expense.amount).toFixed(2)}</td>
+                    <td class="p-3 text-sm">
+                        <span class="bg-gray-50 px-2 py-1 rounded text-xs">${expense.account}</span>
+                    </td>
                     <td class="p-3">${tipoGasto}</td>
                     <td class="p-3">${planCode}</td>
                     <td class="p-3 text-center">${invoiceLink}</td>
                     <td class="p-3">
-                        <button class="text-blue-600 mr-2 edit-btn" data-id="${expense.id}" title="Editar"><i class="fas fa-edit"></i></button>
-                        <button class="text-red-600 delete-btn" data-id="${expense.id}" title="Excluir"><i class="fas fa-trash"></i></button>
+                        <div class="flex gap-1">
+                            <button class="text-blue-600 hover:text-blue-800 p-1 rounded hover:bg-blue-50 edit-btn" data-id="${expense.id}" title="Editar">
+                                <i class="fas fa-edit"></i>
+                            </button>
+                            <button class="text-red-600 hover:text-red-800 p-1 rounded hover:bg-red-50 delete-btn" data-id="${expense.id}" title="Excluir">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </div>
                     </td>
                 `;
                 expensesTableBody.appendChild(row);
             });
+            
+            // Mostrar estatísticas resumidas após a tabela
+            displayTableSummary(expenses, totalSpent);
+            
         } else {
-            expensesTableBody.innerHTML = `<tr><td colspan="8" class="text-center p-4">Nenhuma despesa encontrada.</td></tr>`;
+            expensesTableBody.innerHTML = `
+                <tr>
+                    <td colspan="8" class="text-center p-8 text-gray-500">
+                        <i class="fas fa-search text-4xl mb-4"></i>
+                        <div class="text-lg font-medium">Nenhuma despesa encontrada</div>
+                        <div class="text-sm">Tente ajustar os filtros de busca</div>
+                    </td>
+                </tr>`;
         }
+        
         if (totalSpentEl) totalSpentEl.textContent = `R$ ${totalSpent.toFixed(2)}`;
         if (totalTransactionsEl) totalTransactionsEl.textContent = expenses.length;
+    }
+
+    // Função para exibir resumo da tabela
+    function displayTableSummary(expenses, totalSpent) {
+        const empresariais = expenses.filter(e => e.is_business_expense);
+        const pessoais = expenses.filter(e => !e.is_business_expense);
+        const semCategoria = expenses.filter(e => e.is_business_expense && (!e.account_plan_code || e.account_plan_code === ''));
+        const comNota = expenses.filter(e => e.invoice_path);
+        
+        const totalEmpresarial = empresariais.reduce((sum, e) => sum + parseFloat(e.amount), 0);
+        const totalPessoal = pessoais.reduce((sum, e) => sum + parseFloat(e.amount), 0);
+        
+        // Criar ou atualizar elemento de resumo da tabela
+        let summaryElement = document.getElementById('table-summary');
+        if (!summaryElement) {
+            summaryElement = document.createElement('div');
+            summaryElement.id = 'table-summary';
+            summaryElement.className = 'mt-4 grid grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-gray-50 rounded-lg border';
+            
+            const tableContainer = document.querySelector('.overflow-x-auto');
+            if (tableContainer && tableContainer.parentNode) {
+                tableContainer.parentNode.insertBefore(summaryElement, tableContainer.nextSibling);
+            }
+        }
+        
+        summaryElement.innerHTML = `
+            <div class="text-center">
+                <div class="text-sm text-gray-600">Total Empresarial</div>
+                <div class="text-lg font-bold text-blue-600">R$ ${totalEmpresarial.toFixed(2)}</div>
+                <div class="text-xs text-gray-500">${empresariais.length} gastos</div>
+            </div>
+            <div class="text-center">
+                <div class="text-sm text-gray-600">Total Pessoal</div>
+                <div class="text-lg font-bold text-green-600">R$ ${totalPessoal.toFixed(2)}</div>
+                <div class="text-xs text-gray-500">${pessoais.length} gastos</div>
+            </div>
+            <div class="text-center">
+                <div class="text-sm text-gray-600">Sem Categoria</div>
+                <div class="text-lg font-bold text-orange-600">${semCategoria.length}</div>
+                <div class="text-xs text-gray-500">Auto-classificados</div>
+            </div>
+            <div class="text-center">
+                <div class="text-sm text-gray-600">Com Nota Fiscal</div>
+                <div class="text-lg font-bold text-purple-600">${comNota.length}</div>
+                <div class="text-xs text-gray-500">${((comNota.length / expenses.length) * 100).toFixed(1)}% do total</div>
+            </div>
+        `;
     }
 
     // Função utilitária para obter cor do tema
