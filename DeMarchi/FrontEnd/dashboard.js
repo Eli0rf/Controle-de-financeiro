@@ -356,6 +356,24 @@ document.addEventListener('DOMContentLoaded', function() {
         // Event listener para refresh de insights
         if (refreshInsightsBtn) refreshInsightsBtn.addEventListener('click', refreshInsights);
         
+        // Event listeners para seção de análise por categoria
+        const refreshCategoryBtn = document.getElementById('refresh-category-btn');
+        const exportCategoryBtn = document.getElementById('export-category-btn');
+        
+        if (refreshCategoryBtn) {
+            refreshCategoryBtn.addEventListener('click', function() {
+                console.log('🔄 Atualizando análise por categoria...');
+                fetchAndRenderPlanChart();
+            });
+        }
+        
+        if (exportCategoryBtn) {
+            exportCategoryBtn.addEventListener('click', function() {
+                console.log('📤 Exportando dados de categoria...');
+                exportCategoryAnalysis();
+            });
+        }
+        
         // Event listeners para menu móvel
         setupMobileMenu();
         
@@ -1387,6 +1405,90 @@ document.addEventListener('DOMContentLoaded', function() {
         } catch (error) {
             console.error('Erro ao exportar gráfico:', error);
             showNotification('❌ Erro ao exportar gráfico', 'error');
+        }
+    }
+
+    // Função para exportar análise de categoria
+    async function exportCategoryAnalysis() {
+        try {
+            console.log('📤 Iniciando exportação da análise por categoria...');
+            
+            // Buscar dados atuais
+            const response = await authenticatedFetch('expenses');
+            if (!response.success) {
+                throw new Error('Erro ao buscar dados para exportação');
+            }
+
+            const expenses = response.data || [];
+            if (expenses.length === 0) {
+                showNotification('⚠️ Nenhum dado disponível para exportação', 'warning');
+                return;
+            }
+
+            // Processar dados para análise
+            const planTotals = {};
+            let totalGeral = 0;
+            
+            expenses.forEach(expense => {
+                const planCode = expense.account_plan_code || 'Sem Categoria';
+                const amount = parseFloat(expense.amount) || 0;
+                totalGeral += amount;
+                
+                if (!planTotals[planCode]) {
+                    planTotals[planCode] = {
+                        total: 0,
+                        count: 0,
+                        expenses: []
+                    };
+                }
+                
+                planTotals[planCode].total += amount;
+                planTotals[planCode].count += 1;
+                planTotals[planCode].expenses.push(expense);
+            });
+            
+            // Ordenar por valor
+            const sortedCategories = Object.entries(planTotals)
+                .map(([planCode, data]) => ({
+                    planCode,
+                    total: data.total,
+                    count: data.count,
+                    percentage: totalGeral > 0 ? (data.total / totalGeral * 100) : 0,
+                    expenses: data.expenses
+                }))
+                .sort((a, b) => b.total - a.total);
+
+            // Criar conteúdo CSV
+            let csvContent = 'Plano de Conta,Total (R$),Quantidade,Percentual (%),Média por Gasto (R$)\n';
+            
+            sortedCategories.forEach(category => {
+                const avgPerExpense = category.count > 0 ? (category.total / category.count) : 0;
+                csvContent += `"${category.planCode}",${category.total.toFixed(2)},${category.count},${category.percentage.toFixed(2)},${avgPerExpense.toFixed(2)}\n`;
+            });
+            
+            // Adicionar resumo final
+            csvContent += '\nResumo Geral\n';
+            csvContent += `Total de Categorias,${sortedCategories.length}\n`;
+            csvContent += `Total de Gastos,${expenses.length}\n`;
+            csvContent += `Valor Total,${totalGeral.toFixed(2)}\n`;
+            csvContent += `Média por Categoria,${(totalGeral / sortedCategories.length).toFixed(2)}\n`;
+            csvContent += `Data de Exportação,${new Date().toLocaleString('pt-BR')}\n`;
+
+            // Criar e baixar arquivo
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = `analise_categoria_${new Date().toISOString().split('T')[0]}.csv`;
+            
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            
+            showNotification('📊 Análise por categoria exportada com sucesso!', 'success');
+            
+        } catch (error) {
+            console.error('❌ Erro ao exportar análise por categoria:', error);
+            showNotification('❌ Erro ao exportar dados de categoria', 'error');
         }
     }
 
@@ -2454,71 +2556,234 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
+    // Função auxiliar para atualizar estatísticas da seção de categoria
+    function updateCategoryStats(processedData) {
+        if (!processedData || !Array.isArray(processedData) || processedData.length === 0) {
+            // Limpar estatísticas se não há dados
+            const totalCategoriesEl = document.getElementById('total-categories');
+            const topCategoryEl = document.getElementById('top-category');
+            const uncategorizedCountEl = document.getElementById('uncategorized-count');
+            
+            if (totalCategoriesEl) totalCategoriesEl.textContent = '0';
+            if (topCategoryEl) topCategoryEl.textContent = '-';
+            if (uncategorizedCountEl) uncategorizedCountEl.textContent = '0';
+            return;
+        }
+        
+        // Calcular estatísticas
+        const totalCategories = processedData.length;
+        const topCategory = processedData[0]; // Já está ordenado por valor
+        const uncategorizedCategory = processedData.find(cat => 
+            cat.account_plan_code === 'Sem Categoria' || 
+            !cat.account_plan_code || 
+            cat.account_plan_code === ''
+        );
+        const uncategorizedCount = uncategorizedCategory ? uncategorizedCategory.count : 0;
+        
+        // Atualizar elementos das estatísticas
+        const totalCategoriesEl = document.getElementById('total-categories');
+        const topCategoryEl = document.getElementById('top-category');
+        const uncategorizedCountEl = document.getElementById('uncategorized-count');
+        
+        if (totalCategoriesEl) {
+            totalCategoriesEl.textContent = totalCategories;
+        }
+        
+        if (topCategoryEl && topCategory) {
+            const categoryName = topCategory.account_plan_code || 'Sem nome';
+            topCategoryEl.textContent = categoryName.length > 12 
+                ? categoryName.substring(0, 12) + '...' 
+                : categoryName;
+            topCategoryEl.title = `${categoryName}: ${formatCurrency(topCategory.total)} (${topCategory.count} gastos)`;
+        }
+        
+        if (uncategorizedCountEl) {
+            uncategorizedCountEl.textContent = uncategorizedCount;
+        }
+        
+        console.log('📊 Estatísticas de categoria atualizadas:', {
+            totalCategories,
+            topCategory: topCategory?.account_plan_code,
+            uncategorizedCount
+        });
+    }
+
     function renderPlanChart(data = []) {
+        const chartKey = 'planChart';
+        const canvasId = 'plan-chart';
+        
         if (!isChartJsLoaded()) {
-            showNoDataMessage('plan-chart', 'Biblioteca de gráficos não carregada');
+            console.error('❌ Chart.js não disponível para renderPlanChart');
+            displayChartFallback(canvasId, 'Chart.js não carregado');
             return;
         }
         
-        const canvas = document.getElementById('plan-chart');
-        if (!canvas) return;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return;
-        destroyChart('planChart');
-        if (!data.length) {
-            showNoDataMessage('plan-chart', 'Sem dados para este período.');
+        const canvas = document.getElementById(canvasId);
+        if (!canvas) {
+            console.warn(`⚠️ Canvas ${canvasId} não encontrado`);
             return;
         }
-        
+
         try {
-            const max = Math.max(...data.map(d => d.total));
-            planChart = new Chart(ctx, {
-            type: 'bar',
-            data: {
-                labels: data.map(d => `Plano ${d.account_plan_code}`),
-                datasets: [{
-                    label: 'Total Gasto (R$)',
-                    data: data.map(d => d.total),
-                    backgroundColor: data.map(d => d.total === max ? '#22c55e' : 'rgba(239, 68, 68, 0.7)')
-                }]
-            },
-            options: {
-                indexAxis: 'y',
-                responsive: true,
-                plugins: {
-                    title: {
-                        display: true,
-                        text: 'Gastos por Plano de Conta',
-                        color: getThemeColor('#222', '#fff'),
-                        font: { size: 18 }
-                    },
-                    subtitle: {
-                        display: true,
-                        text: `Plano com maior gasto: ${data.find(d => d.total === max)?.account_plan_code || '-'}`,
-                        color: getThemeColor('#666', '#ccc'),
-                        font: { size: 13 }
-                    },
-                    legend: { display: false },
-                    tooltip: {
-                        callbacks: {
-                            label: ctx => `R$ ${ctx.parsed.x.toFixed(2)}`
+            // Destruir gráfico existente
+            destroyChart(chartKey);
+            
+            // Processar dados para criar análise por categoria/plano de conta
+            let processedData = [];
+            
+            if (Array.isArray(data) && data.length > 0) {
+                // Se data já é um array processado (vem do dashboard)
+                if (data[0] && typeof data[0] === 'object' && 'account_plan_code' in data[0]) {
+                    processedData = data;
+                } else {
+                    // Processar gastos brutos agrupando por plano de conta
+                    const planTotals = {};
+                    
+                    data.forEach(expense => {
+                        const planCode = expense.account_plan_code || 'Sem Categoria';
+                        const amount = parseFloat(expense.amount) || 0;
+                        
+                        if (!planTotals[planCode]) {
+                            planTotals[planCode] = {
+                                account_plan_code: planCode,
+                                total: 0,
+                                count: 0
+                            };
+                        }
+                        
+                        planTotals[planCode].total += amount;
+                        planTotals[planCode].count += 1;
+                    });
+                    
+                    // Converter para array e ordenar por valor
+                    processedData = Object.values(planTotals)
+                        .sort((a, b) => b.total - a.total)
+                        .slice(0, 15); // Limitar a 15 maiores
+                }
+            }
+            
+            if (processedData.length === 0) {
+                updateCategoryStats([]); // Limpar estatísticas
+                displayChartFallback(canvasId, 'Sem dados para este período');
+                return;
+            }
+            
+            // Atualizar estatísticas antes de renderizar o gráfico
+            updateCategoryStats(processedData);
+            
+            console.log('📊 Dados processados para plan-chart:', processedData);
+            
+            const max = Math.max(...processedData.map(d => d.total));
+            const labels = processedData.map(d => {
+                const planCode = d.account_plan_code;
+                if (planCode === 'Sem Categoria' || !planCode || planCode === '') {
+                    return '🔸 Sem Categoria';
+                }
+                return `📋 Plano ${planCode}`;
+            });
+            
+            const values = processedData.map(d => d.total);
+            
+            // Cores baseadas no valor (maior = verde, menores = gradiente)
+            const colors = processedData.map(d => {
+                if (d.total === max) return '#22c55e'; // Verde para maior
+                if (d.account_plan_code === 'Sem Categoria') return '#f59e0b'; // Laranja para sem categoria
+                const intensity = d.total / max;
+                if (intensity > 0.7) return '#3b82f6'; // Azul forte
+                if (intensity > 0.4) return '#6366f1'; // Azul médio
+                return '#8b5cf6'; // Roxo para menores
+            });
+
+            const config = {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Total Gasto (R$)',
+                        data: values,
+                        backgroundColor: colors,
+                        borderColor: colors.map(color => color),
+                        borderWidth: 2,
+                        borderRadius: 6,
+                        borderSkipped: false
+                    }]
+                },
+                options: mergeChartOptions({
+                    indexAxis: 'y',
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: '💰 Análise de Gastos por Categoria/Plano de Conta',
+                            font: { size: 16, weight: 'bold' }
+                        },
+                        subtitle: {
+                            display: true,
+                            text: `🏆 Maior gasto: ${processedData[0]?.account_plan_code || '-'} (${formatCurrency(max)})`,
+                            font: { size: 12 }
+                        },
+                        legend: { 
+                            display: false 
+                        },
+                        tooltip: {
+                            callbacks: {
+                                title: function(context) {
+                                    const item = processedData[context[0].dataIndex];
+                                    return `Plano de Conta: ${item.account_plan_code}`;
+                                },
+                                label: function(context) {
+                                    const item = processedData[context.dataIndex];
+                                    return [
+                                        `💰 Total: ${formatCurrency(context.parsed.x)}`,
+                                        `📊 Transações: ${item.count}`,
+                                        `💡 Média: ${formatCurrency(item.total / item.count)}`
+                                    ];
+                                },
+                                footer: function(context) {
+                                    if (context.length > 0) {
+                                        const item = processedData[context[0].dataIndex];
+                                        const percentage = ((item.total / processedData.reduce((sum, d) => sum + d.total, 0)) * 100).toFixed(1);
+                                        return `📈 Representa ${percentage}% do total`;
+                                    }
+                                    return '';
+                                }
+                            }
+                        },
+                        datalabels: {
+                            display: function(context) {
+                                return context.parsed && context.parsed.x > 0;
+                            },
+                            color: '#374151',
+                            anchor: 'end',
+                            align: 'right',
+                            font: { weight: 'bold', size: 10 },
+                            formatter: function(value) {
+                                return value > 0 ? formatCurrency(value) : '';
+                            }
                         }
                     },
-                    datalabels: {
-                        color: getThemeColor('#222', '#fff'),
-                        anchor: 'end', align: 'right', font: { weight: 'bold' },
-                        formatter: v => {
-                            const val = getNumberValue(v);
-                            return val > 0 ? `R$ ${val.toFixed(2)}` : '';
+                    scales: {
+                        x: {
+                            title: {
+                                display: true,
+                                text: 'Valor (R$)'
+                            },
+                            beginAtZero: true
+                        },
+                        y: {
+                            title: {
+                                display: true,
+                                text: 'Planos de Conta'
+                            }
                         }
                     }
-                }
-            },
-            plugins: [ChartDataLabels]
-        });
+                })
+            };
+
+            createChart(chartKey, canvasId, config);
+            
         } catch (error) {
-            console.error('Erro ao criar gráfico de planos:', error);
-            showNoDataMessage('plan-chart', 'Erro ao carregar gráfico');
+            console.error('❌ Erro ao criar gráfico de planos:', error);
+            displayChartFallback(canvasId, 'Erro ao carregar gráfico');
         }
     }
 
@@ -4957,17 +5222,73 @@ document.addEventListener('DOMContentLoaded', function() {
         console.log('🎨 Renderizando gráficos dos relatórios...');
         
         try {
+            // Aguardar Chart.js estar disponível
+            if (!await waitForChartJs()) {
+                console.warn('⚠️ Chart.js não disponível para relatórios');
+                return;
+            }
+
+            // Processar dados para análise por categoria
+            console.log('📊 Processando dados para análise por categoria...');
+            const categoryData = processCategoryData(expenses);
+            
             // Renderizar todos os gráficos com dados atualizados
             await Promise.allSettled([
                 renderGoalsChart(expenses),
                 renderGoalsPlanChart(expenses),
-                renderPlanChart(expenses || dashboardData?.planChartData)
+                renderPlanChart(categoryData) // Usar dados processados para categoria
             ]);
             
             console.log('✅ Gráficos renderizados com sucesso');
         } catch (error) {
             console.error('❌ Erro ao renderizar gráficos:', error);
         }
+    }
+
+    // Função para processar dados para análise por categoria
+    function processCategoryData(expenses) {
+        if (!expenses || expenses.length === 0) {
+            return [];
+        }
+
+        console.log('🔍 Processando dados de categoria...');
+
+        // Agrupar por plano de conta
+        const planTotals = {};
+        const planCounts = {};
+
+        expenses.forEach(expense => {
+            let planCode = expense.account_plan_code;
+            
+            // Tratar gastos sem categoria
+            if (!planCode || planCode === '' || planCode === null) {
+                planCode = 'Sem Categoria';
+            }
+
+            const amount = parseFloat(expense.amount) || 0;
+
+            if (!planTotals[planCode]) {
+                planTotals[planCode] = 0;
+                planCounts[planCode] = 0;
+            }
+
+            planTotals[planCode] += amount;
+            planCounts[planCode] += 1;
+        });
+
+        // Converter para array de objetos
+        const categoryData = Object.keys(planTotals).map(planCode => ({
+            account_plan_code: planCode,
+            total: planTotals[planCode],
+            count: planCounts[planCode],
+            average: planTotals[planCode] / planCounts[planCode]
+        }));
+
+        // Ordenar por total decrescente
+        categoryData.sort((a, b) => b.total - a.total);
+
+        console.log('📊 Dados de categoria processados:', categoryData);
+        return categoryData;
     }
 
     function updateBusinessAnalysis(expenses) {
@@ -5230,8 +5551,31 @@ document.addEventListener('DOMContentLoaded', function() {
             if (refreshCategoryBtn) {
                 refreshCategoryBtn.addEventListener('click', async () => {
                     console.log('🔄 Atualizando gráfico de categorias...');
-                    const expenses = await fetchExpenses();
-                    renderPlanChart(expenses);
+                    
+                    // Mostrar loading
+                    const originalHTML = refreshCategoryBtn.innerHTML;
+                    refreshCategoryBtn.innerHTML = '<svg class="w-5 h-5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" class="opacity-25"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>';
+                    refreshCategoryBtn.disabled = true;
+                    
+                    try {
+                        showNotification('🔄 Atualizando análise por categoria...', 'info', 2000);
+                        
+                        // Buscar dados atualizados
+                        const expenses = await fetchExpenses();
+                        
+                        // Processar e renderizar
+                        const categoryData = processCategoryData(expenses);
+                        renderPlanChart(categoryData);
+                        
+                        showNotification('✅ Análise por categoria atualizada!', 'success', 2000);
+                    } catch (error) {
+                        console.error('❌ Erro ao atualizar categoria:', error);
+                        showNotification('❌ Erro ao atualizar análise', 'error');
+                    } finally {
+                        // Restaurar botão
+                        refreshCategoryBtn.innerHTML = originalHTML;
+                        refreshCategoryBtn.disabled = false;
+                    }
                 });
             }
             

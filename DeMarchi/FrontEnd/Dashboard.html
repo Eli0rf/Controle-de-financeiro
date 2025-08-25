@@ -1762,15 +1762,58 @@
                     <!-- Gastos por Categoria -->
                     <div class="xl:col-span-2 bg-white p-6 rounded-lg shadow-lg">
                         <div class="flex items-center justify-between mb-4">
-                            <h3 class="text-xl font-bold text-gray-800">💰 Análise por Categoria</h3>
-                            <button id="refresh-category-btn" class="text-blue-600 hover:text-blue-800">
-                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
-                                </svg>
-                            </button>
+                            <div>
+                                <h3 class="text-xl font-bold text-gray-800">💰 Análise por Categoria</h3>
+                                <p class="text-sm text-gray-600">Distribuição de gastos por planos de conta</p>
+                            </div>
+                            <div class="flex gap-2">
+                                <button id="refresh-category-btn" class="text-blue-600 hover:text-blue-800 p-2 rounded-lg hover:bg-blue-50 transition" title="Atualizar análise">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                                    </svg>
+                                </button>
+                                <button id="export-category-btn" class="text-green-600 hover:text-green-800 p-2 rounded-lg hover:bg-green-50 transition" title="Exportar dados">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                                    </svg>
+                                </button>
+                            </div>
                         </div>
+                        
+                        <!-- Estatísticas rápidas -->
+                        <div id="category-stats" class="grid grid-cols-3 gap-4 mb-4 p-3 bg-gray-50 rounded-lg">
+                            <div class="text-center">
+                                <div class="text-sm text-gray-600">Total de Categorias</div>
+                                <div id="total-categories" class="text-lg font-bold text-blue-600">-</div>
+                            </div>
+                            <div class="text-center">
+                                <div class="text-sm text-gray-600">Maior Categoria</div>
+                                <div id="top-category" class="text-lg font-bold text-green-600">-</div>
+                            </div>
+                            <div class="text-center">
+                                <div class="text-sm text-gray-600">Sem Categoria</div>
+                                <div id="uncategorized-count" class="text-lg font-bold text-orange-600">-</div>
+                            </div>
+                        </div>
+                        
                         <div class="relative h-80">
                             <canvas id="plan-chart" class="w-full h-full"></canvas>
+                        </div>
+                        
+                        <!-- Legenda explicativa -->
+                        <div class="mt-4 text-xs text-gray-500 flex items-center justify-center gap-4">
+                            <div class="flex items-center gap-1">
+                                <div class="w-3 h-3 bg-green-500 rounded"></div>
+                                <span>Maior categoria</span>
+                            </div>
+                            <div class="flex items-center gap-1">
+                                <div class="w-3 h-3 bg-orange-500 rounded"></div>
+                                <span>Sem categoria</span>
+                            </div>
+                            <div class="flex items-center gap-1">
+                                <div class="w-3 h-3 bg-blue-500 rounded"></div>
+                                <span>Outras categorias</span>
+                            </div>
                         </div>
                     </div>
 
