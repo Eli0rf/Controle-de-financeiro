@@ -183,8 +183,6 @@ document.addEventListener('DOMContentLoaded', function() {
         const headers = {
             'Authorization': `Bearer ${token}`,
             'Accept': 'application/json',
-            'X-Requested-With': 'XMLHttpRequest',
-            'Origin': 'https://controle-de-financeiro-production.up.railway.app',
             ...options.headers
         };
 
@@ -200,7 +198,7 @@ document.addEventListener('DOMContentLoaded', function() {
             ...options,
             headers,
             mode: 'cors',
-            credentials: 'include'
+            credentials: 'omit'
         });
 
         console.log('Response status:', response.status);
@@ -232,7 +230,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     'Accept': '*/*'
                 },
                 mode: 'cors',
-                credentials: 'include'
+                credentials: 'omit'
             });
 
             if (response.ok) {
@@ -1419,7 +1417,7 @@ document.addEventListener('DOMContentLoaded', function() {
             
             // Carregar dados específicos da aba se necessário
             if (tabName === 'business-analysis') {
-                loadBusinessAnalysisData();
+                loadBusinessAnalysis();
             } else if (tabName === 'reports') {
                 loadReportsData();
             }
@@ -2889,6 +2887,11 @@ document.addEventListener('DOMContentLoaded', function() {
             const response = await authenticatedFetch(`${API_BASE_URL}/api/accounts`);
             
             if (!response.ok) {
+                if (response.status === 403 || response.status === 401) {
+                    console.log('Erro de autenticação ao carregar contas');
+                    // handleAuthError já foi chamado pelo authenticatedFetch
+                    return;
+                }
                 const error = await response.json();
                 throw new Error(error.message || 'Erro ao buscar contas.');
             }
@@ -2906,7 +2909,9 @@ document.addEventListener('DOMContentLoaded', function() {
             });
         } catch (error) {
             console.error('Erro ao carregar contas:', error);
-            showNotification('Erro ao carregar contas.', 'error');
+            if (!error.message.includes('Autenticação falhou')) {
+                showNotification('Erro ao carregar contas.', 'error');
+            }
         }
     }
 
@@ -3742,7 +3747,10 @@ document.addEventListener('DOMContentLoaded', function() {
                     'mixedTypeChart': 'mixed-type-chart',
                     'planChart': 'plan-chart',
                     'expensesLineChart': 'expenses-line-chart',
-                    'expensesPieChart': 'expenses-pie-chart'
+                    'expensesPieChart': 'expenses-pie-chart',
+                    'businessEvolutionChart': 'business-evolution-chart',
+                    'businessAccountChart': 'business-account-chart',
+                    'businessCategoryChart': 'business-category-chart'
                 };
                 
                 const canvasId = canvasIdMap[chartKey];
@@ -3750,6 +3758,15 @@ document.addEventListener('DOMContentLoaded', function() {
                     const existingChart = Chart.getChart(canvasId);
                     if (existingChart) {
                         console.log(`🧹 Destruindo gráfico existente: ${canvasId}`);
+                        existingChart.destroy();
+                    }
+                }
+                
+                // Também verificar com o próprio canvasId se foi passado diretamente
+                if (typeof chartKey === 'string' && chartKey.includes('-')) {
+                    const existingChart = Chart.getChart(chartKey);
+                    if (existingChart) {
+                        console.log(`🧹 Destruindo gráfico existente por ID: ${chartKey}`);
                         existingChart.destroy();
                     }
                 }
@@ -3793,6 +3810,47 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     /**
+     * Aguarda o container estar visível antes de criar o gráfico
+     */
+    function waitForContainerVisible(elementId, maxWait = 3000) {
+        return new Promise((resolve) => {
+            const element = document.getElementById(elementId);
+            if (!element) {
+                console.warn(`⚠️ Elemento ${elementId} não encontrado`);
+                resolve(false);
+                return;
+            }
+
+            const checkVisibility = () => {
+                const parent = element.parentElement;
+                const isVisible = parent && parent.offsetWidth > 0 && parent.offsetHeight > 0;
+                
+                if (isVisible) {
+                    resolve(true);
+                } else {
+                    // Aguarda um pouco mais
+                    setTimeout(() => {
+                        const isVisibleNow = parent && parent.offsetWidth > 0 && parent.offsetHeight > 0;
+                        resolve(isVisibleNow);
+                    }, 100);
+                }
+            };
+
+            // Verificar imediatamente
+            const initialCheck = element.parentElement && 
+                                 element.parentElement.offsetWidth > 0 && 
+                                 element.parentElement.offsetHeight > 0;
+            
+            if (initialCheck) {
+                resolve(true);
+            } else {
+                // Aguardar um tempo para o elemento se tornar visível
+                setTimeout(checkVisibility, 250);
+            }
+        });
+    }
+
+    /**
      * Cria um gráfico de forma segura
      */
     function createChart(chartKey, canvasId, config) {
@@ -3810,28 +3868,33 @@ document.addEventListener('DOMContentLoaded', function() {
                 return null;
             }
 
-            // Verificar dimensões do container antes de criar o gráfico
-            const canvas = document.getElementById(canvasId);
-            if (canvas) {
-                const parent = canvas.parentElement;
-                if (parent && (parent.clientWidth === 0 || parent.clientHeight === 0)) {
-                    console.warn(`⚠️ Container do gráfico ${chartKey} tem dimensões zero`);
-                    // Dar um tempo para o DOM se estabilizar
-                    setTimeout(() => {
-                        if (parent.clientWidth > 0) {
-                            createChart(chartKey, canvasId, config);
-                        }
-                    }, 100);
+            // Aguardar container estar visível
+            return waitForContainerVisible(canvasId).then((isVisible) => {
+                if (!isVisible) {
+                    console.warn(`⚠️ Container do gráfico ${chartKey} não está visível`);
                     return null;
                 }
-            }
 
-            // Criar novo gráfico
-            console.log(`📊 Criando gráfico: ${chartKey}`);
-            const chart = new Chart(ctx, config);
-            chartRegistry[chartKey] = chart;
-            
-            return chart;
+                try {
+                    // Verificar se já existe um gráfico com esse canvas e destruir
+                    const existingChart = Chart.getChart(canvasId);
+                    if (existingChart) {
+                        console.log(`🧹 Destruindo gráfico existente no canvas ${canvasId}`);
+                        existingChart.destroy();
+                    }
+
+                    // Criar novo gráfico
+                    console.log(`📊 Criando gráfico: ${chartKey}`);
+                    const chart = new Chart(ctx, config);
+                    chartRegistry[chartKey] = chart;
+                    
+                    return chart;
+                } catch (error) {
+                    console.error(`❌ Erro ao criar gráfico ${chartKey}:`, error);
+                    return null;
+                }
+            });
+
         } catch (error) {
             console.error(`❌ Erro ao criar gráfico ${chartKey}:`, error);
             return null;
@@ -6027,79 +6090,6 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
-    async function updateBusinessCategoryChart(data) {
-        const ctx = document.getElementById('business-category-chart');
-        if (!ctx) return;
-
-        // Aguardar Chart.js estar carregado
-        if (!await waitForChartJs()) {
-            console.warn('Chart.js não carregado para business category chart');
-            return;
-        }
-
-        // Destruir gráfico existente de forma segura
-        destroyChart('businessCategoryChart');
-
-        try {
-            const categories = Object.keys(data.byCategory || {});
-            const values = Object.values(data.byCategory || {});
-
-            if (categories.length === 0) {
-                console.log('Nenhum dado de categoria empresarial disponível');
-                return;
-            }
-
-            window.businessCategoryChart = new Chart(ctx, {
-                type: 'bar',
-                data: {
-                    labels: categories,
-                    datasets: [{
-                        label: 'Valor por Categoria',
-                        data: values,
-                        backgroundColor: 'rgba(59, 130, 246, 0.8)',
-                        borderColor: 'rgba(59, 130, 246, 1)',
-                        borderWidth: 1
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: true,
-                    aspectRatio: 2,
-                    plugins: {
-                        legend: { display: false },
-                        tooltip: {
-                            callbacks: {
-                                label: function(context) {
-                                    return `${context.dataset.label}: R$ ${context.parsed.y.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
-                                }
-                            }
-                        }
-                    },
-                    scales: {
-                        y: { 
-                            beginAtZero: true,
-                            ticks: {
-                                callback: function(value) {
-                                    return 'R$ ' + value.toLocaleString('pt-BR', {minimumFractionDigits: 0});
-                                }
-                            }
-                        },
-                        x: {
-                            ticks: {
-                                maxRotation: 45,
-                                minRotation: 0
-                            }
-                        }
-                    }
-                }
-            });
-
-        } catch (error) {
-            console.error('Erro ao criar gráfico de categorias empresariais:', error);
-            showNotification('Erro ao carregar gráfico de categorias', 'error');
-        }
-    }
-
     function populateBusinessFilters() {
         // Populá filtros específicos da análise empresarial
         const businessPeriod = document.getElementById('business-period');
@@ -8293,9 +8283,44 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     // ========== FIM ANÁLISE POR PERÍODO DA FATURA ==========
+    
+    // ========== TRATAMENTO GLOBAL DE ERROS ==========
+    
+    // Capturar erros não tratados
+    window.addEventListener('error', function(e) {
+        console.error('Erro JavaScript não tratado:', e.error);
+        showNotification('Erro inesperado no sistema. Recarregue a página.', 'error');
+    });
 
-    // Chamar inicialização
-    init();
+    // Capturar promessas rejeitadas não tratadas
+    window.addEventListener('unhandledrejection', function(e) {
+        console.error('Promise rejeitada não tratada:', e.reason);
+        if (e.reason?.message?.includes('Autenticação falhou')) {
+            // Já tratado pela função authenticatedFetch
+            return;
+        }
+        showNotification('Erro de comunicação com o servidor.', 'error');
+    });
+
+    // ========== INICIALIZAÇÃO SEGURA ==========
+    
+    function safeInit() {
+        try {
+            console.log('🚀 Iniciando dashboard...');
+            init();
+        } catch (error) {
+            console.error('❌ Erro crítico na inicialização:', error);
+            showNotification('Erro ao carregar o dashboard. Recarregue a página.', 'error');
+            
+            // Mostrar login como fallback
+            setTimeout(() => {
+                showLogin();
+            }, 2000);
+        }
+    }
+
+    // Chamar inicialização segura
+    safeInit();
 
     // ========== FIM FUNÇÕES GASTOS RECORRENTES ==========
 });
