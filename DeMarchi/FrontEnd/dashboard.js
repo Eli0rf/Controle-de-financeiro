@@ -1601,6 +1601,44 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
+    /**
+     * Processa gastos para classificação automática como empresariais quando sem categoria
+     */
+    function processExpenseClassification(expenses) {
+        let gastosSemCategoria = 0;
+        
+        const processedExpenses = expenses.map(expense => {
+            // Se o gasto não tem plano de conta definido (categoria), marca como empresarial
+            if (!expense.account_plan_code || 
+                expense.account_plan_code === null || 
+                expense.account_plan_code === undefined || 
+                expense.account_plan_code === '') {
+                
+                gastosSemCategoria++;
+                console.log(`📋 Gasto sem categoria detectado, classificando como empresarial: ${expense.description}`);
+                
+                return {
+                    ...expense,
+                    is_business_expense: true,
+                    account_plan_code: null // Manter como null para identificar que precisa de categoria
+                };
+            }
+            
+            return expense;
+        });
+        
+        // Mostrar notificação sobre gastos reclassificados
+        if (gastosSemCategoria > 0) {
+            showNotification(
+                `📋 ${gastosSemCategoria} gasto(s) sem categoria foram automaticamente classificados como empresariais. Considere definir planos de contas para melhor organização.`,
+                'info',
+                8000
+            );
+        }
+        
+        return processedExpenses;
+    }
+
     async function fetchAndRenderExpenses() {
         try {
             if (!checkAuthentication()) return;
@@ -1619,7 +1657,11 @@ document.addEventListener('DOMContentLoaded', function() {
             }
 
             const expenses = await response.json();
-            allExpensesCache = expenses; // Salva para filtros
+            
+            // Processar gastos para classificação automática
+            const processedExpenses = processExpenseClassification(expenses);
+            
+            allExpensesCache = processedExpenses; // Salva para filtros
             applyAllFilters(); // Aplica filtros após buscar
         } catch (error) {
             console.error(error);
@@ -1720,22 +1762,34 @@ document.addEventListener('DOMContentLoaded', function() {
                     </button>` : 'N/A';
                 // Corrigido: mostra plano de conta corretamente, inclusive string vazia ou null
                 let planCode = '-';
+                let planStatus = '';
                 if (expense.account_plan_code !== null && expense.account_plan_code !== undefined && expense.account_plan_code !== '') {
                     planCode = expense.account_plan_code;
+                } else if (expense.is_business_expense) {
+                    planCode = '<span class="text-orange-600 font-semibold">Sem Categoria</span>';
+                    planStatus = '<span class="text-xs bg-orange-100 text-orange-800 px-2 py-1 rounded">Classificado Automaticamente</span>';
                 }
+                
+                const tipoGasto = expense.is_business_expense ? 
+                    '<span class="bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs font-semibold">Empresa</span>' : 
+                    '<span class="bg-green-100 text-green-800 px-2 py-1 rounded text-xs font-semibold">Pessoal</span>';
+                
                 const row = document.createElement('tr');
                 row.className = 'border-b hover:bg-gray-50';
                 row.innerHTML = `
                     <td class="p-3">${new Date(expense.transaction_date).toLocaleDateString('pt-BR', {timeZone: 'UTC'})}</td>
-                    <td class="p-3">${expense.description}</td>
-                    <td class="p-3 text-red-600">R$ ${parseFloat(expense.amount).toFixed(2)}</td>
+                    <td class="p-3">
+                        <div>${expense.description}</div>
+                        ${planStatus ? `<div class="mt-1">${planStatus}</div>` : ''}
+                    </td>
+                    <td class="p-3 text-red-600 font-semibold">R$ ${parseFloat(expense.amount).toFixed(2)}</td>
                     <td class="p-3">${expense.account}</td>
-                    <td class="p-3">${expense.is_business_expense ? 'Empresa' : 'Pessoal'}</td>
+                    <td class="p-3">${tipoGasto}</td>
                     <td class="p-3">${planCode}</td>
                     <td class="p-3 text-center">${invoiceLink}</td>
                     <td class="p-3">
-                        <button class="text-blue-600 mr-2 edit-btn" data-id="${expense.id}"><i class="fas fa-edit"></i></button>
-                        <button class="text-red-600 delete-btn" data-id="${expense.id}"><i class="fas fa-trash"></i></button>
+                        <button class="text-blue-600 mr-2 edit-btn" data-id="${expense.id}" title="Editar"><i class="fas fa-edit"></i></button>
+                        <button class="text-red-600 delete-btn" data-id="${expense.id}" title="Excluir"><i class="fas fa-trash"></i></button>
                     </td>
                 `;
                 expensesTableBody.appendChild(row);
@@ -7214,27 +7268,174 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     function updateBudgetSummary(budgetData) {
-        const totalCategories = budgetData.length;
-        const withinBudget = budgetData.filter(item => item.Status === 'Dentro do Limite').length;
-        const nearLimit = budgetData.filter(item => item.Status === 'Próximo do Limite').length;
-        const overBudget = budgetData.filter(item => item.Status === 'Acima do Limite').length;
+        if (!budgetSummary) return;
         
-        // Atualizar contadores
-        const totalCategoriesEl = document.getElementById('total-categories');
-        const withinBudgetEl = document.getElementById('within-budget');
-        const nearLimitEl = document.getElementById('near-limit');
-        const overBudgetEl = document.getElementById('over-budget');
+        // Definir tetos de cada plano (baseado no código anterior)
+        const tetos = {
+            1: 1000.00, 2: 2782.47, 3: 2431.67, 4: 350.00, 5: 2100.00,
+            6: 550.00, 7: 270.00, 8: 1200.00, 9: 1200.00, 10: 270.00,
+            11: 1895.40, 12: 2627.60, 13: 400.00, 14: 540.00, 15: 1080.00,
+            16: 1360.00, 17: 756.00, 18: 1512.00, 19: 1890.00, 20: 1620.00,
+            21: 1890.00, 22: 2430.00, 23: 2700.00, 24: 1080.00, 25: 2100.00,
+            26: 2460.00, 27: 2500.00, 28: 3060.00, 29: 3600.00, 30: 3060.00,
+            31: 3840.00, 32: 4320.00, 33: 4800.00, 34: 4800.00, 35: 5400.00,
+            36: 5760.00, 37: 6720.00, 38: 7200.00, 39: 8400.00, 40: 9600.00
+        };
         
-        if (totalCategoriesEl) totalCategoriesEl.textContent = totalCategories;
-        if (withinBudgetEl) withinBudgetEl.textContent = withinBudget;
-        if (nearLimitEl) nearLimitEl.textContent = nearLimit;
-        if (overBudgetEl) overBudgetEl.textContent = overBudget;
+        // Calcular estatísticas dos planos de contas
+        const totalPlanos = Object.keys(tetos).length;
+        const totalOrcamento = Object.values(tetos).reduce((sum, val) => sum + val, 0);
+        
+        // Processar dados de gastos por plano
+        const planTotals = {};
+        budgetData.forEach(expense => {
+            const planId = expense.account_plan_code || expense.plan_conta;
+            if (planId) {
+                planTotals[planId] = (planTotals[planId] || 0) + parseFloat(expense.amount || 0);
+            }
+        });
+        
+        // Calcular estatísticas
+        let planosComGastos = 0;
+        let totalGasto = 0;
+        let planosAcimaTeto = 0;
+        let planosProximoTeto = 0;
+        let planosDentroTeto = 0;
+        
+        Object.keys(tetos).forEach(planId => {
+            const teto = tetos[planId];
+            const gasto = planTotals[planId] || 0;
+            
+            if (gasto > 0) {
+                planosComGastos++;
+                totalGasto += gasto;
+                
+                const percentage = (gasto / teto) * 100;
+                if (percentage > 100) {
+                    planosAcimaTeto++;
+                } else if (percentage >= 80) {
+                    planosProximoTeto++;
+                } else {
+                    planosDentroTeto++;
+                }
+            }
+        });
+        
+        const utilizacaoOrcamento = totalOrcamento > 0 ? ((totalGasto / totalOrcamento) * 100).toFixed(1) : 0;
+        
+        budgetSummary.innerHTML = `
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-gradient-to-br from-blue-50 to-indigo-100 rounded-lg border border-blue-200">
+                <div class="text-center">
+                    <div class="text-2xl font-bold text-blue-600">${totalPlanos}</div>
+                    <div class="text-sm text-gray-600">Planos Cadastrados</div>
+                </div>
+                <div class="text-center">
+                    <div class="text-2xl font-bold text-green-600">${planosComGastos}</div>
+                    <div class="text-sm text-gray-600">Com Gastos</div>
+                </div>
+                <div class="text-center">
+                    <div class="text-2xl font-bold text-purple-600">${formatCurrency(totalOrcamento)}</div>
+                    <div class="text-sm text-gray-600">Orçamento Total</div>
+                </div>
+                <div class="text-center">
+                    <div class="text-2xl font-bold ${utilizacaoOrcamento > 100 ? 'text-red-600' : utilizacaoOrcamento > 80 ? 'text-yellow-600' : 'text-green-600'}">${utilizacaoOrcamento}%</div>
+                    <div class="text-sm text-gray-600">Utilização</div>
+                </div>
+            </div>
+            
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
+                <div class="bg-red-50 border border-red-200 rounded-lg p-4 text-center">
+                    <div class="text-3xl font-bold text-red-600">${planosAcimaTeto}</div>
+                    <div class="text-sm text-red-800">🚨 Acima do Teto</div>
+                </div>
+                <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4 text-center">
+                    <div class="text-3xl font-bold text-yellow-600">${planosProximoTeto}</div>
+                    <div class="text-sm text-yellow-800">⚠️ Próximo do Limite</div>
+                </div>
+                <div class="bg-green-50 border border-green-200 rounded-lg p-4 text-center">
+                    <div class="text-3xl font-bold text-green-600">${planosDentroTeto}</div>
+                    <div class="text-sm text-green-800">✅ Dentro do Limite</div>
+                </div>
+            </div>
+        `;
     }
     
     function updateChartBudgetAlerts(budgetData) {
         if (!chartBudgetAlertsContainer) return;
         
-        if (budgetData.length === 0) {
+        // Definir tetos de cada plano
+        const tetos = {
+            1: 1000.00, 2: 2782.47, 3: 2431.67, 4: 350.00, 5: 2100.00,
+            6: 550.00, 7: 270.00, 8: 1200.00, 9: 1200.00, 10: 270.00,
+            11: 1895.40, 12: 2627.60, 13: 400.00, 14: 540.00, 15: 1080.00,
+            16: 1360.00, 17: 756.00, 18: 1512.00, 19: 1890.00, 20: 1620.00,
+            21: 1890.00, 22: 2430.00, 23: 2700.00, 24: 1080.00, 25: 2100.00,
+            26: 2460.00, 27: 2500.00, 28: 3060.00, 29: 3600.00, 30: 3060.00,
+            31: 3840.00, 32: 4320.00, 33: 4800.00, 34: 4800.00, 35: 5400.00,
+            36: 5760.00, 37: 6720.00, 38: 7200.00, 39: 8400.00, 40: 9600.00
+        };
+        
+        // Nomes descritivos dos planos de contas
+        const planosNomes = {
+            1: 'Alimentação Geral', 2: 'Veículos e Transporte', 3: 'Moradia e Habitação',
+            4: 'Comunicações', 5: 'Saúde e Bem-estar', 6: 'Educação e Cultura',
+            7: 'Vestuário', 8: 'Lazer e Entretenimento', 9: 'Serviços Diversos',
+            10: 'Impostos e Taxas', 11: 'Seguros', 12: 'Investimentos',
+            13: 'Empréstimos', 14: 'Cartão de Crédito', 15: 'Conta Corrente',
+            16: 'Poupança', 17: 'Combustível', 18: 'Manutenção Veicular',
+            19: 'Energia Elétrica', 20: 'Água e Saneamento', 21: 'Gás',
+            22: 'Internet e TV', 23: 'Telefone Móvel', 24: 'Consultórios Médicos',
+            25: 'Farmácia', 26: 'Academia e Esportes', 27: 'Cursos e Capacitação',
+            28: 'Livros e Material', 29: 'Roupas e Calçados', 30: 'Acessórios',
+            31: 'Cinema e Teatro', 32: 'Restaurantes', 33: 'Viagens',
+            34: 'Limpeza Doméstica', 35: 'Jardinagem', 36: 'Reforma e Manutenção',
+            37: 'IPTU', 38: 'IPVA', 39: 'Seguro Auto', 40: 'Seguro Residencial'
+        };
+        
+        // Processar dados de gastos por plano
+        const planTotals = {};
+        budgetData.forEach(expense => {
+            const planId = expense.account_plan_code || expense.plan_conta;
+            if (planId) {
+                planTotals[planId] = (planTotals[planId] || 0) + parseFloat(expense.amount || 0);
+            }
+        });
+        
+        // Categorizar planos por status
+        const categorizedPlans = {
+            'Acima do Limite': [],
+            'Próximo do Limite': [],
+            'Dentro do Limite': [],
+            'Sem Gastos': []
+        };
+        
+        Object.keys(tetos).forEach(planId => {
+            const teto = tetos[planId];
+            const gasto = planTotals[planId] || 0;
+            const nome = planosNomes[planId] || `Plano ${planId}`;
+            const percentage = gasto > 0 ? (gasto / teto) * 100 : 0;
+            
+            const planData = {
+                id: planId,
+                nome: nome,
+                teto: teto,
+                gasto: gasto,
+                percentage: percentage,
+                remaining: Math.max(0, teto - gasto)
+            };
+            
+            if (gasto === 0) {
+                categorizedPlans['Sem Gastos'].push(planData);
+            } else if (percentage > 100) {
+                categorizedPlans['Acima do Limite'].push(planData);
+            } else if (percentage >= 80) {
+                categorizedPlans['Próximo do Limite'].push(planData);
+            } else {
+                categorizedPlans['Dentro do Limite'].push(planData);
+            }
+        });
+        
+        if (Object.values(categorizedPlans).every(arr => arr.length === 0)) {
             chartBudgetAlertsContainer.innerHTML = `
                 <div class="text-center text-gray-500 py-8">
                     <i class="fas fa-info-circle text-4xl mb-2"></i>
@@ -7244,55 +7445,68 @@ document.addEventListener('DOMContentLoaded', function() {
             return;
         }
         
-        // Agrupar por status
-        const categorizedData = {
-            'Acima do Limite': budgetData.filter(item => item.Status === 'Acima do Limite'),
-            'Próximo do Limite': budgetData.filter(item => item.Status === 'Próximo do Limite'),
-            'Dentro do Limite': budgetData.filter(item => item.Status === 'Dentro do Limite')
-        };
-        
         let html = '';
         
         // Alertas críticos primeiro
-        if (categorizedData['Acima do Limite'].length > 0) {
+        if (categorizedPlans['Acima do Limite'].length > 0) {
             html += `
                 <div class="border-l-4 border-red-500 bg-red-50 p-4 rounded-lg mb-4">
                     <h4 class="font-bold text-red-800 mb-3 flex items-center gap-2">
                         <i class="fas fa-exclamation-triangle"></i>
-                        🚨 CATEGORIAS ACIMA DO ORÇAMENTO
+                        🚨 PLANOS ACIMA DO ORÇAMENTO (${categorizedPlans['Acima do Limite'].length})
                     </h4>
                     <div class="space-y-3">
-                        ${categorizedData['Acima do Limite'].map(item => createBudgetAlertCard(item, 'danger')).join('')}
+                        ${categorizedPlans['Acima do Limite'].map(plan => createDetailedBudgetCard(plan, 'danger')).join('')}
                     </div>
                 </div>
             `;
         }
         
         // Alertas de atenção
-        if (categorizedData['Próximo do Limite'].length > 0) {
+        if (categorizedPlans['Próximo do Limite'].length > 0) {
             html += `
                 <div class="border-l-4 border-yellow-500 bg-yellow-50 p-4 rounded-lg mb-4">
                     <h4 class="font-bold text-yellow-800 mb-3 flex items-center gap-2">
                         <i class="fas fa-exclamation-circle"></i>
-                        ⚠️ CATEGORIAS PRÓXIMAS DO LIMITE
+                        ⚠️ PLANOS PRÓXIMOS DO LIMITE (${categorizedPlans['Próximo do Limite'].length})
                     </h4>
                     <div class="space-y-3">
-                        ${categorizedData['Próximo do Limite'].map(item => createBudgetAlertCard(item, 'warning')).join('')}
+                        ${categorizedPlans['Próximo do Limite'].map(plan => createDetailedBudgetCard(plan, 'warning')).join('')}
                     </div>
                 </div>
             `;
         }
         
-        // Categorias dentro do orçamento
-        if (categorizedData['Dentro do Limite'].length > 0) {
+        // Planos dentro do orçamento
+        if (categorizedPlans['Dentro do Limite'].length > 0) {
             html += `
-                <div class="border-l-4 border-green-500 bg-green-50 p-4 rounded-lg">
+                <div class="border-l-4 border-green-500 bg-green-50 p-4 rounded-lg mb-4">
                     <h4 class="font-bold text-green-800 mb-3 flex items-center gap-2">
                         <i class="fas fa-check-circle"></i>
-                        ✅ CATEGORIAS DENTRO DO ORÇAMENTO
+                        ✅ PLANOS DENTRO DO ORÇAMENTO (${categorizedPlans['Dentro do Limite'].length})
                     </h4>
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        ${categorizedData['Dentro do Limite'].map(item => createBudgetAlertCard(item, 'success')).join('')}
+                        ${categorizedPlans['Dentro do Limite'].map(plan => createDetailedBudgetCard(plan, 'success')).join('')}
+                    </div>
+                </div>
+            `;
+        }
+        
+        // Planos sem gastos (opcional, apenas se relevante)
+        if (categorizedPlans['Sem Gastos'].length > 0 && categorizedPlans['Sem Gastos'].length <= 10) {
+            html += `
+                <div class="border-l-4 border-gray-400 bg-gray-50 p-4 rounded-lg">
+                    <h4 class="font-bold text-gray-700 mb-3 flex items-center gap-2">
+                        <i class="fas fa-circle"></i>
+                        💰 PLANOS SEM GASTOS (${categorizedPlans['Sem Gastos'].length})
+                    </h4>
+                    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
+                        ${categorizedPlans['Sem Gastos'].map(plan => `
+                            <div class="bg-white p-2 rounded text-sm">
+                                <div class="font-medium text-gray-700">${plan.nome}</div>
+                                <div class="text-gray-500">Orçamento: ${formatCurrency(plan.teto)}</div>
+                            </div>
+                        `).join('')}
                     </div>
                 </div>
             `;
@@ -7301,59 +7515,95 @@ document.addEventListener('DOMContentLoaded', function() {
         chartBudgetAlertsContainer.innerHTML = html;
     }
     
-    function createBudgetAlertCard(item, type) {
-        const percentage = item.Limite > 0 ? (item.Total / item.Limite) * 100 : 0;
-        const remaining = Math.max(0, item.Limite - item.Total);
-        
+    function createDetailedBudgetCard(plan, type) {
         const typeConfig = {
             'danger': {
                 bgColor: 'bg-red-100',
                 textColor: 'text-red-800',
                 progressColor: 'bg-red-500',
-                icon: '🚨'
+                icon: '🚨',
+                borderColor: 'border-red-300'
             },
             'warning': {
                 bgColor: 'bg-yellow-100',
                 textColor: 'text-yellow-800',
                 progressColor: 'bg-yellow-500',
-                icon: '⚠️'
+                icon: '⚠️',
+                borderColor: 'border-yellow-300'
             },
             'success': {
                 bgColor: 'bg-green-100',
                 textColor: 'text-green-800',
                 progressColor: 'bg-green-500',
-                icon: '✅'
+                icon: '✅',
+                borderColor: 'border-green-300'
             }
-        }[type];
+        };
+        
+        const config = typeConfig[type];
+        const progressWidth = Math.min(100, plan.percentage);
+        const excesso = plan.gasto > plan.teto ? plan.gasto - plan.teto : 0;
         
         return `
-            <div class="${typeConfig.bgColor} p-3 rounded-lg border">
-                <div class="flex items-start gap-3">
-                    <div class="text-xl">${typeConfig.icon}</div>
+            <div class="${config.bgColor} ${config.borderColor} border rounded-lg p-4">
+                <div class="flex justify-between items-start mb-3">
                     <div class="flex-1">
-                        <h5 class="font-semibold ${typeConfig.textColor} mb-1">
-                            Plano de Conta ${item.PlanoContasID}
+                        <h5 class="font-bold ${config.textColor} text-lg">
+                            ${config.icon} Plano ${plan.id} - ${plan.nome}
                         </h5>
-                        <div class="text-sm ${typeConfig.textColor} mb-2">
-                            <div class="flex justify-between">
-                                <span><strong>Gasto:</strong> ${formatCurrency(item.Total)}</span>
-                                <span><strong>Limite:</strong> ${formatCurrency(item.Limite)}</span>
+                        <div class="grid grid-cols-2 gap-4 mt-2 text-sm">
+                            <div>
+                                <span class="text-gray-600">Orçamento:</span>
+                                <span class="font-semibold ml-1">${formatCurrency(plan.teto)}</span>
                             </div>
-                            <div class="mt-1">
-                                <strong>Restante:</strong> ${formatCurrency(remaining)}
-                                <span class="ml-2">(${percentage.toFixed(1)}%)</span>
+                            <div>
+                                <span class="text-gray-600">Gasto:</span>
+                                <span class="font-semibold ml-1 ${plan.gasto > plan.teto ? 'text-red-600' : 'text-gray-800'}">${formatCurrency(plan.gasto)}</span>
                             </div>
                         </div>
-                        <div class="w-full bg-white rounded-full h-2 border">
-                            <div class="${typeConfig.progressColor} h-2 rounded-full transition-all duration-500" 
-                                 style="width: ${Math.min(percentage, 100)}%"></div>
-                        </div>
-                        ${type === 'danger' && percentage > 100 ? 
-                            `<div class="mt-2 text-xs ${typeConfig.textColor}">
-                                <strong>⚠️ Excedeu em:</strong> ${formatCurrency(item.Total - item.Limite)}
-                            </div>` : ''
-                        }
                     </div>
+                    <div class="text-right">
+                        <div class="text-2xl font-bold ${config.textColor}">
+                            ${plan.percentage.toFixed(1)}%
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Barra de progresso -->
+                <div class="mb-3">
+                    <div class="flex justify-between text-xs mb-1">
+                        <span class="text-gray-600">Utilização do Orçamento</span>
+                        <span class="${config.textColor} font-semibold">${progressWidth.toFixed(1)}%</span>
+                    </div>
+                    <div class="w-full bg-gray-200 rounded-full h-3">
+                        <div class="${config.progressColor} h-3 rounded-full transition-all duration-300" 
+                             style="width: ${Math.min(100, progressWidth)}%"></div>
+                    </div>
+                </div>
+                
+                <!-- Informações adicionais -->
+                <div class="text-sm space-y-1">
+                    ${plan.gasto > plan.teto ? 
+                        `<div class="text-red-600 font-semibold">
+                            💸 Excesso: ${formatCurrency(excesso)}
+                        </div>` : 
+                        `<div class="text-green-600">
+                            💰 Disponível: ${formatCurrency(plan.remaining)}
+                        </div>`
+                    }
+                    
+                    ${plan.percentage > 100 ? 
+                        `<div class="text-red-600 text-xs">
+                            ⚠️ Este plano ultrapassou o orçamento em ${(plan.percentage - 100).toFixed(1)}%
+                        </div>` : 
+                        plan.percentage >= 80 ?
+                        `<div class="text-yellow-600 text-xs">
+                            ⚠️ Atenção: próximo do limite orçamentário
+                        </div>` :
+                        `<div class="text-green-600 text-xs">
+                            ✅ Gastos controlados dentro do orçamento
+                        </div>`
+                    }
                 </div>
             </div>
         `;
