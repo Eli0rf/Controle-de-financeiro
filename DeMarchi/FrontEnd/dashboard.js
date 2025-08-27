@@ -3,6 +3,8 @@
  * Central de Gestão Inteligente - Abas habilitadas para Railway
  * Data: 27/08/2025
  * Status: Abas de insights funcionais ✅
+ * CORREÇÃO: Sistema de análise por categoria corrigido para regra de negócio
+ * REGRA: Gastos COM plano de conta = PESSOAIS | Gastos SEM plano de conta = EMPRESARIAIS
  */
 document.addEventListener('DOMContentLoaded', function() {
 
@@ -2932,16 +2934,32 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (data[0] && typeof data[0] === 'object' && 'account_plan_code' in data[0]) {
                     processedData = data;
                 } else {
-                    // Processar gastos brutos agrupando por plano de conta
+                    // Processar gastos brutos agrupando por categoria aplicando regra de negócio:
+                    // - Gastos COM plano de conta = PESSOAIS
+                    // - Gastos SEM plano de conta = EMPRESARIAIS
                     const planTotals = {};
                     
                     data.forEach(expense => {
-                        const planCode = expense.account_plan_code || 'Sem Categoria';
+                        let planCode;
+                        let planType;
+                        
+                        // Aplicar regra de negócio para categorização
+                        if (expense.account_plan_code && expense.account_plan_code !== '' && expense.account_plan_code !== null) {
+                            // Tem plano de conta = PESSOAL
+                            planCode = expense.account_plan_code;
+                            planType = 'PESSOAL';
+                        } else {
+                            // Não tem plano de conta = EMPRESARIAL
+                            planCode = 'EMPRESARIAL';
+                            planType = 'EMPRESARIAL';
+                        }
+                        
                         const amount = parseFloat(expense.amount) || 0;
                         
                         if (!planTotals[planCode]) {
                             planTotals[planCode] = {
                                 account_plan_code: planCode,
+                                type: planType,
                                 total: 0,
                                 count: 0
                             };
@@ -5549,16 +5567,26 @@ document.addEventListener('DOMContentLoaded', function() {
 
         console.log('🔍 Processando dados de categoria...');
 
-        // Agrupar por plano de conta
+        // Agrupar aplicando a regra de negócio:
+        // - Gastos COM plano de conta = PESSOAIS
+        // - Gastos SEM plano de conta = EMPRESARIAIS
         const planTotals = {};
         const planCounts = {};
+        const planTypes = {};
 
         expenses.forEach(expense => {
-            let planCode = expense.account_plan_code;
+            let planCode;
+            let planType;
             
-            // Tratar gastos sem categoria
-            if (!planCode || planCode === '' || planCode === null) {
-                planCode = 'Sem Categoria';
+            // Aplicar regra de negócio para categorização
+            if (expense.account_plan_code && expense.account_plan_code !== '' && expense.account_plan_code !== null) {
+                // Tem plano de conta = PESSOAL
+                planCode = expense.account_plan_code;
+                planType = 'PESSOAL';
+            } else {
+                // Não tem plano de conta = EMPRESARIAL
+                planCode = 'EMPRESARIAL';
+                planType = 'EMPRESARIAL';
             }
 
             const amount = parseFloat(expense.amount) || 0;
@@ -5566,6 +5594,7 @@ document.addEventListener('DOMContentLoaded', function() {
             if (!planTotals[planCode]) {
                 planTotals[planCode] = 0;
                 planCounts[planCode] = 0;
+                planTypes[planCode] = planType;
             }
 
             planTotals[planCode] += amount;
@@ -5575,6 +5604,7 @@ document.addEventListener('DOMContentLoaded', function() {
         // Converter para array de objetos
         const categoryData = Object.keys(planTotals).map(planCode => ({
             account_plan_code: planCode,
+            type: planTypes[planCode],
             total: planTotals[planCode],
             count: planCounts[planCode],
             average: planTotals[planCode] / planCounts[planCode]
@@ -5583,7 +5613,7 @@ document.addEventListener('DOMContentLoaded', function() {
         // Ordenar por total decrescente
         categoryData.sort((a, b) => b.total - a.total);
 
-        console.log('📊 Dados de categoria processados:', categoryData);
+        console.log('📊 Dados de categoria processados com regra de negócio:', categoryData);
         return categoryData;
     }
 
@@ -8507,13 +8537,28 @@ document.addEventListener('DOMContentLoaded', function() {
         // Normalizar dados
         const normalizedExpenses = expenses.map(normalizeExpenseData);
         
-        // Agrupar por categoria (PlanoContasDescricao ou PlanoContasID)
+        // Agrupar por categoria aplicando a regra de negócio:
+        // - Gastos COM plano de conta = PESSOAIS
+        // - Gastos SEM plano de conta = EMPRESARIAIS
         normalizedExpenses.forEach(expense => {
-            const category = expense.accountPlanDescription || expense.accountPlanCode || 'Sem Categoria';
+            let category;
+            let categoryType;
+            
+            // Aplicar regra de negócio para categorização
+            if (expense.accountPlanDescription || expense.accountPlanCode) {
+                // Tem plano de conta = PESSOAL
+                category = expense.accountPlanDescription || `Plano ${expense.accountPlanCode}`;
+                categoryType = 'PESSOAL';
+            } else {
+                // Não tem plano de conta = EMPRESARIAL
+                category = 'Gastos Empresariais';
+                categoryType = 'EMPRESARIAL';
+            }
             
             if (!categoriesMap.has(category)) {
                 categoriesMap.set(category, {
                     name: category,
+                    type: categoryType,
                     frequency: 0,
                     totalAmount: 0,
                     expenses: []
