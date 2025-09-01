@@ -2216,18 +2216,6 @@ document.addEventListener('DOMContentLoaded', function() {
             </div>
         `;
     }
-            <div class="text-center">
-                <div class="text-sm text-gray-600">Sem Categoria</div>
-                <div class="text-lg font-bold text-orange-600">${semCategoria.length}</div>
-                <div class="text-xs text-gray-500">Auto-classificados</div>
-            </div>
-            <div class="text-center">
-                <div class="text-sm text-gray-600">Com Nota Fiscal</div>
-                <div class="text-lg font-bold text-purple-600">${comNota.length}</div>
-                <div class="text-xs text-gray-500">${((comNota.length / expenses.length) * 100).toFixed(1)}% do total</div>
-            </div>
-        `;
-    }
 
     // Função utilitária para obter cor do tema
     function getThemeColor(light, dark) {
@@ -5839,7 +5827,6 @@ document.addEventListener('DOMContentLoaded', function() {
                     showBudgetOptimizer();
                 });
             }
-        });
 
         function generateDetailedReport() {
             showModal('Relatório Detalhado', `
@@ -9422,5 +9409,4 @@ document.addEventListener('DOMContentLoaded', function() {
     // Chamar inicialização segura
     safeInit();
 
-    // ========== FIM FUNÇÕES GASTOS RECORRENTES ==========
-});
+}); // Fim do DOMContentLoaded
