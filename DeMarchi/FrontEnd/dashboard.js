@@ -1673,6 +1673,8 @@ document.addEventListener('DOMContentLoaded', function() {
             } else if (tabName === 'reports') {
                 loadReportsData();
             } else if (tabName === 'pix-boleto') {
+                console.log('🔄 Aba PIX-Boleto ativada, carregando dados...');
+                // Forçar recarregamento dos dados PIX/Boleto
                 loadPixBoletoData();
             }
         }
@@ -5903,6 +5905,23 @@ document.addEventListener('DOMContentLoaded', function() {
                 });
             }
 
+            // Botão de atualização PIX/Boleto
+            const refreshPixBoletoBtn = document.getElementById('refresh-pix-boleto');
+            if (refreshPixBoletoBtn) {
+                refreshPixBoletoBtn.addEventListener('click', () => {
+                    console.log('🔄 Atualização manual PIX/Boleto solicitada');
+                    refreshPixBoletoBtn.disabled = true;
+                    refreshPixBoletoBtn.innerHTML = '<svg class="w-4 h-4 mr-2 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>Atualizando...';
+                    
+                    loadPixBoletoData(true).finally(() => {
+                        setTimeout(() => {
+                            refreshPixBoletoBtn.disabled = false;
+                            refreshPixBoletoBtn.innerHTML = '<svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>Atualizar';
+                        }, 1000);
+                    });
+                });
+            }
+
             // Ações rápidas
             const exportReportBtn = document.getElementById('export-detailed-report');
             if (exportReportBtn) {
@@ -6284,20 +6303,22 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // ========== FUNCIONALIDADE PIX E BOLETO ==========
     
-    async function loadPixBoletoData() {
-        console.log('🔄 Carregando dados PIX e Boleto...');
+    async function loadPixBoletoData(forceRefresh = false) {
+        console.log('🔄 Carregando dados PIX e Boleto...', forceRefresh ? '(Forçado)' : '');
         
         try {
-            // Verificar se estamos na aba correta
-            const pixBoletoTab = document.getElementById('pix-boleto-tab');
-            if (!pixBoletoTab || pixBoletoTab.classList.contains('hidden')) {
-                console.log('⚠️ Aba PIX e Boleto não está visível, aguardando...');
-                // Tentar novamente após um delay
-                setTimeout(loadPixBoletoData, 500);
-                return;
+            // Verificar se estamos na aba correta (apenas se não for refresh forçado)
+            if (!forceRefresh) {
+                const pixBoletoTab = document.getElementById('pix-boleto-tab');
+                if (!pixBoletoTab || pixBoletoTab.classList.contains('hidden')) {
+                    console.log('⚠️ Aba PIX e Boleto não está visível, aguardando...');
+                    // Tentar novamente após um delay
+                    setTimeout(() => loadPixBoletoData(), 500);
+                    return;
+                }
             }
             
-            console.log('✅ Aba PIX e Boleto está visível, carregando dados...');
+            console.log('✅ Iniciando carregamento de dados PIX e Boleto...');
             
             // Buscar todos os gastos sem filtro de período para PIX/Boleto
             const expenses = await fetchPixBoletoExpenses();
@@ -6308,14 +6329,17 @@ document.addEventListener('DOMContentLoaded', function() {
             );
             
             console.log('💳 Gastos PIX e Boleto filtrados:', pixBoletoExpenses.length);
-            console.log('📋 Detalhes:', pixBoletoExpenses.map(e => ({ 
-                account: e.account, 
-                amount: e.amount, 
-                description: e.description,
-                date: e.transaction_date || e.date
-            })));
             
-            // Atualizar estatísticas
+            if (pixBoletoExpenses.length > 0) {
+                console.log('📋 Primeiros 3 gastos PIX/Boleto:', pixBoletoExpenses.slice(0, 3).map(e => ({ 
+                    account: e.account, 
+                    amount: e.amount, 
+                    description: e.description,
+                    date: e.transaction_date || e.date
+                })));
+            }
+            
+            // Atualizar estatísticas SEMPRE
             updatePixBoletoStats(pixBoletoExpenses);
             
             // Renderizar gráficos com delay para garantir que o DOM está pronto
@@ -6327,6 +6351,11 @@ document.addEventListener('DOMContentLoaded', function() {
             setupPixBoletoFilters();
             
             console.log('✅ Dados PIX e Boleto carregados com sucesso!');
+            
+            // Mostrar notificação de sucesso se for refresh manual
+            if (forceRefresh) {
+                showNotification('✅ Dados PIX e Boleto atualizados!', 'success', 2000);
+            }
             
         } catch (error) {
             console.error('❌ Erro ao carregar dados PIX e Boleto:', error);
@@ -6388,42 +6417,123 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     function updatePixBoletoStats(expenses) {
+        console.log('🔄 Atualizando estatísticas PIX e Boleto...');
+        console.log('📊 Total de gastos recebidos:', expenses.length);
+        
         const pixExpenses = expenses.filter(e => e.account === 'PIX');
         const boletoExpenses = expenses.filter(e => e.account === 'Boleto');
+        
+        console.log('💳 Gastos PIX encontrados:', pixExpenses.length);
+        console.log('📄 Gastos Boleto encontrados:', boletoExpenses.length);
+        
+        // Debug dos gastos PIX
+        if (pixExpenses.length > 0) {
+            console.log('💳 Detalhes gastos PIX:', pixExpenses.map(e => ({
+                amount: e.amount,
+                description: e.description,
+                date: e.transaction_date || e.date
+            })));
+        }
         
         const pixTotal = pixExpenses.reduce((sum, e) => sum + parseFloat(e.amount || 0), 0);
         const boletoTotal = boletoExpenses.reduce((sum, e) => sum + parseFloat(e.amount || 0), 0);
         const totalTransactions = expenses.length;
         const grandTotal = pixTotal + boletoTotal;
         
-        // Atualizar elementos específicos do PIX
-        const pixTotalEl = document.getElementById('pix-total');
-        if (pixTotalEl) {
-            pixTotalEl.textContent = formatCurrency(pixTotal);
+        console.log('💰 Valores calculados:', {
+            pixTotal,
+            boletoTotal,
+            grandTotal,
+            totalTransactions
+        });
+        
+        // Lista completa de possíveis IDs dos elementos
+        const pixElementIds = ['pix-total', 'total-pix'];
+        const boletoElementIds = ['boleto-total', 'total-boleto'];
+        const grandTotalElementIds = ['pix-boleto-grand-total', 'total-pix-boleto'];
+        const transactionElementIds = ['pix-boleto-transactions'];
+        
+        // Atualizar elementos PIX
+        let pixUpdated = false;
+        pixElementIds.forEach(id => {
+            const element = document.getElementById(id);
+            if (element) {
+                const formattedPixTotal = formatCurrency(pixTotal);
+                element.textContent = formattedPixTotal;
+                console.log(`✅ ${id} atualizado: ${formattedPixTotal}`);
+                pixUpdated = true;
+            } else {
+                console.log(`⚠️ Elemento ${id} não encontrado`);
+            }
+        });
+        if (!pixUpdated) {
+            console.error('❌ NENHUM elemento PIX foi encontrado!');
         }
         
-        // Atualizar elementos específicos do Boleto
-        const boletoTotalEl = document.getElementById('boleto-total');
-        if (boletoTotalEl) {
-            boletoTotalEl.textContent = formatCurrency(boletoTotal);
+        // Atualizar elementos Boleto
+        let boletoUpdated = false;
+        boletoElementIds.forEach(id => {
+            const element = document.getElementById(id);
+            if (element) {
+                const formattedBoletoTotal = formatCurrency(boletoTotal);
+                element.textContent = formattedBoletoTotal;
+                console.log(`✅ ${id} atualizado: ${formattedBoletoTotal}`);
+                boletoUpdated = true;
+            } else {
+                console.log(`⚠️ Elemento ${id} não encontrado`);
+            }
+        });
+        if (!boletoUpdated) {
+            console.error('❌ NENHUM elemento Boleto foi encontrado!');
         }
         
-        // Atualizar elementos totais
-        const transactionsEl = document.getElementById('pix-boleto-transactions');
-        const grandTotalEl = document.getElementById('pix-boleto-grand-total');
-        
-        if (transactionsEl) {
-            transactionsEl.textContent = totalTransactions;
+        // Atualizar elementos de total geral
+        let grandTotalUpdated = false;
+        grandTotalElementIds.forEach(id => {
+            const element = document.getElementById(id);
+            if (element) {
+                const formattedGrandTotal = formatCurrency(grandTotal);
+                element.textContent = formattedGrandTotal;
+                console.log(`✅ ${id} atualizado: ${formattedGrandTotal}`);
+                grandTotalUpdated = true;
+            } else {
+                console.log(`⚠️ Elemento ${id} não encontrado`);
+            }
+        });
+        if (!grandTotalUpdated) {
+            console.error('❌ NENHUM elemento de total geral foi encontrado!');
         }
         
-        if (grandTotalEl) {
-            grandTotalEl.textContent = formatCurrency(grandTotal);
+        // Atualizar elementos de transações
+        let transactionUpdated = false;
+        transactionElementIds.forEach(id => {
+            const element = document.getElementById(id);
+            if (element) {
+                element.textContent = totalTransactions;
+                console.log(`✅ ${id} atualizado: ${totalTransactions}`);
+                transactionUpdated = true;
+            } else {
+                console.log(`⚠️ Elemento ${id} não encontrado`);
+            }
+        });
+        if (!transactionUpdated) {
+            console.error('❌ NENHUM elemento de transações foi encontrado!');
         }
+        
+        // Log final de verificação
+        console.log('🔍 Verificação final dos elementos no DOM:');
+        [...pixElementIds, ...boletoElementIds, ...grandTotalElementIds, ...transactionElementIds].forEach(id => {
+            const element = document.getElementById(id);
+            if (element) {
+                console.log(`✅ ${id}: ${element.textContent}`);
+            } else {
+                console.log(`❌ ${id}: ELEMENTO NÃO ENCONTRADO`);
+            }
+        });
         
         // Se não há dados, mostrar notificação informativa
         if (totalTransactions === 0) {
             console.log('ℹ️ Nenhum gasto PIX/Boleto encontrado para o período');
-            // Usar setTimeout para não interferir com outras operações
             setTimeout(() => {
                 showNotification('ℹ️ Nenhum gasto PIX ou Boleto encontrado para o período selecionado', 'info', 3000);
             }, 500);
@@ -6431,7 +6541,7 @@ document.addEventListener('DOMContentLoaded', function() {
             console.log('✅ Estatísticas PIX e Boleto atualizadas com sucesso!');
         }
         
-        console.log('📊 Estatísticas PIX e Boleto atualizadas:', {
+        console.log('📊 Resumo das estatísticas:', {
             pix: { count: pixExpenses.length, total: pixTotal },
             boleto: { count: boletoExpenses.length, total: boletoTotal },
             total: { count: totalTransactions, amount: grandTotal }
