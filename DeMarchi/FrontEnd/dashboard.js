@@ -6288,21 +6288,43 @@ document.addEventListener('DOMContentLoaded', function() {
         console.log('🔄 Carregando dados PIX e Boleto...');
         
         try {
+            // Verificar se estamos na aba correta
+            const pixBoletoTab = document.getElementById('pix-boleto-tab');
+            if (!pixBoletoTab || pixBoletoTab.classList.contains('hidden')) {
+                console.log('⚠️ Aba PIX e Boleto não está visível, aguardando...');
+                // Tentar novamente após um delay
+                setTimeout(loadPixBoletoData, 500);
+                return;
+            }
+            
+            console.log('✅ Aba PIX e Boleto está visível, carregando dados...');
+            
             const expenses = await fetchExpenses();
+            console.log('📊 Total de gastos carregados:', expenses.length);
+            
             const pixBoletoExpenses = expenses.filter(expense => 
                 expense.account === 'PIX' || expense.account === 'Boleto'
             );
             
+            console.log('💳 Gastos PIX e Boleto filtrados:', pixBoletoExpenses.length);
+            console.log('📋 Detalhes:', pixBoletoExpenses.map(e => ({ 
+                account: e.account, 
+                amount: e.amount, 
+                description: e.description 
+            })));
+            
             // Atualizar estatísticas
             updatePixBoletoStats(pixBoletoExpenses);
             
-            // Renderizar gráficos
-            renderPixBoletoCharts(pixBoletoExpenses);
+            // Renderizar gráficos com delay para garantir que o DOM está pronto
+            setTimeout(() => {
+                renderPixBoletoCharts(pixBoletoExpenses);
+            }, 200);
             
             // Configurar filtros
             setupPixBoletoFilters();
             
-            console.log('✅ Dados PIX e Boleto carregados:', pixBoletoExpenses.length, 'transações');
+            console.log('✅ Dados PIX e Boleto carregados com sucesso!');
             
         } catch (error) {
             console.error('❌ Erro ao carregar dados PIX e Boleto:', error);
@@ -6319,7 +6341,19 @@ document.addEventListener('DOMContentLoaded', function() {
         const totalTransactions = expenses.length;
         const grandTotal = pixTotal + boletoTotal;
         
-        // Atualizar elementos no HTML
+        // Atualizar elementos específicos do PIX
+        const pixTotalEl = document.getElementById('pix-total');
+        if (pixTotalEl) {
+            pixTotalEl.textContent = formatCurrency(pixTotal);
+        }
+        
+        // Atualizar elementos específicos do Boleto
+        const boletoTotalEl = document.getElementById('boleto-total');
+        if (boletoTotalEl) {
+            boletoTotalEl.textContent = formatCurrency(boletoTotal);
+        }
+        
+        // Atualizar elementos totais
         const transactionsEl = document.getElementById('pix-boleto-transactions');
         const grandTotalEl = document.getElementById('pix-boleto-grand-total');
         
@@ -6331,7 +6365,7 @@ document.addEventListener('DOMContentLoaded', function() {
             grandTotalEl.textContent = formatCurrency(grandTotal);
         }
         
-        console.log('📊 Estatísticas PIX e Boleto:', {
+        console.log('📊 Estatísticas PIX e Boleto atualizadas:', {
             pix: { count: pixExpenses.length, total: pixTotal },
             boleto: { count: boletoExpenses.length, total: boletoTotal },
             total: { count: totalTransactions, amount: grandTotal }
@@ -6339,17 +6373,29 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     function renderPixBoletoCharts(expenses) {
-        renderPixBoletoComparisonChart(expenses);
-        renderPixBoletoEvolutionChart(expenses);
+        // Usar setTimeout para garantir que os elementos DOM estejam prontos
+        setTimeout(() => {
+            renderPixBoletoComparisonChart(expenses);
+            renderPixBoletoEvolutionChart(expenses);
+        }, 100);
     }
     
-    function renderPixBoletoComparisonChart(expenses) {
+    async function renderPixBoletoComparisonChart(expenses) {
         const chartKey = 'pixBoletoComparisonChart';
         const canvasId = 'pix-boleto-comparison-chart';
+        
+        console.log('🔄 Renderizando gráfico de comparação PIX/Boleto...');
         
         if (!isChartJsLoaded()) {
             console.error('❌ Chart.js não disponível para PIX/Boleto comparison');
             displayChartFallback(canvasId, 'Chart.js não carregado');
+            return;
+        }
+        
+        // Verificar se o canvas existe
+        const canvas = document.getElementById(canvasId);
+        if (!canvas) {
+            console.error('❌ Canvas não encontrado:', canvasId);
             return;
         }
         
@@ -6365,6 +6411,9 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         
         try {
+            // Destruir gráfico existente
+            destroyChart(chartKey);
+            
             const config = {
                 type: 'doughnut',
                 data: {
@@ -6387,6 +6436,8 @@ document.addEventListener('DOMContentLoaded', function() {
                     }]
                 },
                 options: mergeChartOptions({
+                    responsive: true,
+                    maintainAspectRatio: true,
                     plugins: {
                         title: {
                             display: true,
@@ -6424,7 +6475,12 @@ document.addEventListener('DOMContentLoaded', function() {
                 })
             };
             
-            createChart(chartKey, canvasId, config);
+            // Usar método mais simples para criar gráfico
+            const ctx = canvas.getContext('2d');
+            const chart = new Chart(ctx, config);
+            chartRegistry[chartKey] = chart;
+            
+            console.log('✅ Gráfico de comparação PIX/Boleto criado com sucesso');
             
         } catch (error) {
             console.error('❌ Erro ao renderizar gráfico PIX/Boleto comparison:', error);
@@ -6432,13 +6488,22 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
     
-    function renderPixBoletoEvolutionChart(expenses) {
+    async function renderPixBoletoEvolutionChart(expenses) {
         const chartKey = 'pixBoletoEvolutionChart';
         const canvasId = 'pix-boleto-evolution-chart';
+        
+        console.log('🔄 Renderizando gráfico de evolução PIX/Boleto...');
         
         if (!isChartJsLoaded()) {
             console.error('❌ Chart.js não disponível para PIX/Boleto evolution');
             displayChartFallback(canvasId, 'Chart.js não carregado');
+            return;
+        }
+        
+        // Verificar se o canvas existe
+        const canvas = document.getElementById(canvasId);
+        if (!canvas) {
+            console.error('❌ Canvas não encontrado:', canvasId);
             return;
         }
         
@@ -6448,6 +6513,9 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         
         try {
+            // Destruir gráfico existente
+            destroyChart(chartKey);
+            
             // Agrupar dados por mês
             const monthlyData = {};
             
@@ -6516,6 +6584,8 @@ document.addEventListener('DOMContentLoaded', function() {
                     ]
                 },
                 options: mergeChartOptions({
+                    responsive: true,
+                    maintainAspectRatio: true,
                     plugins: {
                         title: {
                             display: true,
@@ -6560,7 +6630,12 @@ document.addEventListener('DOMContentLoaded', function() {
                 })
             };
             
-            createChart(chartKey, canvasId, config);
+            // Usar método mais simples para criar gráfico
+            const ctx = canvas.getContext('2d');
+            const chart = new Chart(ctx, config);
+            chartRegistry[chartKey] = chart;
+            
+            console.log('✅ Gráfico de evolução PIX/Boleto criado com sucesso');
             
         } catch (error) {
             console.error('❌ Erro ao renderizar gráfico de evolução PIX/Boleto:', error);
@@ -6574,15 +6649,20 @@ document.addEventListener('DOMContentLoaded', function() {
         const monthFilter = document.getElementById('pix-boleto-month');
         const searchInput = document.getElementById('pix-boleto-search');
         
+        console.log('🔧 Configurando filtros PIX e Boleto...');
+        
         // Configurar filtros se existirem
         if (typeFilter) {
+            // Remover event listeners anteriores
+            typeFilter.removeEventListener('change', refreshPixBoletoData);
             typeFilter.addEventListener('change', refreshPixBoletoData);
+            console.log('✅ Filtro de tipo configurado');
         }
         
         if (yearFilter) {
             // Preencher anos (últimos 3 anos + próximo ano)
             const currentYear = new Date().getFullYear();
-            yearFilter.innerHTML = '';
+            yearFilter.innerHTML = '<option value="">Todos os anos</option>';
             for (let year = currentYear - 2; year <= currentYear + 1; year++) {
                 const option = document.createElement('option');
                 option.value = year;
@@ -6590,28 +6670,26 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (year === currentYear) option.selected = true;
                 yearFilter.appendChild(option);
             }
+            // Remover event listeners anteriores
+            yearFilter.removeEventListener('change', refreshPixBoletoData);
             yearFilter.addEventListener('change', refreshPixBoletoData);
+            console.log('✅ Filtro de ano configurado');
         }
         
         if (monthFilter) {
-            // Preencher meses
-            const months = [
-                'Todos', 'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
-                'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
-            ];
-            monthFilter.innerHTML = '';
-            months.forEach((month, index) => {
-                const option = document.createElement('option');
-                option.value = index;
-                option.textContent = month;
-                monthFilter.appendChild(option);
-            });
+            // O HTML já tem os meses, só adicionar o event listener
+            monthFilter.removeEventListener('change', refreshPixBoletoData);
             monthFilter.addEventListener('change', refreshPixBoletoData);
+            console.log('✅ Filtro de mês configurado');
         }
         
         if (searchInput) {
+            searchInput.removeEventListener('input', refreshPixBoletoData);
             searchInput.addEventListener('input', refreshPixBoletoData);
+            console.log('✅ Campo de busca configurado');
         }
+        
+        console.log('🎯 Todos os filtros PIX e Boleto foram configurados');
     }
     
     async function refreshPixBoletoData() {
