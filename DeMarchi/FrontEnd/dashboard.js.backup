@@ -6167,8 +6167,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 </div>
             `);
         }
-    });  // Fim do DOMContentLoaded para event listeners dos botões de refresh
-
     async function fetchAndRenderPlanChart() {
         try {
             const params = new URLSearchParams({
@@ -7994,10 +7992,11 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     };
 
-    // Inicializar sistema de insights (será chamado no DOMContentLoaded principal)
-    function initInsightSystemDelayed() {
+    // Inicializar sistema de insights quando carregar a página
+    document.addEventListener('DOMContentLoaded', function() {
+        // Aguardar um pouco para garantir que outros sistemas foram inicializados
         setTimeout(initInsightSystem, 1000);
-    }
+    });
 
     // ========== SISTEMA DE ALERTAS DE ORÇAMENTO POR PLANO DE CONTAS ==========
     
@@ -9409,8 +9408,5 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Chamar inicialização segura
     safeInit();
-    
-    // Inicializar sistema de insights (com delay)
-    initInsightSystemDelayed();
 
 }); // Fim do DOMContentLoaded
