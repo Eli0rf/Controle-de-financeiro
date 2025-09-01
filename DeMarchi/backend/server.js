@@ -306,6 +306,104 @@ app.get('/api/expenses', authenticateToken, async (req, res) => {
     }
 });
 
+// Rota para buscar uma despesa específica
+app.get('/api/expenses/:id', authenticateToken, async (req, res) => {
+    const { id } = req.params;
+    const userId = req.user.id;
+    
+    try {
+        const [rows] = await pool.query('SELECT * FROM expenses WHERE id = ? AND user_id = ?', [id, userId]);
+        
+        if (rows.length === 0) {
+            return res.status(404).json({ message: 'Despesa não encontrada.' });
+        }
+        
+        res.json(rows[0]);
+    } catch (error) {
+        console.error('Erro ao buscar despesa:', error);
+        res.status(500).json({ message: 'Erro ao buscar despesa.' });
+    }
+});
+
+// Rota para editar gasto
+app.put('/api/expenses/:id', authenticateToken, upload.single('invoice'), async (req, res) => {
+    const { id } = req.params;
+    const userId = req.user.id;
+    
+    try {
+        const {
+            transaction_date,
+            amount,
+            description,
+            account,
+            account_plan_code
+        } = req.body;
+
+        const is_business_expense = req.body.is_business_expense === 'true';
+        const has_invoice = req.body.has_invoice === 'true';
+        const invoicePath = req.file ? req.file.path : null;
+
+        // Validação dos campos obrigatórios
+        if (!transaction_date || !amount || !description || !account) {
+            return res.status(400).json({ message: 'Campos obrigatórios em falta.' });
+        }
+
+        // Verificar se a despesa existe e pertence ao usuário
+        const [existingRows] = await pool.query('SELECT * FROM expenses WHERE id = ? AND user_id = ?', [id, userId]);
+        if (existingRows.length === 0) {
+            return res.status(404).json({ message: 'Despesa não encontrada.' });
+        }
+
+        const existingExpense = existingRows[0];
+
+        // Se uma nova fatura foi enviada, remover a antiga
+        if (invoicePath && existingExpense.invoice_path) {
+            fs.unlink(existingExpense.invoice_path, (err) => {
+                if (err) console.error("Erro ao apagar ficheiro antigo:", err);
+            });
+        }
+
+        // Preparar dados para atualização
+        const updateData = [
+            transaction_date,
+            parseFloat(amount),
+            description,
+            account,
+            account_plan_code || null,
+            is_business_expense,
+            has_invoice,
+            invoicePath || existingExpense.invoice_path, // Manter fatura existente se não houver nova
+            id,
+            userId
+        ];
+
+        // Atualizar no banco de dados
+        const updateQuery = `
+            UPDATE expenses SET 
+                transaction_date = ?,
+                amount = ?,
+                description = ?,
+                account = ?,
+                account_plan_code = ?,
+                is_business_expense = ?,
+                has_invoice = ?,
+                invoice_path = ?
+            WHERE id = ? AND user_id = ?
+        `;
+
+        const [result] = await pool.query(updateQuery, updateData);
+
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ message: 'Despesa não encontrada.' });
+        }
+
+        res.json({ message: 'Despesa atualizada com sucesso!' });
+    } catch (error) {
+        console.error('Erro ao atualizar despesa:', error);
+        res.status(500).json({ message: 'Erro ao atualizar despesa.' });
+    }
+});
+
 app.delete('/api/expenses/:id', authenticateToken, async (req, res) => {
     const { id } = req.params;
     const userId = req.user.id;

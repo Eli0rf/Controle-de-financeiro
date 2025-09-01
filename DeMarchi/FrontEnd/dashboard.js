@@ -1,10 +1,5 @@
 /**
  * dashboard.js - Versão Final e Completa
- * Central de Gestão Inteligente - Abas habilitadas para Railway
- * Data: 27/08/2025
- * Status: Abas de insights funcionais ✅
- * CORREÇÃO: Sistema de análise por categoria corrigido para regra de negócio
- * REGRA: Gastos COM plano de conta = PESSOAIS | Gastos SEM plano de conta = EMPRESARIAIS
  */
 document.addEventListener('DOMContentLoaded', function() {
 
@@ -74,6 +69,14 @@ document.addEventListener('DOMContentLoaded', function() {
     const periodAnalysisForm = document.getElementById('period-analysis-form');
     const periodExportPdfBtn = document.getElementById('period-export-pdf-btn');
     const periodTabBtns = document.querySelectorAll('.period-tab-btn');
+
+    // ========== MODAL DE EDIÇÃO DE GASTOS ==========
+    const editExpenseModal = document.getElementById('edit-expense-modal');
+    const closeEditModalBtn = document.getElementById('close-edit-modal');
+    const editExpenseForm = document.getElementById('edit-expense-form');
+    const cancelEditBtn = document.getElementById('cancel-edit-btn');
+    const editHasInvoiceCheckbox = document.getElementById('edit-has-invoice');
+    const editInvoiceUpload = document.getElementById('edit-invoice-upload');
     
     // Charts para análise por período
     let periodCharts = {
@@ -149,6 +152,63 @@ document.addEventListener('DOMContentLoaded', function() {
             minimumFractionDigits: 2,
             maximumFractionDigits: 2
         }).format(value || 0);
+    }
+
+    // ========== PERSONALIZAÇÃO VISUAL PARA PIX E BOLETO ==========
+    
+    // Função para obter cores específicas para tipos de pagamento
+    function getPaymentTypeColor(account, opacity = 1) {
+        const colors = {
+            'PIX': `rgba(46, 204, 113, ${opacity})`, // Verde vibrante
+            'Boleto': `rgba(231, 76, 60, ${opacity})`, // Vermelho vibrante
+            'Nu Bank Ketlyn': `rgba(142, 68, 173, ${opacity})`, // Roxo Nubank
+            'Nu Vainer': `rgba(155, 89, 182, ${opacity})`, // Roxo claro
+            'Ourocard Ketlyn': `rgba(241, 196, 15, ${opacity})`, // Dourado
+            'PicPay Vainer': `rgba(39, 174, 96, ${opacity})`, // Verde PicPay
+            'default': `rgba(52, 152, 219, ${opacity})` // Azul padrão
+        };
+        return colors[account] || colors['default'];
+    }
+
+    // Função para obter ícone específico para tipos de pagamento
+    function getPaymentTypeIcon(account) {
+        const icons = {
+            'PIX': '💸',
+            'Boleto': '📋',
+            'Nu Bank Ketlyn': '💜',
+            'Nu Vainer': '🟣',
+            'Ourocard Ketlyn': '🟡',
+            'PicPay Vainer': '💚',
+            'default': '💳'
+        };
+        return icons[account] || icons['default'];
+    }
+
+    // Função para gerar gradiente específico para PIX e Boleto
+    function createPaymentGradient(ctx, account) {
+        const gradient = ctx.createLinearGradient(0, 0, 0, 400);
+        
+        if (account === 'PIX') {
+            gradient.addColorStop(0, 'rgba(46, 204, 113, 0.8)');
+            gradient.addColorStop(1, 'rgba(46, 204, 113, 0.1)');
+        } else if (account === 'Boleto') {
+            gradient.addColorStop(0, 'rgba(231, 76, 60, 0.8)');
+            gradient.addColorStop(1, 'rgba(231, 76, 60, 0.1)');
+        } else {
+            gradient.addColorStop(0, getPaymentTypeColor(account, 0.8));
+            gradient.addColorStop(1, getPaymentTypeColor(account, 0.1));
+        }
+        
+        return gradient;
+    }
+
+    // Função para personalizar labels com ícones
+    function enhanceLabelsWithIcons(labels, accounts) {
+        return labels.map((label, index) => {
+            const account = accounts[index];
+            const icon = getPaymentTypeIcon(account);
+            return `${icon} ${label}`;
+        });
     }
 
     // Função para verificar se o usuário está autenticado
@@ -315,6 +375,12 @@ document.addEventListener('DOMContentLoaded', function() {
         
         // Event listeners para gastos recorrentes
         if (recurringExpensesBtn) recurringExpensesBtn.addEventListener('click', openRecurringModal);
+
+        // Event listeners para modal de edição de gastos
+        if (closeEditModalBtn) closeEditModalBtn.addEventListener('click', closeEditExpenseModal);
+        if (cancelEditBtn) cancelEditBtn.addEventListener('click', closeEditExpenseModal);
+        if (editExpenseForm) editExpenseForm.addEventListener('submit', handleEditExpense);
+        if (editHasInvoiceCheckbox) editHasInvoiceCheckbox.addEventListener('change', toggleEditInvoiceUpload);
         if (closeRecurringModalBtn) closeRecurringModalBtn.addEventListener('click', closeRecurringModal);
         if (recurringForm) recurringForm.addEventListener('submit', handleRecurringExpenseSubmit);
         if (processRecurringBtn) processRecurringBtn.addEventListener('click', processRecurringExpenses);
@@ -383,27 +449,12 @@ document.addEventListener('DOMContentLoaded', function() {
         setupMobileMenu();
         
         // Event listeners para as abas de insights
-        console.log('🔧 Inicializando abas de insights...');
-        setupInsightTabs();
-        
-        // Inicializar sistema de insights completo
-        initInsightSystem();
-        
-        // Inicializar primeira aba como ativa
-        const firstInsightTab = document.querySelector('.insight-tab-btn[data-tab="alerts"]');
-        if (firstInsightTab) {
-            console.log('🎯 Ativando primeira aba de insights: alerts');
-            switchInsightTab('alerts');
-        } else {
-            console.warn('⚠️ Primeira aba de insights não encontrada, tentando novamente...');
-            // Tentar novamente após um delay para garantir que o DOM esteja totalmente carregado
-            setTimeout(() => {
-                const retryTab = document.querySelector('.insight-tab-btn[data-tab="alerts"]');
-                if (retryTab) {
-                    console.log('🔄 Primeira aba encontrada na segunda tentativa');
-                    switchInsightTab('alerts');
-                }
-            }, 1000);
+        if (insightTabBtns) {
+            insightTabBtns.forEach(btn => {
+                btn.addEventListener('click', function() {
+                    switchInsightTab(this.dataset.tab);
+                });
+            });
         }
         
         // Event listener para toggle do tema
@@ -1329,65 +1380,23 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-    // ========== CONFIGURAÇÃO DAS ABAS DE INSIGHTS ==========
-    function setupInsightTabs() {
-        console.log('🔧 Configurando abas de insights...');
-        
-        const insightTabBtns = document.querySelectorAll('.insight-tab-btn');
-        
-        if (!insightTabBtns || insightTabBtns.length === 0) {
-            console.warn('⚠️ Nenhuma aba de insight encontrada');
-            // Tentar novamente após um pequeno delay
-            setTimeout(() => {
-                const retryTabs = document.querySelectorAll('.insight-tab-btn');
-                if (retryTabs.length > 0) {
-                    console.log('🔄 Abas encontradas na segunda tentativa');
-                    setupInsightTabsInternal(retryTabs);
-                }
-            }, 500);
-            return;
-        }
-        
-        setupInsightTabsInternal(insightTabBtns);
-    }
-    
-    function setupInsightTabsInternal(insightTabBtns) {
-        // Adicionar event listeners para todas as abas
-        insightTabBtns.forEach(btn => {
-            console.log(`📝 Configurando aba: ${btn.dataset.tab}`);
-            btn.addEventListener('click', function(e) {
-                e.preventDefault();
-                const tabName = this.dataset.tab;
-                console.log(`🖱️ Clique na aba: ${tabName}`);
-                switchInsightTab(tabName);
-            });
-        });
-        
-        console.log(`✅ ${insightTabBtns.length} abas de insights configuradas`);
-    }
-
     // Função para alternar entre abas de insights
     function switchInsightTab(tabName) {
-        console.log(`🔄 Alternando para aba: ${tabName}`);
-        
         // Remover classe active de todos os botões
         document.querySelectorAll('.insight-tab-btn').forEach(btn => {
-            btn.classList.remove('active', 'text-blue-600', 'border-b-2', 'border-blue-600');
-            btn.classList.add('text-gray-500');
+            btn.classList.remove('active', 'bg-blue-500', 'text-white');
+            btn.classList.add('bg-gray-200', 'text-gray-700');
         });
         
         // Adicionar classe active ao botão clicado
-        const activeBtn = document.querySelector(`.insight-tab-btn[data-tab="${tabName}"]`);
+        const activeBtn = document.querySelector(`[data-tab="${tabName}"]`);
         if (activeBtn) {
-            activeBtn.classList.remove('text-gray-500');
-            activeBtn.classList.add('active', 'text-blue-600', 'border-b-2', 'border-blue-600');
-            console.log(`✅ Botão da aba ${tabName} ativado`);
-        } else {
-            console.warn(`⚠️ Botão da aba ${tabName} não encontrado`);
+            activeBtn.classList.remove('bg-gray-200', 'text-gray-700');
+            activeBtn.classList.add('active', 'bg-blue-500', 'text-white');
         }
         
         // Ocultar todos os conteúdos das abas
-        document.querySelectorAll('.insight-content').forEach(content => {
+        document.querySelectorAll('.insight-tab-content').forEach(content => {
             content.classList.add('hidden');
         });
         
@@ -1395,245 +1404,9 @@ document.addEventListener('DOMContentLoaded', function() {
         const activeContent = document.getElementById(`${tabName}-content`);
         if (activeContent) {
             activeContent.classList.remove('hidden');
-            console.log(`✅ Conteúdo da aba ${tabName} exibido`);
-            
-            // Carregar conteúdo específico da aba
-            loadInsightTabContent(tabName);
-        } else {
-            console.warn(`⚠️ Conteúdo da aba ${tabName} não encontrado`);
         }
         
         console.log(`📊 Aba de insights trocada para: ${tabName}`);
-    }
-
-    // Função para carregar conteúdo específico de cada aba
-    function loadInsightTabContent(tabName) {
-        console.log(`📂 Carregando conteúdo da aba: ${tabName}`);
-        
-        // Verificar se a aba existe no DOM
-        const tabContent = document.getElementById(`${tabName}-content`);
-        if (!tabContent) {
-            console.warn(`⚠️ Conteúdo da aba ${tabName} não encontrado no DOM`);
-            return;
-        }
-        
-        switch(tabName) {
-            case 'alerts':
-                loadCriticalAlerts();
-                break;
-            case 'recommendations':
-                loadRecommendations();
-                break;
-            case 'decisions':
-                loadDecisionSupport();
-                break;
-            case 'actions':
-                loadActionPlan();
-                break;
-            default:
-                console.warn(`⚠️ Aba desconhecida: ${tabName}`);
-        }
-    }
-
-    // Funções para carregar conteúdo específico de cada aba
-    function loadCriticalAlerts() {
-        console.log('🚨 Carregando alertas críticos...');
-        
-        // Verificar se o container existe
-        const alertsContainer = document.getElementById('critical-alerts');
-        if (!alertsContainer) {
-            console.warn('⚠️ Container de alertas críticos não encontrado');
-            return;
-        }
-        
-        // A lógica de alertas já existe, apenas executar as funções existentes
-        if (typeof updateFinancialInsights === 'function') {
-            updateFinancialInsights();
-        } else {
-            // Carregar alertas básicos se a função principal não estiver disponível
-            alertsContainer.innerHTML = `
-                <div class="flex items-start gap-3 p-4 bg-red-50 rounded-lg border-l-4 border-red-500">
-                    <div class="text-red-500 text-2xl">🚨</div>
-                    <div>
-                        <h4 class="font-semibold text-red-800 mb-2">Sistema de Alertas Ativo</h4>
-                        <p class="text-sm text-red-600">Monitoramento financeiro em funcionamento. Dados sendo carregados...</p>
-                    </div>
-                </div>
-            `;
-        }
-    }
-
-    function loadRecommendations() {
-        console.log('💡 Carregando recomendações...');
-        
-        const savingsContainer = document.getElementById('savings-recommendations');
-        const investmentContainer = document.getElementById('investment-recommendations');
-        const patternContainer = document.getElementById('pattern-analysis');
-        
-        if (savingsContainer) {
-            savingsContainer.innerHTML = `
-                <div class="flex items-start gap-3 p-3 bg-white rounded-lg border">
-                    <div class="text-green-500 text-xl">💰</div>
-                    <div>
-                        <h5 class="font-semibold text-green-800">Reduza gastos com alimentação</h5>
-                        <p class="text-sm text-green-600">Economia potencial: R$ 200/mês</p>
-                    </div>
-                </div>
-                <div class="flex items-start gap-3 p-3 bg-white rounded-lg border">
-                    <div class="text-green-500 text-xl">🚗</div>
-                    <div>
-                        <h5 class="font-semibold text-green-800">Otimize gastos com transporte</h5>
-                        <p class="text-sm text-green-600">Economia potencial: R$ 150/mês</p>
-                    </div>
-                </div>
-            `;
-        }
-        
-        if (investmentContainer) {
-            investmentContainer.innerHTML = `
-                <div class="flex items-start gap-3 p-3 bg-white rounded-lg border">
-                    <div class="text-blue-500 text-xl">📈</div>
-                    <div>
-                        <h5 class="font-semibold text-blue-800">Considere investir em renda fixa</h5>
-                        <p class="text-sm text-blue-600">Com base no seu perfil conservador</p>
-                    </div>
-                </div>
-                <div class="flex items-start gap-3 p-3 bg-white rounded-lg border">
-                    <div class="text-blue-500 text-xl">💎</div>
-                    <div>
-                        <h5 class="font-semibold text-blue-800">Diversifique seu portfólio</h5>
-                        <p class="text-sm text-blue-600">Aumente a exposição em ações</p>
-                    </div>
-                </div>
-            `;
-        }
-        
-        if (patternContainer) {
-            patternContainer.innerHTML = `
-                <div class="text-center p-4 bg-white rounded-lg border">
-                    <div class="text-purple-500 text-2xl mb-2">📊</div>
-                    <div class="font-semibold text-purple-800">Padrão Mensal</div>
-                    <div class="text-sm text-purple-600">Gastos mais altos na 1ª semana</div>
-                </div>
-                <div class="text-center p-4 bg-white rounded-lg border">
-                    <div class="text-purple-500 text-2xl mb-2">📈</div>
-                    <div class="font-semibold text-purple-800">Tendência</div>
-                    <div class="text-sm text-purple-600">Aumento de 5% no trimestre</div>
-                </div>
-                <div class="text-center p-4 bg-white rounded-lg border">
-                    <div class="text-purple-500 text-2xl mb-2">🎯</div>
-                    <div class="font-semibold text-purple-800">Meta</div>
-                    <div class="text-sm text-purple-600">75% do orçamento atingido</div>
-                </div>
-            `;
-        }
-    }
-
-    function loadDecisionSupport() {
-        console.log('📊 Carregando apoio à decisão...');
-        
-        // Atualizar cenários
-        const optimistic = document.getElementById('optimistic-scenario');
-        const realistic = document.getElementById('realistic-scenario');
-        const pessimistic = document.getElementById('pessimistic-scenario');
-        
-        if (optimistic) optimistic.textContent = 'R$ 8.500';
-        if (realistic) realistic.textContent = 'R$ 9.200';
-        if (pessimistic) pessimistic.textContent = 'R$ 10.100';
-        
-        // Carregar matriz de decisão
-        const decisionMatrix = document.getElementById('decision-matrix');
-        if (decisionMatrix) {
-            decisionMatrix.innerHTML = `
-                <table class="w-full text-sm">
-                    <thead>
-                        <tr class="bg-gray-100">
-                            <th class="text-left p-2">Ação</th>
-                            <th class="text-center p-2">Impacto</th>
-                            <th class="text-center p-2">Urgência</th>
-                            <th class="text-center p-2">Prioridade</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr class="border-b">
-                            <td class="p-2">Revisar orçamento alimentação</td>
-                            <td class="text-center p-2"><span class="bg-red-100 text-red-800 px-2 py-1 rounded">Alto</span></td>
-                            <td class="text-center p-2"><span class="bg-yellow-100 text-yellow-800 px-2 py-1 rounded">Média</span></td>
-                            <td class="text-center p-2"><span class="bg-red-100 text-red-800 px-2 py-1 rounded">Alta</span></td>
-                        </tr>
-                        <tr class="border-b">
-                            <td class="p-2">Renegociar contratos</td>
-                            <td class="text-center p-2"><span class="bg-yellow-100 text-yellow-800 px-2 py-1 rounded">Médio</span></td>
-                            <td class="text-center p-2"><span class="bg-red-100 text-red-800 px-2 py-1 rounded">Alta</span></td>
-                            <td class="text-center p-2"><span class="bg-yellow-100 text-yellow-800 px-2 py-1 rounded">Média</span></td>
-                        </tr>
-                    </tbody>
-                </table>
-            `;
-        }
-    }
-
-    function loadActionPlan() {
-        console.log('✅ Carregando plano de ação...');
-        
-        const priorityActions = document.getElementById('priority-actions');
-        const timeline = document.getElementById('implementation-timeline');
-        
-        if (priorityActions) {
-            priorityActions.innerHTML = `
-                <div class="flex items-start gap-3 p-3 bg-white rounded-lg border">
-                    <div class="text-red-500 text-xl">🔥</div>
-                    <div class="flex-1">
-                        <h5 class="font-semibold text-red-800">Revisar gastos com alimentação</h5>
-                        <p class="text-sm text-red-600 mb-2">Reduzir em 15% os gastos com delivery</p>
-                        <div class="flex items-center gap-2">
-                            <span class="bg-red-100 text-red-800 px-2 py-1 rounded-full text-xs">Urgente</span>
-                            <span class="bg-blue-100 text-blue-800 px-2 py-1 rounded-full text-xs">1-2 semanas</span>
-                        </div>
-                    </div>
-                </div>
-                <div class="flex items-start gap-3 p-3 bg-white rounded-lg border">
-                    <div class="text-orange-500 text-xl">💳</div>
-                    <div class="flex-1">
-                        <h5 class="font-semibold text-orange-800">Renegociar cartão de crédito</h5>
-                        <p class="text-sm text-orange-600 mb-2">Buscar melhores condições de anuidade</p>
-                        <div class="flex items-center gap-2">
-                            <span class="bg-orange-100 text-orange-800 px-2 py-1 rounded-full text-xs">Importante</span>
-                            <span class="bg-blue-100 text-blue-800 px-2 py-1 rounded-full text-xs">1 mês</span>
-                        </div>
-                    </div>
-                </div>
-            `;
-        }
-        
-        if (timeline) {
-            timeline.innerHTML = `
-                <div class="flex items-center gap-4 p-3 bg-white rounded-lg border">
-                    <div class="w-8 h-8 bg-blue-500 text-white rounded-full flex items-center justify-center text-sm font-bold">1</div>
-                    <div class="flex-1">
-                        <h5 class="font-semibold">Semana 1-2: Análise detalhada</h5>
-                        <p class="text-sm text-gray-600">Revisar todos os gastos do último trimestre</p>
-                    </div>
-                    <div class="text-blue-500">✅</div>
-                </div>
-                <div class="flex items-center gap-4 p-3 bg-white rounded-lg border">
-                    <div class="w-8 h-8 bg-yellow-500 text-white rounded-full flex items-center justify-center text-sm font-bold">2</div>
-                    <div class="flex-1">
-                        <h5 class="font-semibold">Semana 3-4: Implementação</h5>
-                        <p class="text-sm text-gray-600">Aplicar as medidas de economia identificadas</p>
-                    </div>
-                    <div class="text-yellow-500">⏳</div>
-                </div>
-                <div class="flex items-center gap-4 p-3 bg-white rounded-lg border">
-                    <div class="w-8 h-8 bg-gray-300 text-gray-600 rounded-full flex items-center justify-center text-sm font-bold">3</div>
-                    <div class="flex-1">
-                        <h5 class="font-semibold">Mês 2: Monitoramento</h5>
-                        <p class="text-sm text-gray-600">Acompanhar resultados e ajustar estratégias</p>
-                    </div>
-                    <div class="text-gray-400">⭕</div>
-                </div>
-            `;
-        }
     }
 
     // Função para atualizar gráfico de orçamento
@@ -2298,13 +2071,23 @@ document.addEventListener('DOMContentLoaded', function() {
                 let planStatus = '';
                 let rowClass = 'border-b hover:bg-gray-50';
                 
+                // Destaque especial para PIX e Boleto
+                if (expense.account === 'PIX') {
+                    rowClass = 'border-b hover:bg-green-50 border-l-4 border-l-green-400';
+                } else if (expense.account === 'Boleto') {
+                    rowClass = 'border-b hover:bg-red-50 border-l-4 border-l-red-400';
+                }
+                
                 if (expense.account_plan_code !== null && expense.account_plan_code !== undefined && expense.account_plan_code !== '') {
                     planCode = `<span class="bg-gray-100 text-gray-800 px-2 py-1 rounded font-mono text-sm">${expense.account_plan_code}</span>`;
                 } else {
                     if (expense.is_business_expense) {
                         planCode = '<span class="text-orange-600 font-semibold">Sem Categoria</span>';
                         planStatus = '<span class="text-xs bg-orange-100 text-orange-800 px-2 py-1 rounded">🤖 Auto-classificado</span>';
-                        rowClass = 'border-b hover:bg-orange-50 bg-orange-25';
+                        // Manter o destaque de PIX/Boleto mesmo com categoria em falta
+                        if (expense.account !== 'PIX' && expense.account !== 'Boleto') {
+                            rowClass = 'border-b hover:bg-orange-50 bg-orange-25';
+                        }
                     } else {
                         planCode = '<span class="text-gray-400">-</span>';
                     }
@@ -2328,7 +2111,13 @@ document.addEventListener('DOMContentLoaded', function() {
                     </td>
                     <td class="p-3 ${valorClass}">R$ ${parseFloat(expense.amount).toFixed(2)}</td>
                     <td class="p-3 text-sm">
-                        <span class="bg-gray-50 px-2 py-1 rounded text-xs">${expense.account}</span>
+                        <span class="px-2 py-1 rounded text-xs font-medium ${
+                            expense.account === 'PIX' ? 'bg-green-100 text-green-800 border border-green-200' :
+                            expense.account === 'Boleto' ? 'bg-red-100 text-red-800 border border-red-200' :
+                            'bg-gray-50 text-gray-700'
+                        }">
+                            ${getPaymentTypeIcon(expense.account)} ${expense.account}
+                        </span>
                     </td>
                     <td class="p-3">${tipoGasto}</td>
                     <td class="p-3">${planCode}</td>
@@ -2372,6 +2161,12 @@ document.addEventListener('DOMContentLoaded', function() {
         const semCategoria = expenses.filter(e => e.is_business_expense && (!e.account_plan_code || e.account_plan_code === ''));
         const comNota = expenses.filter(e => e.invoice_path);
         
+        // Estatísticas específicas para PIX e Boleto
+        const pixExpenses = expenses.filter(e => e.account === 'PIX');
+        const boletoExpenses = expenses.filter(e => e.account === 'Boleto');
+        const totalPix = pixExpenses.reduce((sum, e) => sum + parseFloat(e.amount), 0);
+        const totalBoleto = boletoExpenses.reduce((sum, e) => sum + parseFloat(e.amount), 0);
+        
         const totalEmpresarial = empresariais.reduce((sum, e) => sum + parseFloat(e.amount), 0);
         const totalPessoal = pessoais.reduce((sum, e) => sum + parseFloat(e.amount), 0);
         
@@ -2380,7 +2175,7 @@ document.addEventListener('DOMContentLoaded', function() {
         if (!summaryElement) {
             summaryElement = document.createElement('div');
             summaryElement.id = 'table-summary';
-            summaryElement.className = 'mt-4 grid grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-gray-50 rounded-lg border';
+            summaryElement.className = 'mt-4 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 p-4 bg-gray-50 rounded-lg border';
             
             const tableContainer = document.querySelector('.overflow-x-auto');
             if (tableContainer && tableContainer.parentNode) {
@@ -2399,6 +2194,28 @@ document.addEventListener('DOMContentLoaded', function() {
                 <div class="text-lg font-bold text-green-600">R$ ${totalPessoal.toFixed(2)}</div>
                 <div class="text-xs text-gray-500">${pessoais.length} gastos</div>
             </div>
+            <div class="text-center border-l-4 border-l-green-400 bg-green-50">
+                <div class="text-sm text-green-700 font-medium">💸 PIX</div>
+                <div class="text-lg font-bold text-green-800">R$ ${totalPix.toFixed(2)}</div>
+                <div class="text-xs text-green-600">${pixExpenses.length} transações</div>
+            </div>
+            <div class="text-center border-l-4 border-l-red-400 bg-red-50">
+                <div class="text-sm text-red-700 font-medium">📋 Boleto</div>
+                <div class="text-lg font-bold text-red-800">R$ ${totalBoleto.toFixed(2)}</div>
+                <div class="text-xs text-red-600">${boletoExpenses.length} transações</div>
+            </div>
+            <div class="text-center">
+                <div class="text-sm text-gray-600">Sem Categoria</div>
+                <div class="text-lg font-bold text-orange-600">${semCategoria.length}</div>
+                <div class="text-xs text-gray-500">Auto-classificados</div>
+            </div>
+            <div class="text-center">
+                <div class="text-sm text-gray-600">Com Nota Fiscal</div>
+                <div class="text-lg font-bold text-purple-600">${comNota.length}</div>
+                <div class="text-xs text-gray-500">${((comNota.length / expenses.length) * 100).toFixed(1)}% do total</div>
+            </div>
+        `;
+    }
             <div class="text-center">
                 <div class="text-sm text-gray-600">Sem Categoria</div>
                 <div class="text-lg font-bold text-orange-600">${semCategoria.length}</div>
@@ -2578,26 +2395,32 @@ document.addEventListener('DOMContentLoaded', function() {
                 return;
             }
 
+            // Gerar cores personalizadas baseadas no tipo de conta
+            const accounts = data.map(d => d.account || 'Conta não especificada');
+            const backgroundColors = accounts.map(account => getPaymentTypeColor(account, 0.8));
+            const borderColors = accounts.map(account => getPaymentTypeColor(account, 1));
+            
+            // Adicionar ícones aos labels
+            const enhancedLabels = accounts.map(account => {
+                const icon = getPaymentTypeIcon(account);
+                return `${icon} ${account}`;
+            });
+
             const chartData = {
-                labels: data.map(d => d.account || 'Conta não especificada'),
+                labels: enhancedLabels,
                 datasets: [{
                     data: data.map(d => parseFloat(d.total) || 0),
-                    backgroundColor: [
-                        'rgba(59, 130, 246, 0.8)',
-                        'rgba(34, 197, 94, 0.8)',
-                        'rgba(245, 158, 11, 0.8)',
-                        'rgba(239, 68, 68, 0.8)',
-                        'rgba(139, 92, 246, 0.8)',
-                        'rgba(236, 72, 153, 0.8)',
-                        'rgba(14, 165, 233, 0.8)',
-                        'rgba(168, 85, 247, 0.8)',
-                        'rgba(34, 211, 238, 0.8)',
-                        'rgba(251, 146, 60, 0.8)'
-                    ],
-                    borderColor: '#ffffff',
+                    backgroundColor: backgroundColors,
+                    borderColor: borderColors,
                     borderWidth: 2,
                     hoverBorderWidth: 3,
-                    hoverOffset: 10
+                    hoverOffset: 10,
+                    // Efeito especial para PIX e Boleto
+                    hoverBackgroundColor: accounts.map(account => {
+                        if (account === 'PIX') return 'rgba(46, 204, 113, 1)';
+                        if (account === 'Boleto') return 'rgba(231, 76, 60, 1)';
+                        return getPaymentTypeColor(account, 1);
+                    })
                 }]
             };
 
@@ -2723,6 +2546,27 @@ document.addEventListener('DOMContentLoaded', function() {
             const personalData = filteredData.map(d => parseFloat(d.personal_total) || 0);
             const businessData = filteredData.map(d => parseFloat(d.business_total) || 0);
             
+            // Gerar cores personalizadas para cada conta
+            const personalColors = accounts.map(account => {
+                // Cores mais claras para gastos pessoais
+                if (account === 'PIX') return 'rgba(46, 204, 113, 0.6)';
+                if (account === 'Boleto') return 'rgba(231, 76, 60, 0.6)';
+                return getPaymentTypeColor(account, 0.6);
+            });
+            
+            const businessColors = accounts.map(account => {
+                // Cores mais escuras para gastos empresariais
+                if (account === 'PIX') return 'rgba(46, 204, 113, 0.9)';
+                if (account === 'Boleto') return 'rgba(231, 76, 60, 0.9)';
+                return getPaymentTypeColor(account, 0.9);
+            });
+            
+            // Adicionar ícones aos labels
+            const enhancedLabels = accounts.map(account => {
+                const icon = getPaymentTypeIcon(account);
+                return `${icon} ${account}`;
+            });
+            
             const max = Math.max(...filteredData.map(d => 
                 (parseFloat(d.personal_total) || 0) + (parseFloat(d.business_total) || 0)
             ));
@@ -2733,21 +2577,25 @@ document.addEventListener('DOMContentLoaded', function() {
             chartRegistry.mixedTypeChart = new Chart(ctx, {
                 type: 'bar',
                 data: {
-                    labels: accounts,
+                    labels: enhancedLabels,
                     datasets: [
                         {
                             label: '🏠 Gastos Pessoais',
                             data: personalData,
-                            backgroundColor: 'rgba(59, 130, 246, 0.8)',
-                            borderColor: 'rgba(59, 130, 246, 1)',
-                            borderWidth: 1
+                            backgroundColor: personalColors,
+                            borderColor: personalColors.map(color => color.replace('0.6', '1')),
+                            borderWidth: 2,
+                            // Efeito hover personalizado
+                            hoverBackgroundColor: personalColors.map(color => color.replace('0.6', '0.8'))
                         },
                         {
                             label: '💼 Gastos Empresariais',
                             data: businessData,
-                            backgroundColor: 'rgba(239, 68, 68, 0.8)',
-                            borderColor: 'rgba(239, 68, 68, 1)',
-                            borderWidth: 1
+                            backgroundColor: businessColors,
+                            borderColor: businessColors.map(color => color.replace('0.9', '1')),
+                            borderWidth: 2,
+                            // Efeito hover personalizado
+                            hoverBackgroundColor: businessColors.map(color => color.replace('0.9', '1'))
                         }
                     ]
                 },
@@ -2934,32 +2782,16 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (data[0] && typeof data[0] === 'object' && 'account_plan_code' in data[0]) {
                     processedData = data;
                 } else {
-                    // Processar gastos brutos agrupando por categoria aplicando regra de negócio:
-                    // - Gastos COM plano de conta = PESSOAIS
-                    // - Gastos SEM plano de conta = EMPRESARIAIS
+                    // Processar gastos brutos agrupando por plano de conta
                     const planTotals = {};
                     
                     data.forEach(expense => {
-                        let planCode;
-                        let planType;
-                        
-                        // Aplicar regra de negócio para categorização
-                        if (expense.account_plan_code && expense.account_plan_code !== '' && expense.account_plan_code !== null) {
-                            // Tem plano de conta = PESSOAL
-                            planCode = expense.account_plan_code;
-                            planType = 'PESSOAL';
-                        } else {
-                            // Não tem plano de conta = EMPRESARIAL
-                            planCode = 'EMPRESARIAL';
-                            planType = 'EMPRESARIAL';
-                        }
-                        
+                        const planCode = expense.account_plan_code || 'Sem Categoria';
                         const amount = parseFloat(expense.amount) || 0;
                         
                         if (!planTotals[planCode]) {
                             planTotals[planCode] = {
                                 account_plan_code: planCode,
-                                type: planType,
                                 total: 0,
                                 count: 0
                             };
@@ -3131,8 +2963,13 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function handleTableClick(e) {
-        if (e.target.closest('.edit-btn')) alert('Funcionalidade de edição não implementada.');
-        if (e.target.closest('.delete-btn')) { if (confirm('Tem a certeza?')) deleteExpense(e.target.closest('.delete-btn').dataset.id); }
+        if (e.target.closest('.edit-btn')) {
+            const expenseId = e.target.closest('.edit-btn').dataset.id;
+            openEditExpenseModal(expenseId);
+        }
+        if (e.target.closest('.delete-btn')) { 
+            if (confirm('Tem a certeza?')) deleteExpense(e.target.closest('.delete-btn').dataset.id); 
+        }
     }
 
     async function deleteExpense(id) {
@@ -3152,6 +2989,93 @@ document.addEventListener('DOMContentLoaded', function() {
             fetchAllData();
         } catch (error) { 
             console.error('Erro ao deletar gasto:', error);
+            showNotification(`Erro: ${error.message}`, 'error');
+        }
+    }
+
+    // ========== FUNÇÕES DO MODAL DE EDIÇÃO DE GASTOS ==========
+    
+    async function openEditExpenseModal(expenseId) {
+        try {
+            if (!checkAuthentication()) return;
+
+            // Buscar dados da despesa
+            const response = await authenticatedFetch(`${API_BASE_URL}/api/expenses/${expenseId}`);
+            
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.message || 'Erro ao buscar dados da despesa.');
+            }
+            
+            const expense = await response.json();
+            
+            // Preencher o formulário
+            document.getElementById('edit-expense-id').value = expense.id;
+            document.getElementById('edit-transaction-date').value = expense.transaction_date.split('T')[0];
+            document.getElementById('edit-amount').value = expense.amount;
+            document.getElementById('edit-description').value = expense.description;
+            document.getElementById('edit-account').value = expense.account;
+            document.getElementById('edit-account-plan-code').value = expense.account_plan_code || '';
+            document.getElementById('edit-is-business').checked = expense.is_business_expense;
+            document.getElementById('edit-has-invoice').checked = expense.has_invoice;
+            
+            // Mostrar/esconder upload de fatura
+            toggleEditInvoiceUpload();
+            
+            // Mostrar modal
+            editExpenseModal.classList.remove('hidden');
+            setTimeout(() => editExpenseModal.classList.remove('opacity-0'), 10);
+            
+        } catch (error) {
+            console.error('Erro ao abrir modal de edição:', error);
+            showNotification(`Erro: ${error.message}`, 'error');
+        }
+    }
+    
+    function closeEditExpenseModal() {
+        editExpenseModal.classList.add('opacity-0');
+        setTimeout(() => {
+            editExpenseModal.classList.add('hidden');
+            editExpenseForm.reset();
+        }, 300);
+    }
+    
+    function toggleEditInvoiceUpload() {
+        const hasInvoice = document.getElementById('edit-has-invoice').checked;
+        const uploadDiv = document.getElementById('edit-invoice-upload');
+        
+        if (hasInvoice) {
+            uploadDiv.classList.remove('hidden');
+        } else {
+            uploadDiv.classList.add('hidden');
+        }
+    }
+    
+    async function handleEditExpense(e) {
+        e.preventDefault();
+        
+        try {
+            if (!checkAuthentication()) return;
+            
+            const formData = new FormData(editExpenseForm);
+            const expenseId = document.getElementById('edit-expense-id').value;
+            
+            const response = await authenticatedFetch(`${API_BASE_URL}/api/expenses/${expenseId}`, {
+                method: 'PUT',
+                body: formData
+            });
+            
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.message || 'Erro ao atualizar gasto.');
+            }
+            
+            showNotification('Gasto atualizado com sucesso!', 'success');
+            closeEditExpenseModal();
+            fetchAllData();
+            
+        } catch (error) {
+            console.error('Erro ao editar gasto:', error);
             showNotification(`Erro: ${error.message}`, 'error');
         }
     }
@@ -5567,26 +5491,16 @@ document.addEventListener('DOMContentLoaded', function() {
 
         console.log('🔍 Processando dados de categoria...');
 
-        // Agrupar aplicando a regra de negócio:
-        // - Gastos COM plano de conta = PESSOAIS
-        // - Gastos SEM plano de conta = EMPRESARIAIS
+        // Agrupar por plano de conta
         const planTotals = {};
         const planCounts = {};
-        const planTypes = {};
 
         expenses.forEach(expense => {
-            let planCode;
-            let planType;
+            let planCode = expense.account_plan_code;
             
-            // Aplicar regra de negócio para categorização
-            if (expense.account_plan_code && expense.account_plan_code !== '' && expense.account_plan_code !== null) {
-                // Tem plano de conta = PESSOAL
-                planCode = expense.account_plan_code;
-                planType = 'PESSOAL';
-            } else {
-                // Não tem plano de conta = EMPRESARIAL
-                planCode = 'EMPRESARIAL';
-                planType = 'EMPRESARIAL';
+            // Tratar gastos sem categoria
+            if (!planCode || planCode === '' || planCode === null) {
+                planCode = 'Sem Categoria';
             }
 
             const amount = parseFloat(expense.amount) || 0;
@@ -5594,7 +5508,6 @@ document.addEventListener('DOMContentLoaded', function() {
             if (!planTotals[planCode]) {
                 planTotals[planCode] = 0;
                 planCounts[planCode] = 0;
-                planTypes[planCode] = planType;
             }
 
             planTotals[planCode] += amount;
@@ -5604,7 +5517,6 @@ document.addEventListener('DOMContentLoaded', function() {
         // Converter para array de objetos
         const categoryData = Object.keys(planTotals).map(planCode => ({
             account_plan_code: planCode,
-            type: planTypes[planCode],
             total: planTotals[planCode],
             count: planCounts[planCode],
             average: planTotals[planCode] / planCounts[planCode]
@@ -5613,7 +5525,7 @@ document.addEventListener('DOMContentLoaded', function() {
         // Ordenar por total decrescente
         categoryData.sort((a, b) => b.total - a.total);
 
-        console.log('📊 Dados de categoria processados com regra de negócio:', categoryData);
+        console.log('📊 Dados de categoria processados:', categoryData);
         return categoryData;
     }
 
@@ -6577,9 +6489,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // Expor a função de teste para debug manual
     window.testTrendChart = testTrendAnalysisChart;
 
-    /**
-     * Atualiza o gráfico de distribuição por conta empresarial
-     */
+    /* Atualiza o gráfico de distribuição por conta empresarial*/
     async function updateBusinessAccountChart(data) {
         const chartKey = 'businessAccountChart';
         const canvasId = 'business-account-chart';
@@ -6599,25 +6509,33 @@ document.addEventListener('DOMContentLoaded', function() {
                 return;
             }
 
+            // Usar cores personalizadas para cada tipo de conta
+            const backgroundColors = accounts.map(account => getPaymentTypeColor(account, 0.8));
+            const borderColors = accounts.map(account => getPaymentTypeColor(account, 1));
+            
+            // Adicionar ícones aos labels
+            const enhancedLabels = accounts.map(account => {
+                const icon = getPaymentTypeIcon(account);
+                return `${icon} ${account}`;
+            });
+
             const chartData = {
-                labels: accounts,
+                labels: enhancedLabels,
                 datasets: [{
                     data: values,
-                    backgroundColor: [
-                        'rgba(59, 130, 246, 0.8)',
-                        'rgba(34, 197, 94, 0.8)',
-                        'rgba(245, 158, 11, 0.8)',
-                        'rgba(239, 68, 68, 0.8)',
-                        'rgba(139, 92, 246, 0.8)',
-                        'rgba(236, 72, 153, 0.8)',
-                        'rgba(14, 165, 233, 0.8)',
-                        'rgba(168, 85, 247, 0.8)',
-                        'rgba(34, 211, 238, 0.8)',
-                        'rgba(251, 146, 60, 0.8)'
-                    ],
+                    backgroundColor: backgroundColors,
+                    borderColor: borderColors,
                     borderWidth: 3,
-                    borderColor: 'rgba(255, 255, 255, 0.8)',
-                    hoverOffset: 15
+                    // Efeitos especiais para PIX e Boleto no ambiente empresarial
+                    hoverBackgroundColor: accounts.map(account => {
+                        if (account === 'PIX') return 'rgba(46, 204, 113, 1)';
+                        if (account === 'Boleto') return 'rgba(231, 76, 60, 1)';
+                        return getPaymentTypeColor(account, 1);
+                    }),
+                    hoverOffset: accounts.map(account => {
+                        // Destaque maior para PIX e Boleto
+                        return (account === 'PIX' || account === 'Boleto') ? 20 : 15;
+                    })
                 }]
             };
 
@@ -6628,7 +6546,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     plugins: {
                         title: {
                             display: true,
-                            text: 'Distribuição por Conta Empresarial'
+                            text: '💼 Distribuição por Conta Empresarial'
                         },
                         legend: { 
                             position: 'bottom',
@@ -6667,8 +6585,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     /**
-     * Atualiza o gráfico de categorias empresariais
-     */
+     * Atualiza o gráfico de categorias empresariai*/
     async function updateBusinessCategoryChart(data) {
         const chartKey = 'businessCategoryChart';
         const canvasId = 'business-category-chart';
@@ -7214,15 +7131,61 @@ document.addEventListener('DOMContentLoaded', function() {
      * Inicializa o sistema de insights
      */
     function initInsightSystem() {
-        console.log('🎯 Inicializando sistema de insights...');
-        
         const refreshBtn = document.getElementById('refresh-insights-btn');
+        const tabBtns = document.querySelectorAll('.insight-tab-btn');
         
         if (refreshBtn) {
             refreshBtn.addEventListener('click', refreshAllInsights);
-            console.log('✅ Botão de refresh configurado');
-        } else {
-            console.warn('⚠️ Botão refresh-insights-btn não encontrado');
+        }
+        
+        // Event listeners para as abas
+        tabBtns.forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const targetTab = e.target.getAttribute('data-tab');
+                switchInsightTab(targetTab);
+            });
+        });
+        
+        // Carregar insights iniciais
+        refreshAllInsights();
+    }
+
+    /**
+     * Alterna entre as abas do sistema de insights
+     */
+    function switchInsightTab(targetTab) {
+        // Atualizar botões das abas
+        document.querySelectorAll('.insight-tab-btn').forEach(btn => {
+            btn.classList.remove('active');
+            if (btn.getAttribute('data-tab') === targetTab) {
+                btn.classList.add('active');
+            }
+        });
+        
+        // Atualizar conteúdo das abas
+        document.querySelectorAll('.insight-content').forEach(content => {
+            content.classList.add('hidden');
+        });
+        
+        const targetContent = document.getElementById(`${targetTab}-content`);
+        if (targetContent) {
+            targetContent.classList.remove('hidden');
+            
+            // Carregar conteúdo específico da aba
+            switch(targetTab) {
+                case 'alerts':
+                    loadCriticalAlerts();
+                    break;
+                case 'recommendations':
+                    loadRecommendations();
+                    break;
+                case 'decisions':
+                    loadDecisionSupport();
+                    break;
+                case 'actions':
+                    loadActionPlan();
+                    break;
+            }
         }
     }
 
@@ -7231,21 +7194,14 @@ document.addEventListener('DOMContentLoaded', function() {
      */
     async function refreshAllInsights() {
         try {
-            console.log('🔄 Atualizando todos os insights...');
             showNotification('🔄 Atualizando insights...', 'info', 2000);
             
-            // Carregar conteúdo da aba ativa atual
-            const activeTab = document.querySelector('.insight-tab-btn.active');
-            if (activeTab) {
-                const tabName = activeTab.dataset.tab;
-                console.log(`🔄 Atualizando aba ativa: ${tabName}`);
-                loadInsightTabContent(tabName);
-            }
-            
-            // Atualizar insights financeiros gerais se a função existir
-            if (typeof updateFinancialInsights === 'function') {
-                await updateFinancialInsights();
-            }
+            await Promise.all([
+                loadCriticalAlerts(),
+                loadRecommendations(),
+                loadDecisionSupport(),
+                loadActionPlan()
+            ]);
             
             showNotification('✅ Insights atualizados com sucesso!', 'success', 3000);
         } catch (error) {
@@ -8537,28 +8493,13 @@ document.addEventListener('DOMContentLoaded', function() {
         // Normalizar dados
         const normalizedExpenses = expenses.map(normalizeExpenseData);
         
-        // Agrupar por categoria aplicando a regra de negócio:
-        // - Gastos COM plano de conta = PESSOAIS
-        // - Gastos SEM plano de conta = EMPRESARIAIS
+        // Agrupar por categoria (PlanoContasDescricao ou PlanoContasID)
         normalizedExpenses.forEach(expense => {
-            let category;
-            let categoryType;
-            
-            // Aplicar regra de negócio para categorização
-            if (expense.accountPlanDescription || expense.accountPlanCode) {
-                // Tem plano de conta = PESSOAL
-                category = expense.accountPlanDescription || `Plano ${expense.accountPlanCode}`;
-                categoryType = 'PESSOAL';
-            } else {
-                // Não tem plano de conta = EMPRESARIAL
-                category = 'Gastos Empresariais';
-                categoryType = 'EMPRESARIAL';
-            }
+            const category = expense.accountPlanDescription || expense.accountPlanCode || 'Sem Categoria';
             
             if (!categoriesMap.has(category)) {
                 categoriesMap.set(category, {
                     name: category,
-                    type: categoryType,
                     frequency: 0,
                     totalAmount: 0,
                     expenses: []
@@ -9149,22 +9090,36 @@ document.addEventListener('DOMContentLoaded', function() {
             accountData[account] = (accountData[account] || 0) + item.amount;
         });
         
-        const labels = Object.keys(accountData);
+        const accounts = Object.keys(accountData);
         const values = Object.values(accountData);
-        const colors = [
-            '#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6',
-            '#06b6d4', '#84cc16', '#f97316', '#ec4899', '#6b7280'
-        ];
+        
+        // Usar cores personalizadas para cada tipo de conta
+        const backgroundColors = accounts.map(account => getPaymentTypeColor(account, 0.8));
+        const borderColors = accounts.map(account => getPaymentTypeColor(account, 1));
+        
+        // Adicionar ícones aos labels
+        const enhancedLabels = accounts.map(account => {
+            const icon = getPaymentTypeIcon(account);
+            return `${icon} ${account}`;
+        });
         
         periodCharts.accounts = new Chart(ctx, {
             type: 'doughnut',
             data: {
-                labels: labels,
+                labels: enhancedLabels,
                 datasets: [{
                     data: values,
-                    backgroundColor: colors.slice(0, labels.length),
-                    borderWidth: 2,
-                    borderColor: '#fff'
+                    backgroundColor: backgroundColors,
+                    borderColor: borderColors,
+                    borderWidth: 3,
+                    // Efeitos especiais para PIX e Boleto
+                    hoverBackgroundColor: accounts.map(account => {
+                        if (account === 'PIX') return 'rgba(46, 204, 113, 1)';
+                        if (account === 'Boleto') return 'rgba(231, 76, 60, 1)';
+                        return getPaymentTypeColor(account, 1);
+                    }),
+                    hoverBorderWidth: 4,
+                    hoverOffset: 15 // Destaque especial no hover
                 }]
             },
             options: {
@@ -9174,8 +9129,46 @@ document.addEventListener('DOMContentLoaded', function() {
                     legend: {
                         position: 'bottom',
                         labels: {
-                            padding: 10,
-                            usePointStyle: true
+                            padding: 15,
+                            usePointStyle: true,
+                            font: {
+                                size: 12,
+                                weight: 'bold'
+                            },
+                            generateLabels: function(chart) {
+                                const labels = Chart.defaults.plugins.legend.labels.generateLabels(chart);
+                                return labels.map((label, index) => {
+                                    const account = accounts[index];
+                                    // Destacar PIX e Boleto na legenda
+                                    if (account === 'PIX' || account === 'Boleto') {
+                                        label.fontStyle = 'bold';
+                                        label.strokeStyle = label.fillStyle;
+                                        label.lineWidth = 2;
+                                    }
+                                    return label;
+                                });
+                            }
+                        }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            title: function(context) {
+                                const account = accounts[context[0].dataIndex];
+                                const icon = getPaymentTypeIcon(account);
+                                return `${icon} ${account}`;
+                            },
+                            label: function(context) {
+                                const value = context.parsed;
+                                const total = values.reduce((a, b) => a + b, 0);
+                                const percentage = ((value / total) * 100).toFixed(1);
+                                return `Valor: ${formatCurrency(value)} (${percentage}%)`;
+                            },
+                            afterLabel: function(context) {
+                                const account = accounts[context.dataIndex];
+                                if (account === 'PIX') return '⚡ Pagamento instantâneo';
+                                if (account === 'Boleto') return '📋 Pagamento tradicional';
+                                return '';
+                            }
                         }
                     }
                 }

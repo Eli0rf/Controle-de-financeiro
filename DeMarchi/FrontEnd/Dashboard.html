@@ -2270,6 +2270,118 @@
         </div>
     </div>
 
+    <!-- Modal para Edição de Gastos -->
+    <div id="edit-expense-modal" class="modal-overlay fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden opacity-0 z-50">
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-md p-6 animate-fade-in">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-bold text-gray-800">
+                    <i class="fas fa-edit text-blue-600 mr-2"></i>
+                    Editar Gasto
+                </h2>
+                <button id="close-edit-modal" class="text-gray-400 hover:text-gray-600 text-xl font-bold">
+                    ×
+                </button>
+            </div>
+            
+            <form id="edit-expense-form" enctype="multipart/form-data">
+                <input type="hidden" id="edit-expense-id" name="expense_id">
+                
+                <!-- Data da Transação -->
+                <div class="mb-4">
+                    <label for="edit-transaction-date" class="block text-sm font-medium text-gray-700 mb-1">
+                        Data da Transação *
+                    </label>
+                    <input type="date" id="edit-transaction-date" name="transaction_date" 
+                           class="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500" required>
+                </div>
+                
+                <!-- Valor -->
+                <div class="mb-4">
+                    <label for="edit-amount" class="block text-sm font-medium text-gray-700 mb-1">
+                        Valor *
+                    </label>
+                    <input type="number" id="edit-amount" name="amount" step="0.01" min="0"
+                           class="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500" required>
+                </div>
+                
+                <!-- Descrição -->
+                <div class="mb-4">
+                    <label for="edit-description" class="block text-sm font-medium text-gray-700 mb-1">
+                        Descrição *
+                    </label>
+                    <input type="text" id="edit-description" name="description"
+                           class="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500" required>
+                </div>
+                
+                <!-- Conta -->
+                <div class="mb-4">
+                    <label for="edit-account" class="block text-sm font-medium text-gray-700 mb-1">
+                        Conta *
+                    </label>
+                    <select id="edit-account" name="account" 
+                            class="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500" required>
+                        <option value="">Selecione uma conta</option>
+                        <option>Nu Bank Ketlyn</option>
+                        <option>Nu Vainer</option>
+                        <option>Ourocard Ketlyn</option>
+                        <option>PicPay Vainer</option>
+                        <option>PIX</option>
+                        <option>Boleto</option>
+                    </select>
+                </div>
+                
+                <!-- Plano de Contas -->
+                <div class="mb-4">
+                    <label for="edit-account-plan-code" class="block text-sm font-medium text-gray-700 mb-1">
+                        Plano de Contas
+                    </label>
+                    <input type="text" id="edit-account-plan-code" name="account_plan_code"
+                           class="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                           placeholder="Ex: 1.1.01.001">
+                </div>
+                
+                <!-- Checkbox Gasto Empresarial -->
+                <div class="mb-4">
+                    <label class="flex items-center">
+                        <input type="checkbox" id="edit-is-business" name="is_business_expense" class="mr-2">
+                        <span class="text-sm text-gray-700">Gasto empresarial</span>
+                    </label>
+                </div>
+                
+                <!-- Checkbox Tem Fatura -->
+                <div class="mb-4">
+                    <label class="flex items-center">
+                        <input type="checkbox" id="edit-has-invoice" name="has_invoice" class="mr-2">
+                        <span class="text-sm text-gray-700">Tem fatura</span>
+                    </label>
+                </div>
+                
+                <!-- Upload de Fatura -->
+                <div id="edit-invoice-upload" class="mb-4 hidden">
+                    <label for="edit-invoice-file" class="block text-sm font-medium text-gray-700 mb-1">
+                        Nova Fatura (PDF)
+                    </label>
+                    <input type="file" id="edit-invoice-file" name="invoice" accept=".pdf"
+                           class="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                    <p class="text-xs text-gray-500 mt-1">Deixe em branco para manter a fatura atual</p>
+                </div>
+                
+                <!-- Botões -->
+                <div class="flex gap-3 mt-6">
+                    <button type="button" id="cancel-edit-btn" 
+                            class="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 focus:ring-2 focus:ring-gray-500">
+                        Cancelar
+                    </button>
+                    <button type="submit" 
+                            class="flex-1 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:ring-2 focus:ring-blue-500">
+                        <i class="fas fa-save mr-2"></i>
+                        Salvar
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <!-- Toast Notification -->
     <div id="toast-container" class="fixed top-6 right-6 z-50 flex flex-col gap-2"></div>
 
