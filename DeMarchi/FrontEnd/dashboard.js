@@ -13,6 +13,14 @@ document.addEventListener('DOMContentLoaded', function() {
     // Variáveis globais para gerenciamento de gráficos
     const charts = {};
     let allExpensesCache = [];
+    
+    // ✅ Configuração global para exibir valores nos gráficos
+    const CHART_CONFIG = {
+        showValues: true,          // Exibir valores nos gráficos
+        valueColor: '#1f2937',     // Cor dos valores
+        valueFont: 'bold 11px Arial', // Fonte dos valores
+        piValueColor: '#fff'       // Cor dos valores em gráficos de pizza
+    };
 
     const loginSection = document.getElementById('login-section');
     const dashboardContent = document.getElementById('dashboard-content');
@@ -601,6 +609,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (isChartJsLoaded()) {
                     clearInterval(checkInterval);
                     console.log('✅ Chart.js carregado após', attempts * 100, 'ms:', Chart.version);
+                    registerValuePlugin(); // ✅ Registrar plugin de valores
                     resolve(true);
                 } else if (attempts >= maxAttempts) {
                     clearInterval(checkInterval);
@@ -696,6 +705,73 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         }
     };
+
+    /**
+     * Plugin para exibir valores nos gráficos
+     */
+    const chartValuesPlugin = {
+        id: 'chartValues',
+        afterDatasetsDraw: function(chart) {
+            const ctx = chart.ctx;
+            const chartType = chart.config.type;
+            
+            chart.data.datasets.forEach((dataset, datasetIndex) => {
+                const meta = chart.getDatasetMeta(datasetIndex);
+                
+                if (meta.hidden || !dataset.showValues) return;
+                
+                ctx.save();
+                ctx.fillStyle = dataset.valueColor || '#333';
+                ctx.font = dataset.valueFont || 'bold 11px Arial';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'bottom';
+                
+                meta.data.forEach((element, index) => {
+                    const value = dataset.data[index];
+                    if (value === null || value === undefined || value === 0) return;
+                    
+                    const formatted = 'R$ ' + value.toLocaleString('pt-BR', {
+                        minimumFractionDigits: 0,
+                        maximumFractionDigits: 0
+                    });
+                    
+                    if (chartType === 'pie') {
+                        // Para gráficos de pizza, posicionar no centro dos segmentos
+                        const angle = element.startAngle + (element.endAngle - element.startAngle) / 2;
+                        const radius = (element.innerRadius + element.outerRadius) / 2;
+                        const x = element.x + Math.cos(angle) * radius * 0.8;
+                        const y = element.y + Math.sin(angle) * radius * 0.8;
+                        
+                        ctx.fillStyle = '#fff';
+                        ctx.strokeStyle = '#333';
+                        ctx.lineWidth = 3;
+                        ctx.strokeText(formatted, x, y);
+                        ctx.fillText(formatted, x, y);
+                    } else {
+                        // Para gráficos de barras e linhas
+                        const x = element.x;
+                        const y = element.y - 5;
+                        
+                        ctx.fillText(formatted, x, y);
+                    }
+                });
+                
+                ctx.restore();
+            });
+        }
+    };
+
+    /**
+     * Registra o plugin de valores quando Chart.js estiver disponível
+     */
+    function registerValuePlugin() {
+        if (typeof Chart !== 'undefined' && Chart.register) {
+            Chart.register(chartValuesPlugin);
+            console.log('✅ Plugin de valores registrado no Chart.js');
+            return true;
+        }
+        return false;
+    }
 
     /**
      * Mescla opções específicas com as padrões
@@ -901,6 +977,9 @@ document.addEventListener('DOMContentLoaded', function() {
                         {
                             label: '💰 Gastos Atuais',
                             data: currentData,
+                            showValues: CHART_CONFIG.showValues,  // ✅ Usar configuração global
+                            valueColor: CHART_CONFIG.valueColor,
+                            valueFont: CHART_CONFIG.valueFont,
                             backgroundColor: sortedData.map(item => {
                                 const current = parseFloat(item.Total) || 0;
                                 const limit = parseFloat(item.Teto) || 0;
@@ -2297,6 +2376,9 @@ document.addEventListener('DOMContentLoaded', function() {
                         borderWidth: 3,
                         tension: 0.3,
                         fill: true,
+                        showValues: CHART_CONFIG.showValues,  // ✅ Usar configuração global
+                        valueColor: CHART_CONFIG.valueColor,
+                        valueFont: CHART_CONFIG.valueFont,
                         pointBackgroundColor: chartData.map(v => {
                             if (v === max) return '#22c55e';
                             if (v === min && v > 0) return '#ef4444';
@@ -2403,6 +2485,9 @@ document.addEventListener('DOMContentLoaded', function() {
                     borderWidth: 2,
                     hoverBorderWidth: 3,
                     hoverOffset: 10,
+                    showValues: CHART_CONFIG.showValues,  // ✅ Usar configuração global
+                    valueColor: CHART_CONFIG.piValueColor,
+                    valueFont: CHART_CONFIG.valueFont,
                     // Efeito especial para PIX e Boleto
                     hoverBackgroundColor: accounts.map(account => {
                         if (account === 'PIX') return 'rgba(46, 204, 113, 1)';
@@ -2839,7 +2924,10 @@ document.addEventListener('DOMContentLoaded', function() {
                         borderColor: colors.map(color => color),
                         borderWidth: 2,
                         borderRadius: 6,
-                        borderSkipped: false
+                        borderSkipped: false,
+                        showValues: CHART_CONFIG.showValues,  // ✅ Usar configuração global
+                        valueColor: CHART_CONFIG.valueColor,
+                        valueFont: CHART_CONFIG.valueFont
                     }]
                 },
                 options: mergeChartOptions({
