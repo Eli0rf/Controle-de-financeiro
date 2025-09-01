@@ -6299,7 +6299,8 @@ document.addEventListener('DOMContentLoaded', function() {
             
             console.log('✅ Aba PIX e Boleto está visível, carregando dados...');
             
-            const expenses = await fetchExpenses();
+            // Buscar todos os gastos sem filtro de período para PIX/Boleto
+            const expenses = await fetchPixBoletoExpenses();
             console.log('📊 Total de gastos carregados:', expenses.length);
             
             const pixBoletoExpenses = expenses.filter(expense => 
@@ -6310,7 +6311,8 @@ document.addEventListener('DOMContentLoaded', function() {
             console.log('📋 Detalhes:', pixBoletoExpenses.map(e => ({ 
                 account: e.account, 
                 amount: e.amount, 
-                description: e.description 
+                description: e.description,
+                date: e.transaction_date || e.date
             })));
             
             // Atualizar estatísticas
@@ -6329,6 +6331,59 @@ document.addEventListener('DOMContentLoaded', function() {
         } catch (error) {
             console.error('❌ Erro ao carregar dados PIX e Boleto:', error);
             showNotification('Erro ao carregar dados PIX e Boleto', 'error');
+        }
+    }
+    
+    // Função específica para buscar gastos PIX e Boleto (todos os períodos)
+    async function fetchPixBoletoExpenses() {
+        try {
+            if (!checkAuthentication()) return [];
+
+            console.log('🔍 Buscando todos os gastos PIX/Boleto...');
+
+            // Primeiro, tentar buscar sem filtros de período
+            const response = await authenticatedFetch(`${API_BASE_URL}/api/expenses`);
+
+            if (!response.ok) {
+                console.error('❌ Erro na resposta:', response.status, response.statusText);
+                
+                // Se falhar, tentar com ano atual
+                const currentYear = new Date().getFullYear();
+                const params = new URLSearchParams({ year: currentYear });
+                const fallbackResponse = await authenticatedFetch(`${API_BASE_URL}/api/expenses?${params.toString()}`);
+                
+                if (!fallbackResponse.ok) {
+                    const error = await fallbackResponse.json();
+                    throw new Error(error.message || 'Erro ao buscar despesas PIX/Boleto.');
+                }
+                
+                const expenses = await fallbackResponse.json();
+                console.log('📊 Fallback: Total de despesas obtidas para PIX/Boleto:', expenses.length);
+                return expenses;
+            }
+
+            const expenses = await response.json();
+            console.log('📊 Total de despesas obtidas para PIX/Boleto (todos os períodos):', expenses.length);
+            
+            // Log de debug para ver se há gastos PIX/Boleto
+            const pixBoletoCount = expenses.filter(e => e.account === 'PIX' || e.account === 'Boleto').length;
+            console.log('💳 Gastos PIX/Boleto encontrados:', pixBoletoCount);
+            
+            if (pixBoletoCount === 0) {
+                console.log('🔍 Nenhum gasto PIX/Boleto encontrado. Verificando estrutura dos dados...');
+                // Log das primeiras 5 transações para debug
+                console.log('📋 Primeiras 5 transações para debug:', expenses.slice(0, 5).map(e => ({
+                    account: e.account,
+                    amount: e.amount,
+                    description: e.description,
+                    date: e.transaction_date || e.date
+                })));
+            }
+            
+            return expenses;
+        } catch (error) {
+            console.error('❌ Erro ao buscar despesas PIX/Boleto:', error);
+            return [];
         }
     }
     
@@ -6363,6 +6418,17 @@ document.addEventListener('DOMContentLoaded', function() {
         
         if (grandTotalEl) {
             grandTotalEl.textContent = formatCurrency(grandTotal);
+        }
+        
+        // Se não há dados, mostrar notificação informativa
+        if (totalTransactions === 0) {
+            console.log('ℹ️ Nenhum gasto PIX/Boleto encontrado para o período');
+            // Usar setTimeout para não interferir com outras operações
+            setTimeout(() => {
+                showNotification('ℹ️ Nenhum gasto PIX ou Boleto encontrado para o período selecionado', 'info', 3000);
+            }, 500);
+        } else {
+            console.log('✅ Estatísticas PIX e Boleto atualizadas com sucesso!');
         }
         
         console.log('📊 Estatísticas PIX e Boleto atualizadas:', {
@@ -6689,6 +6755,25 @@ document.addEventListener('DOMContentLoaded', function() {
             console.log('✅ Campo de busca configurado');
         }
         
+        // Adicionar botão de atualização manual se não existir
+        const filterSection = document.querySelector('#pix-boleto-tab .bg-white:has(h3:contains("Filtros"))');
+        if (filterSection && !document.getElementById('refresh-pix-boleto-btn')) {
+            const refreshBtn = document.createElement('button');
+            refreshBtn.id = 'refresh-pix-boleto-btn';
+            refreshBtn.className = 'mt-4 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors';
+            refreshBtn.innerHTML = '🔄 Atualizar Dados';
+            refreshBtn.addEventListener('click', () => {
+                console.log('🔄 Atualização manual solicitada');
+                loadPixBoletoData();
+            });
+            
+            const filtersGrid = filterSection.querySelector('.grid');
+            if (filtersGrid) {
+                filterSection.insertBefore(refreshBtn, filtersGrid.nextSibling);
+                console.log('✅ Botão de atualização manual adicionado');
+            }
+        }
+        
         console.log('🎯 Todos os filtros PIX e Boleto foram configurados');
     }
     
@@ -6696,10 +6781,12 @@ document.addEventListener('DOMContentLoaded', function() {
         console.log('🔄 Atualizando dados PIX e Boleto com filtros...');
         
         try {
-            const expenses = await fetchExpenses();
+            const expenses = await fetchPixBoletoExpenses();
             let filteredExpenses = expenses.filter(expense => 
                 expense.account === 'PIX' || expense.account === 'Boleto'
             );
+            
+            console.log('📊 Gastos PIX/Boleto antes dos filtros:', filteredExpenses.length);
             
             // Aplicar filtros
             const typeFilter = document.getElementById('pix-boleto-type');
@@ -6707,26 +6794,29 @@ document.addEventListener('DOMContentLoaded', function() {
             const monthFilter = document.getElementById('pix-boleto-month');
             const searchInput = document.getElementById('pix-boleto-search');
             
-            if (typeFilter && typeFilter.value !== 'todos') {
+            if (typeFilter && typeFilter.value !== '' && typeFilter.value !== 'todos') {
                 filteredExpenses = filteredExpenses.filter(expense => 
                     expense.account === typeFilter.value
                 );
+                console.log('🎯 Após filtro de tipo:', filteredExpenses.length);
             }
             
-            if (yearFilter && yearFilter.value) {
+            if (yearFilter && yearFilter.value && yearFilter.value !== '') {
                 const selectedYear = parseInt(yearFilter.value);
                 filteredExpenses = filteredExpenses.filter(expense => {
                     const expenseDate = new Date(expense.transaction_date || expense.date);
                     return expenseDate.getFullYear() === selectedYear;
                 });
+                console.log('📅 Após filtro de ano:', filteredExpenses.length);
             }
             
-            if (monthFilter && monthFilter.value !== '0') {
+            if (monthFilter && monthFilter.value && monthFilter.value !== '' && monthFilter.value !== '0') {
                 const selectedMonth = parseInt(monthFilter.value);
                 filteredExpenses = filteredExpenses.filter(expense => {
                     const expenseDate = new Date(expense.transaction_date || expense.date);
                     return expenseDate.getMonth() + 1 === selectedMonth;
                 });
+                console.log('📅 Após filtro de mês:', filteredExpenses.length);
             }
             
             if (searchInput && searchInput.value.trim()) {
@@ -6734,11 +6824,16 @@ document.addEventListener('DOMContentLoaded', function() {
                 filteredExpenses = filteredExpenses.filter(expense => 
                     (expense.description || '').toLowerCase().includes(searchTerm)
                 );
+                console.log('🔍 Após filtro de busca:', filteredExpenses.length);
             }
             
             // Atualizar estatísticas e gráficos
             updatePixBoletoStats(filteredExpenses);
-            renderPixBoletoCharts(filteredExpenses);
+            
+            // Renderizar gráficos com delay
+            setTimeout(() => {
+                renderPixBoletoCharts(filteredExpenses);
+            }, 100);
             
             console.log('✅ Dados PIX e Boleto atualizados:', filteredExpenses.length, 'transações');
             
