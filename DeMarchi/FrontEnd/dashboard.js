@@ -1672,6 +1672,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 loadBusinessAnalysis();
             } else if (tabName === 'reports') {
                 loadReportsData();
+            } else if (tabName === 'pix-boleto') {
+                loadPixBoletoData();
             }
         }
         
@@ -6277,6 +6279,394 @@ document.addEventListener('DOMContentLoaded', function() {
         } catch (error) {
             console.error('Erro ao buscar dados do plano:', error);
             showNotification('Erro ao carregar gráfico de planos', 'error');
+        }
+    }
+
+    // ========== FUNCIONALIDADE PIX E BOLETO ==========
+    
+    async function loadPixBoletoData() {
+        console.log('🔄 Carregando dados PIX e Boleto...');
+        
+        try {
+            const expenses = await fetchExpenses();
+            const pixBoletoExpenses = expenses.filter(expense => 
+                expense.account === 'PIX' || expense.account === 'Boleto'
+            );
+            
+            // Atualizar estatísticas
+            updatePixBoletoStats(pixBoletoExpenses);
+            
+            // Renderizar gráficos
+            renderPixBoletoCharts(pixBoletoExpenses);
+            
+            // Configurar filtros
+            setupPixBoletoFilters();
+            
+            console.log('✅ Dados PIX e Boleto carregados:', pixBoletoExpenses.length, 'transações');
+            
+        } catch (error) {
+            console.error('❌ Erro ao carregar dados PIX e Boleto:', error);
+            showNotification('Erro ao carregar dados PIX e Boleto', 'error');
+        }
+    }
+    
+    function updatePixBoletoStats(expenses) {
+        const pixExpenses = expenses.filter(e => e.account === 'PIX');
+        const boletoExpenses = expenses.filter(e => e.account === 'Boleto');
+        
+        const pixTotal = pixExpenses.reduce((sum, e) => sum + parseFloat(e.amount || 0), 0);
+        const boletoTotal = boletoExpenses.reduce((sum, e) => sum + parseFloat(e.amount || 0), 0);
+        const totalTransactions = expenses.length;
+        const grandTotal = pixTotal + boletoTotal;
+        
+        // Atualizar elementos no HTML
+        const transactionsEl = document.getElementById('pix-boleto-transactions');
+        const grandTotalEl = document.getElementById('pix-boleto-grand-total');
+        
+        if (transactionsEl) {
+            transactionsEl.textContent = totalTransactions;
+        }
+        
+        if (grandTotalEl) {
+            grandTotalEl.textContent = formatCurrency(grandTotal);
+        }
+        
+        console.log('📊 Estatísticas PIX e Boleto:', {
+            pix: { count: pixExpenses.length, total: pixTotal },
+            boleto: { count: boletoExpenses.length, total: boletoTotal },
+            total: { count: totalTransactions, amount: grandTotal }
+        });
+    }
+    
+    function renderPixBoletoCharts(expenses) {
+        renderPixBoletoComparisonChart(expenses);
+        renderPixBoletoEvolutionChart(expenses);
+    }
+    
+    function renderPixBoletoComparisonChart(expenses) {
+        const chartKey = 'pixBoletoComparisonChart';
+        const canvasId = 'pix-boleto-comparison-chart';
+        
+        if (!isChartJsLoaded()) {
+            console.error('❌ Chart.js não disponível para PIX/Boleto comparison');
+            displayChartFallback(canvasId, 'Chart.js não carregado');
+            return;
+        }
+        
+        const pixExpenses = expenses.filter(e => e.account === 'PIX');
+        const boletoExpenses = expenses.filter(e => e.account === 'Boleto');
+        
+        const pixTotal = pixExpenses.reduce((sum, e) => sum + parseFloat(e.amount || 0), 0);
+        const boletoTotal = boletoExpenses.reduce((sum, e) => sum + parseFloat(e.amount || 0), 0);
+        
+        if (pixTotal === 0 && boletoTotal === 0) {
+            displayChartFallback(canvasId, 'Sem transações PIX ou Boleto neste período');
+            return;
+        }
+        
+        try {
+            const config = {
+                type: 'doughnut',
+                data: {
+                    labels: ['💳 PIX', '📄 Boleto'],
+                    datasets: [{
+                        data: [pixTotal, boletoTotal],
+                        backgroundColor: [
+                            'rgba(46, 204, 113, 0.8)',  // Verde PIX
+                            'rgba(231, 76, 60, 0.8)'    // Vermelho Boleto
+                        ],
+                        borderColor: [
+                            'rgba(46, 204, 113, 1)',
+                            'rgba(231, 76, 60, 1)'
+                        ],
+                        borderWidth: 3,
+                        hoverOffset: 10,
+                        showValues: CHART_CONFIG.showValues,
+                        valueColor: CHART_CONFIG.piValueColor,
+                        valueFont: CHART_CONFIG.valueFont
+                    }]
+                },
+                options: mergeChartOptions({
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: '💳 Comparação PIX vs Boleto',
+                            font: { size: 16, weight: 'bold' }
+                        },
+                        subtitle: {
+                            display: true,
+                            text: `Total: ${formatCurrency(pixTotal + boletoTotal)}`,
+                            font: { size: 12 }
+                        },
+                        legend: {
+                            position: 'bottom',
+                            labels: {
+                                padding: 15,
+                                usePointStyle: true,
+                                font: { size: 12 }
+                            }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    const value = context.parsed;
+                                    const total = pixTotal + boletoTotal;
+                                    const percentage = ((value / total) * 100).toFixed(1);
+                                    return [
+                                        `${context.label}: ${formatCurrency(value)}`,
+                                        `Percentual: ${percentage}%`,
+                                        `Transações: ${context.label.includes('PIX') ? pixExpenses.length : boletoExpenses.length}`
+                                    ];
+                                }
+                            }
+                        }
+                    }
+                })
+            };
+            
+            createChart(chartKey, canvasId, config);
+            
+        } catch (error) {
+            console.error('❌ Erro ao renderizar gráfico PIX/Boleto comparison:', error);
+            displayChartFallback(canvasId, 'Erro ao carregar gráfico');
+        }
+    }
+    
+    function renderPixBoletoEvolutionChart(expenses) {
+        const chartKey = 'pixBoletoEvolutionChart';
+        const canvasId = 'pix-boleto-evolution-chart';
+        
+        if (!isChartJsLoaded()) {
+            console.error('❌ Chart.js não disponível para PIX/Boleto evolution');
+            displayChartFallback(canvasId, 'Chart.js não carregado');
+            return;
+        }
+        
+        if (expenses.length === 0) {
+            displayChartFallback(canvasId, 'Sem dados de evolução disponíveis');
+            return;
+        }
+        
+        try {
+            // Agrupar dados por mês
+            const monthlyData = {};
+            
+            expenses.forEach(expense => {
+                const date = new Date(expense.transaction_date || expense.date);
+                const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+                
+                if (!monthlyData[monthKey]) {
+                    monthlyData[monthKey] = { pix: 0, boleto: 0 };
+                }
+                
+                const amount = parseFloat(expense.amount || 0);
+                if (expense.account === 'PIX') {
+                    monthlyData[monthKey].pix += amount;
+                } else if (expense.account === 'Boleto') {
+                    monthlyData[monthKey].boleto += amount;
+                }
+            });
+            
+            const months = Object.keys(monthlyData).sort();
+            const pixData = months.map(month => monthlyData[month].pix);
+            const boletoData = months.map(month => monthlyData[month].boleto);
+            const monthLabels = months.map(month => {
+                const [year, monthNum] = month.split('-');
+                const monthName = new Date(year, monthNum - 1).toLocaleDateString('pt-BR', { month: 'short' });
+                return `${monthName}/${year}`;
+            });
+            
+            const config = {
+                type: 'line',
+                data: {
+                    labels: monthLabels,
+                    datasets: [
+                        {
+                            label: '💳 PIX',
+                            data: pixData,
+                            borderColor: 'rgba(46, 204, 113, 1)',
+                            backgroundColor: 'rgba(46, 204, 113, 0.1)',
+                            borderWidth: 3,
+                            tension: 0.3,
+                            fill: false,
+                            pointBackgroundColor: 'rgba(46, 204, 113, 1)',
+                            pointBorderColor: '#fff',
+                            pointBorderWidth: 2,
+                            pointRadius: 5,
+                            showValues: CHART_CONFIG.showValues,
+                            valueColor: CHART_CONFIG.valueColor,
+                            valueFont: 'bold 10px Arial'
+                        },
+                        {
+                            label: '📄 Boleto',
+                            data: boletoData,
+                            borderColor: 'rgba(231, 76, 60, 1)',
+                            backgroundColor: 'rgba(231, 76, 60, 0.1)',
+                            borderWidth: 3,
+                            tension: 0.3,
+                            fill: false,
+                            pointBackgroundColor: 'rgba(231, 76, 60, 1)',
+                            pointBorderColor: '#fff',
+                            pointBorderWidth: 2,
+                            pointRadius: 5,
+                            showValues: CHART_CONFIG.showValues,
+                            valueColor: CHART_CONFIG.valueColor,
+                            valueFont: 'bold 10px Arial'
+                        }
+                    ]
+                },
+                options: mergeChartOptions({
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: '📈 Evolução PIX e Boleto',
+                            font: { size: 16, weight: 'bold' }
+                        },
+                        legend: {
+                            position: 'top',
+                            labels: {
+                                usePointStyle: true,
+                                font: { size: 12 }
+                            }
+                        },
+                        tooltip: {
+                            mode: 'index',
+                            intersect: false,
+                            callbacks: {
+                                title: function(context) {
+                                    return `Período: ${context[0].label}`;
+                                },
+                                label: function(context) {
+                                    return `${context.dataset.label}: ${formatCurrency(context.parsed.y)}`;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            title: {
+                                display: true,
+                                text: 'Período'
+                            }
+                        },
+                        y: {
+                            title: {
+                                display: true,
+                                text: 'Valor (R$)'
+                            },
+                            beginAtZero: true
+                        }
+                    }
+                })
+            };
+            
+            createChart(chartKey, canvasId, config);
+            
+        } catch (error) {
+            console.error('❌ Erro ao renderizar gráfico de evolução PIX/Boleto:', error);
+            displayChartFallback(canvasId, 'Erro ao carregar gráfico de evolução');
+        }
+    }
+    
+    function setupPixBoletoFilters() {
+        const typeFilter = document.getElementById('pix-boleto-type');
+        const yearFilter = document.getElementById('pix-boleto-year');
+        const monthFilter = document.getElementById('pix-boleto-month');
+        const searchInput = document.getElementById('pix-boleto-search');
+        
+        // Configurar filtros se existirem
+        if (typeFilter) {
+            typeFilter.addEventListener('change', refreshPixBoletoData);
+        }
+        
+        if (yearFilter) {
+            // Preencher anos (últimos 3 anos + próximo ano)
+            const currentYear = new Date().getFullYear();
+            yearFilter.innerHTML = '';
+            for (let year = currentYear - 2; year <= currentYear + 1; year++) {
+                const option = document.createElement('option');
+                option.value = year;
+                option.textContent = year;
+                if (year === currentYear) option.selected = true;
+                yearFilter.appendChild(option);
+            }
+            yearFilter.addEventListener('change', refreshPixBoletoData);
+        }
+        
+        if (monthFilter) {
+            // Preencher meses
+            const months = [
+                'Todos', 'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+                'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
+            ];
+            monthFilter.innerHTML = '';
+            months.forEach((month, index) => {
+                const option = document.createElement('option');
+                option.value = index;
+                option.textContent = month;
+                monthFilter.appendChild(option);
+            });
+            monthFilter.addEventListener('change', refreshPixBoletoData);
+        }
+        
+        if (searchInput) {
+            searchInput.addEventListener('input', refreshPixBoletoData);
+        }
+    }
+    
+    async function refreshPixBoletoData() {
+        console.log('🔄 Atualizando dados PIX e Boleto com filtros...');
+        
+        try {
+            const expenses = await fetchExpenses();
+            let filteredExpenses = expenses.filter(expense => 
+                expense.account === 'PIX' || expense.account === 'Boleto'
+            );
+            
+            // Aplicar filtros
+            const typeFilter = document.getElementById('pix-boleto-type');
+            const yearFilter = document.getElementById('pix-boleto-year');
+            const monthFilter = document.getElementById('pix-boleto-month');
+            const searchInput = document.getElementById('pix-boleto-search');
+            
+            if (typeFilter && typeFilter.value !== 'todos') {
+                filteredExpenses = filteredExpenses.filter(expense => 
+                    expense.account === typeFilter.value
+                );
+            }
+            
+            if (yearFilter && yearFilter.value) {
+                const selectedYear = parseInt(yearFilter.value);
+                filteredExpenses = filteredExpenses.filter(expense => {
+                    const expenseDate = new Date(expense.transaction_date || expense.date);
+                    return expenseDate.getFullYear() === selectedYear;
+                });
+            }
+            
+            if (monthFilter && monthFilter.value !== '0') {
+                const selectedMonth = parseInt(monthFilter.value);
+                filteredExpenses = filteredExpenses.filter(expense => {
+                    const expenseDate = new Date(expense.transaction_date || expense.date);
+                    return expenseDate.getMonth() + 1 === selectedMonth;
+                });
+            }
+            
+            if (searchInput && searchInput.value.trim()) {
+                const searchTerm = searchInput.value.trim().toLowerCase();
+                filteredExpenses = filteredExpenses.filter(expense => 
+                    (expense.description || '').toLowerCase().includes(searchTerm)
+                );
+            }
+            
+            // Atualizar estatísticas e gráficos
+            updatePixBoletoStats(filteredExpenses);
+            renderPixBoletoCharts(filteredExpenses);
+            
+            console.log('✅ Dados PIX e Boleto atualizados:', filteredExpenses.length, 'transações');
+            
+        } catch (error) {
+            console.error('❌ Erro ao atualizar dados PIX e Boleto:', error);
+            showNotification('Erro ao atualizar dados PIX e Boleto', 'error');
         }
     }
 
