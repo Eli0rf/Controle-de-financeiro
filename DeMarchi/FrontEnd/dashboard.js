@@ -559,6 +559,13 @@ document.addEventListener('DOMContentLoaded', function() {
         fetchAllData();
         toggleExpenseFields();
         initializeTabs(); // Adicionar inicialização das tabs
+        
+        // Inicializar sistema de insights após delay maior para garantir que tudo está pronto
+        console.log('✅ Dashboard inicializado, agendando sistema de insights...');
+        setTimeout(() => {
+            console.log('🚀 Inicializando sistema de insights...');
+            initInsightSystem();
+        }, 5000);  // 5 segundos de delay
     }
 
     function populateFilterOptions() {
@@ -5323,13 +5330,30 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
+    // Função helper para obter ano e mês de forma segura
+    function getCurrentPeriod() {
+        const currentDate = new Date();
+        const currentYear = currentDate.getFullYear();
+        const currentMonth = currentDate.getMonth() + 1;
+        
+        // Tentar obter valores dos filtros, senão usar valores atuais
+        const year = (filterYear?.value && filterYear.value !== '') ? filterYear.value : currentYear;
+        const month = (filterMonth?.value && filterMonth.value !== '') ? filterMonth.value : currentMonth;
+        
+        return {
+            year: year.toString(),
+            month: month.toString()
+        };
+    }
+
     // Função para buscar dados do dashboard
     async function fetchDashboardData() {
         try {
-            const params = new URLSearchParams({
-                year: filterYear.value,
-                month: filterMonth.value
-            });
+            const { year, month } = getCurrentPeriod();
+            
+            console.log(`📊 Buscando dados dashboard: ano=${year}, mês=${month}`);
+            
+            const params = new URLSearchParams({ year, month });
 
             const response = await authenticatedFetch(`${API_BASE_URL}/api/dashboard?${params}`);
             
@@ -6280,10 +6304,9 @@ document.addEventListener('DOMContentLoaded', function() {
 
     async function fetchAndRenderPlanChart() {
         try {
-            const params = new URLSearchParams({
-                year: filterYear.value,
-                month: filterMonth.value
-            });
+            const { year, month } = getCurrentPeriod();
+            
+            const params = new URLSearchParams({ year, month });
 
             const response = await authenticatedFetch(`${API_BASE_URL}/api/dashboard?${params}`);
             
@@ -7896,8 +7919,23 @@ document.addEventListener('DOMContentLoaded', function() {
             });
         });
         
-        // Carregar insights iniciais
-        refreshAllInsights();
+        // Verificar se os filtros estão prontos antes de carregar insights
+        if (filterYear && filterMonth && filterYear.value && filterMonth.value) {
+            console.log('📊 Filtros prontos, carregando insights...');
+            refreshAllInsights();
+        } else {
+            console.log('⏳ Aguardando filtros serem inicializados...');
+            // Tentar novamente após um delay
+            setTimeout(() => {
+                if (filterYear && filterMonth && filterYear.value && filterMonth.value) {
+                    console.log('📊 Filtros prontos após delay, carregando insights...');
+                    refreshAllInsights();
+                } else {
+                    console.log('⚠️ Filtros ainda não prontos, carregando com valores padrão...');
+                    refreshAllInsights();
+                }
+            }, 2000);
+        }
     }
 
     /**
@@ -8757,7 +8795,8 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Inicializar sistema de insights (será chamado no DOMContentLoaded principal)
     function initInsightSystemDelayed() {
-        setTimeout(initInsightSystem, 1000);
+        console.log('🕐 Agendando inicialização do sistema de insights...');
+        setTimeout(initInsightSystem, 3000);  // Aumentado para 3 segundos
     }
 
     // ========== SISTEMA DE ALERTAS DE ORÇAMENTO POR PLANO DE CONTAS ==========
@@ -10170,8 +10209,5 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Chamar inicialização segura
     safeInit();
-    
-    // Inicializar sistema de insights (com delay)
-    initInsightSystemDelayed();
 
 }); // Fim do DOMContentLoaded
