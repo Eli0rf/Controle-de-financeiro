@@ -884,57 +884,63 @@
                 <!-- Header com Resumo Executivo -->
                 <div class="bg-gradient-to-r from-blue-600 to-purple-600 text-white p-6 rounded-lg shadow-lg mb-8">
                     <h2 class="text-2xl font-bold mb-4">💼 Análise Empresarial - Dashboard Executivo</h2>
-                    <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
-                        <div class="bg-gradient-to-br from-purple-500 to-purple-300 p-6 rounded-2xl shadow-lg transform transition duration-500 hover:scale-105 animate-fade-in aos-init aos-animate">
+                    
+                    <!-- Seção Principal de Indicadores -->
+                    <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                        <div class="bg-gradient-to-br from-green-500 to-green-300 p-6 rounded-2xl shadow-lg transform transition duration-500 hover:scale-105">
                             <div class="flex items-center gap-3">
-                                <span class="text-3xl">📊</span>
+                                <span class="text-3xl">�</span>
                                 <div>
-                                    <p class="text-sm opacity-90">Total Empresarial</p>
-                                    <p id="business-total" class="text-3xl font-extrabold text-white mt-2">R$ 0,00</p>
+                                    <p class="text-sm opacity-90">Gastos Previstos</p>
+                                    <p id="predicted-expenses" class="text-2xl font-extrabold text-white mt-1">R$ 0,00</p>
+                                    <p class="text-xs opacity-75">Mês Atual</p>
                                 </div>
                             </div>
                         </div>
-                        <div class="bg-gradient-to-br from-white-500 to-white-300 p-6 rounded-2xl shadow-lg transform transition duration-500 hover:scale-105 animate-fade-in aos-init aos-animate">
+                        <div class="bg-gradient-to-br from-blue-500 to-blue-300 p-6 rounded-2xl shadow-lg transform transition duration-500 hover:scale-105">
+                            <div class="flex items-center gap-3">
+                                <span class="text-3xl">�</span>
+                                <div>
+                                    <p class="text-sm opacity-90">Gastos Realizados</p>
+                                    <p id="actual-expenses" class="text-2xl font-extrabold text-white mt-1">R$ 0,00</p>
+                                    <p class="text-xs opacity-75">Qtd: <span id="expenses-count">0</span></p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="bg-gradient-to-br from-purple-500 to-purple-300 p-6 rounded-2xl shadow-lg transform transition duration-500 hover:scale-105">
                             <div class="flex items-center gap-3">
                                 <span class="text-3xl">📈</span>
                                 <div>
-                                    <p class="text-sm opacity-90">Crescimento Mensal</p>
-                                    <p id="business-growth" class="text-3xl font-extrabold text-white mt-2">+0%</p>
+                                    <p class="text-sm opacity-90">Comparativo</p>
+                                    <p id="month-comparison" class="text-2xl font-extrabold text-white mt-1">+0%</p>
+                                    <p class="text-xs opacity-75">vs Mês Passado</p>
                                 </div>
                             </div>
                         </div>
-                        <div class="bg-gradient-to-br from-blue-500 to-blue-300 p-6 rounded-2xl shadow-lg transform transition duration-500 hover:scale-105 animate-fade-in aos-init aos-animate">
+                        <div class="bg-gradient-to-br from-orange-500 to-orange-300 p-6 rounded-2xl shadow-lg transform transition duration-500 hover:scale-105">
                             <div class="flex items-center gap-3">
-                                <span class="text-3xl">🧾</span>
+                                <span class="text-3xl">📅</span>
                                 <div>
-                                    <p class="text-sm opacity-90">Com Nota Fiscal</p>
-                                    <p id="business-invoiced" class="text-3xl font-extrabold text-white mt-2">R$ 0,00</p>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="bg-gradient-to-br from-orange-500 to-orange-300 p-6 rounded-2xl shadow-lg transform transition duration-500 hover:scale-105 animate-fade-in aos-init aos-animate">
-                            <div class="flex items-center gap-3">
-                                <span class="text-3xl">⚠️</span>
-                                <div>
-                                    <p class="text-sm opacity-90">Sem Nota Fiscal</p>
-                                    <p id="business-non-invoiced" class="text-3xl font-extrabold text-white mt-2">R$ 0,00</p>
+                                    <p class="text-sm opacity-90">Parcelado Futuro</p>
+                                    <p id="future-installments" class="text-2xl font-extrabold text-white mt-1">R$ 0,00</p>
+                                    <p class="text-xs opacity-75">Próximos Meses</p>
                                 </div>
                             </div>
                         </div>
                     </div>
                 </div>
 
-                <!-- Filtros Empresariais Avançados -->
+                <!-- Filtros Empresariais Avançados com Metadatabase -->
                 <div class="bg-white p-6 rounded-lg shadow-md mb-8">
-                    <h3 class="text-xl font-semibold text-gray-700 mb-4">🔍 Filtros Empresariais</h3>
-                    <div class="grid grid-cols-1 md:grid-cols-6 gap-4">
+                    <h3 class="text-xl font-semibold text-gray-700 mb-4">🔍 Filtros Empresariais Avançados</h3>
+                    <div class="grid grid-cols-1 md:grid-cols-6 gap-4 mb-4">
                         <div>
                             <label class="block text-sm font-medium">Período</label>
                             <select id="business-period" class="mt-1 block w-full p-2 border rounded-lg">
                                 <option value="current-month">Mês Atual</option>
                                 <option value="last-month">Mês Anterior</option>
                                 <option value="quarter">Trimestre</option>
-                                <option value="year">Ano</option>
+                                <option value="year" selected>Ano Atual</option>
                                 <option value="custom">Personalizado</option>
                             </select>
                         </div>
@@ -952,11 +958,9 @@
                             </select>
                         </div>
                         <div>
-                            <label class="block text-sm font-medium">Nota Fiscal</label>
-                            <select id="business-invoice-filter" class="mt-1 block w-full p-2 border rounded-lg">
-                                <option value="">Todos</option>
-                                <option value="with">Com Nota</option>
-                                <option value="without">Sem Nota</option>
+                            <label class="block text-sm font-medium">Categoria</label>
+                            <select id="business-category" class="mt-1 block w-full p-2 border rounded-lg">
+                                <option value="">Todas</option>
                             </select>
                         </div>
                         <div>
@@ -964,28 +968,67 @@
                             <input type="text" id="business-search" placeholder="Descrição..." class="mt-1 block w-full p-2 border rounded-lg">
                         </div>
                     </div>
+                    
+                    <!-- Metadatabase de Filtros -->
+                    <div class="bg-blue-50 p-4 rounded-lg border-l-4 border-blue-500">
+                        <h4 class="font-semibold text-blue-800 mb-3">🔧 Metadatabase de Filtros</h4>
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium text-blue-700">Valor Mínimo</label>
+                                <input type="number" id="business-min-amount" step="0.01" placeholder="0.00" class="mt-1 block w-full p-2 border rounded-lg">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-blue-700">Valor Máximo</label>
+                                <input type="number" id="business-max-amount" step="0.01" placeholder="999999.99" class="mt-1 block w-full p-2 border rounded-lg">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-blue-700">Status Nota Fiscal</label>
+                                <select id="business-invoice-status" class="mt-1 block w-full p-2 border rounded-lg">
+                                    <option value="">Todos</option>
+                                    <option value="with">Com Nota</option>
+                                    <option value="without">Sem Nota</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="mt-4 flex justify-end">
+                            <button id="apply-business-filters" class="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors">
+                                🔄 Aplicar Filtros
+                            </button>
+                        </div>
+                    </div>
                 </div>
 
-                <!-- Gráficos Empresariais -->
-                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-                    <div class="bg-white p-6 rounded-lg shadow-md">
-                        <h3 class="text-xl font-semibold text-gray-700 mb-4">📊 Evolução Mensal dos Gastos</h3>
-                        <canvas id="business-evolution-chart"></canvas>
+                <!-- Gráfico Principal - Evolução Anual -->
+                <div class="bg-white p-6 rounded-lg shadow-md mb-8">
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="text-xl font-semibold text-gray-700">📊 Evolução Anual de Gastos</h3>
+                        <div class="flex gap-2">
+                            <select id="yearly-chart-year" class="p-2 border rounded-lg">
+                                <!-- Opções de ano serão preenchidas via JS -->
+                            </select>
+                            <button id="refresh-yearly-chart" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700">
+                                🔄 Atualizar
+                            </button>
+                        </div>
                     </div>
+                    <div style="height: 400px; width: 100%;">
+                        <canvas id="business-yearly-chart" style="height: 100%; width: 100%;"></canvas>
+                    </div>
+                    <div class="mt-4 text-sm text-gray-600">
+                        <p>• Visualização mensal dos gastos para análise de tendências e sazonalidade</p>
+                        <p>• Use os filtros acima para refinar a análise por categorias específicas</p>
+                    </div>
+                </div>
+
+                <!-- Gráficos Secundários -->
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
                     <div class="bg-white p-6 rounded-lg shadow-md">
                         <h3 class="text-xl font-semibold text-gray-700 mb-4">🏦 Distribuição por Conta</h3>
                         <canvas id="business-account-chart"></canvas>
                     </div>
-                </div>
-
-                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
                     <div class="bg-white p-6 rounded-lg shadow-md">
                         <h3 class="text-xl font-semibold text-gray-700 mb-4">📋 Gastos por Categoria</h3>
                         <canvas id="business-category-chart"></canvas>
-                    </div>
-                    <div class="bg-white p-6 rounded-lg shadow-md">
-                        <h3 class="text-xl font-semibold text-gray-700 mb-4">🧾 Status de Nota Fiscal</h3>
-                        <canvas id="business-invoice-status-chart"></canvas>
                     </div>
                 </div>
 

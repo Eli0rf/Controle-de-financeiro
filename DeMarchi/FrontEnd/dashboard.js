@@ -5018,7 +5018,7 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-    // ========== ANÁLISE EMPRESARIAL ==========
+    // ========== ANÁLISE EMPRESARIAL REVISADA ==========
     async function loadBusinessAnalysis() {
         try {
             const token = getToken();
@@ -5026,24 +5026,469 @@ document.addEventListener('DOMContentLoaded', function() {
 
             showNotification('Carregando análise empresarial...', 'info', 2000);
 
-            const year = filterYear.value;
-            const month = filterMonth.value;
-
-            // Carregar dados empresariais
-            const businessData = await fetchBusinessData(year, month);
+            // Carregar dados básicos e indicadores principais
+            await loadBusinessMetrics();
             
-            console.log('Dados empresariais carregados:', businessData);
+            // Carregar gráfico anual principal
+            await loadYearlyBusinessChart();
             
-            await updateBusinessMetrics(businessData);
-            await updateBusinessCharts(businessData);
-            populateBusinessFilters();
-            await loadBusinessExpensesList();
-
+            // Carregar gráficos secundários
+            await loadBusinessSecondaryCharts();
+            
+            // Configurar filtros
+            setupBusinessFilters();
+            
             showNotification('Análise empresarial carregada com sucesso!', 'success', 3000);
 
         } catch (error) {
             console.error('Erro ao carregar análise empresarial:', error);
             showNotification('Erro ao carregar dados empresariais: ' + error.message, 'error');
+        }
+    }
+
+    // Função para carregar métricas principais da análise empresarial
+    async function loadBusinessMetrics() {
+        try {
+            const currentDate = new Date();
+            const currentYear = currentDate.getFullYear();
+            const currentMonth = currentDate.getMonth() + 1;
+            
+            // Carregar dados do mês atual
+            const currentData = await fetchBusinessData(currentYear, currentMonth);
+            
+            // Carregar dados do mês passado para comparação
+            const lastMonth = currentMonth === 1 ? 12 : currentMonth - 1;
+            const lastMonthYear = currentMonth === 1 ? currentYear - 1 : currentYear;
+            const lastMonthData = await fetchBusinessData(lastMonthYear, lastMonth);
+            
+            // Carregar previsões usando nova API
+            const predictionsResponse = await authenticatedFetch(
+                `${API_BASE_URL}/api/business/predictions?year=${currentYear}&month=${currentMonth}`
+            );
+            
+            let predictions = { predicted: 0, futureInstallments: 0 };
+            if (predictionsResponse.ok) {
+                predictions = await predictionsResponse.json();
+            }
+            
+            // Atualizar indicadores na interface
+            updateBusinessIndicators({
+                predicted: predictions.predicted,
+                actual: currentData.total,
+                count: currentData.count,
+                lastMonth: lastMonthData.total,
+                future: predictions.futureInstallments
+            });
+            
+        } catch (error) {
+            console.error('Erro ao carregar métricas empresariais:', error);
+            throw error;
+        }
+    }
+
+    // Função para aplicar filtros empresariais usando metadatabase
+    async function applyBusinessFilters() {
+        try {
+            showNotification('Aplicando filtros...', 'info', 1000);
+            
+            const filters = getBusinessFilters();
+            
+            // Construir parâmetros para a API
+            const params = new URLSearchParams();
+            if (filters.year) params.append('year', filters.year);
+            if (filters.month) params.append('month', filters.month);
+            if (filters.account) params.append('account', filters.account);
+            if (filters.category) params.append('category', filters.category);
+            if (filters.search) params.append('search', filters.search);
+            if (filters.minAmount) params.append('minAmount', filters.minAmount);
+            if (filters.maxAmount) params.append('maxAmount', filters.maxAmount);
+            if (filters.invoiceStatus) params.append('invoiceStatus', filters.invoiceStatus);
+            
+            // Chamar API de análise avançada
+            const response = await authenticatedFetch(
+                `${API_BASE_URL}/api/business/advanced-analysis?${params.toString()}`
+            );
+            
+            if (!response.ok) {
+                throw new Error('Erro ao aplicar filtros');
+            }
+            
+            const data = await response.json();
+            
+            // Atualizar gráficos com dados filtrados
+            await updateBusinessAccountChart(data.summary);
+            await updateBusinessCategoryChart(data.summary);
+            
+            // Atualizar estatísticas filtradas
+            updateFilteredStats(data.summary);
+            
+            showNotification('Filtros aplicados com sucesso!', 'success', 2000);
+            
+        } catch (error) {
+            console.error('Erro ao aplicar filtros:', error);
+            showNotification('Erro ao aplicar filtros', 'error');
+        }
+    }
+
+    // Função para atualizar estatísticas filtradas
+    function updateFilteredStats(summary) {
+        // Atualizar os indicadores principais com dados filtrados
+        const filteredTotalEl = document.getElementById('actual-expenses');
+        const filteredCountEl = document.getElementById('expenses-count');
+        
+        if (filteredTotalEl) {
+            filteredTotalEl.textContent = formatCurrency(summary.total);
+        }
+        if (filteredCountEl) {
+            filteredCountEl.textContent = summary.count;
+        }
+        
+        console.log('Estatísticas filtradas atualizadas:', summary);
+    }
+
+    // Função para atualizar indicadores na interface
+    function updateBusinessIndicators(data) {
+        const predictedEl = document.getElementById('predicted-expenses');
+        const actualEl = document.getElementById('actual-expenses');
+        const countEl = document.getElementById('expenses-count');
+        const comparisonEl = document.getElementById('month-comparison');
+        const futureEl = document.getElementById('future-installments');
+        
+        if (predictedEl) predictedEl.textContent = formatCurrency(data.predicted);
+        if (actualEl) actualEl.textContent = formatCurrency(data.actual);
+        if (countEl) countEl.textContent = data.count;
+        if (futureEl) futureEl.textContent = formatCurrency(data.future);
+        
+        // Calcular e mostrar comparação com mês passado
+        if (comparisonEl && data.lastMonth > 0) {
+            const growth = ((data.actual - data.lastMonth) / data.lastMonth * 100);
+            const growthText = growth >= 0 ? `+${growth.toFixed(1)}%` : `${growth.toFixed(1)}%`;
+            const growthColor = growth >= 0 ? 'text-green-400' : 'text-red-400';
+            
+            comparisonEl.textContent = growthText;
+            comparisonEl.className = `text-2xl font-extrabold ${growthColor} mt-1`;
+        }
+    }
+
+    // Função para carregar gráfico anual de gastos empresariais
+    async function loadYearlyBusinessChart() {
+        try {
+            if (!await waitForChartJs()) {
+                console.warn('Chart.js não carregado para gráfico anual');
+                return;
+            }
+
+            const yearSelect = document.getElementById('yearly-chart-year');
+            const currentYear = new Date().getFullYear();
+            
+            // Preencher opções de ano
+            if (yearSelect) {
+                yearSelect.innerHTML = '';
+                for (let year = currentYear; year >= currentYear - 5; year--) {
+                    const option = document.createElement('option');
+                    option.value = year;
+                    option.textContent = year;
+                    if (year === currentYear) option.selected = true;
+                    yearSelect.appendChild(option);
+                }
+            }
+            
+            // Carregar dados do ano atual
+            await updateYearlyChart(currentYear);
+            
+        } catch (error) {
+            console.error('Erro ao carregar gráfico anual:', error);
+        }
+    }
+
+    // Função para atualizar gráfico anual
+    async function updateYearlyChart(year) {
+        try {
+            const canvas = document.getElementById('business-yearly-chart');
+            if (!canvas) {
+                console.warn('Canvas business-yearly-chart não encontrado');
+                return;
+            }
+
+            // Buscar dados de tendências empresariais
+            const response = await authenticatedFetch(`${API_BASE_URL}/api/business/trends?months=12`);
+            
+            if (!response.ok) {
+                throw new Error('Erro ao buscar dados de tendências');
+            }
+            
+            const trendsData = await response.json();
+            
+            // Filtrar dados para o ano selecionado
+            const yearData = trendsData.filter(item => item.year === parseInt(year));
+            
+            // Preparar dados para o gráfico
+            const months = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 
+                           'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+            
+            const monthlyData = new Array(12).fill(0);
+            const monthlyCount = new Array(12).fill(0);
+            
+            yearData.forEach(item => {
+                const monthIndex = item.month - 1;
+                if (monthIndex >= 0 && monthIndex < 12) {
+                    monthlyData[monthIndex] = item.total;
+                    monthlyCount[monthIndex] = item.count;
+                }
+            });
+
+            // Destruir gráfico existente se houver
+            if (charts['business-yearly']) {
+                charts['business-yearly'].destroy();
+            }
+
+            const ctx = canvas.getContext('2d');
+            
+            charts['business-yearly'] = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: months,
+                    datasets: [{
+                        label: 'Gastos Empresariais (R$)',
+                        data: monthlyData,
+                        borderColor: '#3b82f6',
+                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                        borderWidth: 3,
+                        fill: true,
+                        tension: 0.4,
+                        pointBackgroundColor: '#3b82f6',
+                        pointBorderColor: '#ffffff',
+                        pointBorderWidth: 2,
+                        pointRadius: 6,
+                        pointHoverRadius: 8
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: {
+                        intersect: false,
+                        mode: 'index'
+                    },
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: `Evolução de Gastos Empresariais - ${year}`,
+                            font: {
+                                size: 16,
+                                weight: 'bold'
+                            }
+                        },
+                        legend: {
+                            display: true,
+                            position: 'top'
+                        },
+                        tooltip: {
+                            backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                            titleColor: '#ffffff',
+                            bodyColor: '#ffffff',
+                            borderColor: '#3b82f6',
+                            borderWidth: 1,
+                            callbacks: {
+                                label: function(context) {
+                                    const value = context.parsed.y;
+                                    const count = monthlyCount[context.dataIndex];
+                                    return [
+                                        `Total: ${formatCurrency(value)}`,
+                                        `Transações: ${count}`,
+                                        `Média: ${count > 0 ? formatCurrency(value / count) : 'R$ 0,00'}`
+                                    ];
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                callback: function(value) {
+                                    return 'R$ ' + value.toLocaleString('pt-BR');
+                                }
+                            },
+                            grid: {
+                                color: 'rgba(0, 0, 0, 0.1)'
+                            }
+                        },
+                        x: {
+                            grid: {
+                                color: 'rgba(0, 0, 0, 0.1)'
+                            }
+                        }
+                    }
+                }
+            });
+
+        } catch (error) {
+            console.error('Erro ao atualizar gráfico anual:', error);
+        }
+    }
+
+    // Função para carregar gráficos secundários
+    async function loadBusinessSecondaryCharts() {
+        try {
+            const currentDate = new Date();
+            const filters = getBusinessFilters();
+            
+            const businessData = await fetchBusinessData(
+                filters.year || currentDate.getFullYear(),
+                filters.month || null
+            );
+            
+            await updateBusinessAccountChart(businessData);
+            await updateBusinessCategoryChart(businessData);
+            
+        } catch (error) {
+            console.error('Erro ao carregar gráficos secundários:', error);
+        }
+    }
+
+    // Função para configurar filtros empresariais
+    function setupBusinessFilters() {
+        const periodSelect = document.getElementById('business-period');
+        const customFields = document.getElementById('custom-date-fields');
+        const accountSelect = document.getElementById('business-account');
+        const categorySelect = document.getElementById('business-category');
+        const applyFiltersBtn = document.getElementById('apply-business-filters');
+        const refreshYearlyBtn = document.getElementById('refresh-yearly-chart');
+        const yearSelect = document.getElementById('yearly-chart-year');
+
+        // Configurar mudança de período
+        if (periodSelect) {
+            periodSelect.addEventListener('change', function() {
+                if (customFields) {
+                    customFields.classList.toggle('hidden', this.value !== 'custom');
+                }
+            });
+        }
+
+        // Aplicar filtros
+        if (applyFiltersBtn) {
+            applyFiltersBtn.addEventListener('click', async function() {
+                await applyBusinessFilters();
+            });
+        }
+
+        // Atualizar gráfico anual
+        if (refreshYearlyBtn && yearSelect) {
+            refreshYearlyBtn.addEventListener('click', async function() {
+                const selectedYear = parseInt(yearSelect.value);
+                await updateYearlyChart(selectedYear);
+            });
+            
+            yearSelect.addEventListener('change', async function() {
+                await updateYearlyChart(parseInt(this.value));
+            });
+        }
+
+        // Preencher opções de contas e categorias
+        populateBusinessFilterOptions();
+    }
+
+    // Função para obter filtros atuais
+    function getBusinessFilters() {
+        const period = document.getElementById('business-period')?.value;
+        const account = document.getElementById('business-account')?.value;
+        const category = document.getElementById('business-category')?.value;
+        const search = document.getElementById('business-search')?.value;
+        const minAmount = document.getElementById('business-min-amount')?.value;
+        const maxAmount = document.getElementById('business-max-amount')?.value;
+        const invoiceStatus = document.getElementById('business-invoice-status')?.value;
+        
+        const currentDate = new Date();
+        let year = currentDate.getFullYear();
+        let month = null;
+        
+        // Determinar período baseado na seleção
+        switch (period) {
+            case 'current-month':
+                month = currentDate.getMonth() + 1;
+                break;
+            case 'last-month':
+                const lastMonth = currentDate.getMonth();
+                month = lastMonth === 0 ? 12 : lastMonth;
+                year = lastMonth === 0 ? year - 1 : year;
+                break;
+            case 'quarter':
+                const quarter = Math.floor(currentDate.getMonth() / 3);
+                // Para trimestre, não definimos mês específico
+                break;
+            case 'year':
+                // Ano inteiro, month permanece null
+                break;
+            case 'custom':
+                const dateFrom = document.getElementById('business-date-from')?.value;
+                const dateTo = document.getElementById('business-date-to')?.value;
+                // Para custom, precisaríamos de lógica adicional
+                break;
+        }
+        
+        return {
+            period,
+            year,
+            month,
+            account,
+            category,
+            search,
+            minAmount: minAmount ? parseFloat(minAmount) : null,
+            maxAmount: maxAmount ? parseFloat(maxAmount) : null,
+            invoiceStatus
+        };
+    }
+
+    // Função para preencher opções de filtros
+    async function populateBusinessFilterOptions() {
+        try {
+            // Buscar todas as despesas empresariais para extrair opções únicas
+            const response = await authenticatedFetch(`${API_BASE_URL}/api/expenses`);
+            
+            if (!response.ok) return;
+            
+            const allExpenses = await response.json();
+            const businessExpenses = allExpenses.filter(expense => expense.is_business_expense);
+            
+            // Extrair contas únicas
+            const accounts = [...new Set(businessExpenses.map(expense => expense.account))];
+            const accountSelect = document.getElementById('business-account');
+            
+            if (accountSelect) {
+                // Limpar opções existentes (exceto "Todas")
+                accountSelect.innerHTML = '<option value="">Todas</option>';
+                
+                accounts.forEach(account => {
+                    if (account) {
+                        const option = document.createElement('option');
+                        option.value = account;
+                        option.textContent = account;
+                        accountSelect.appendChild(option);
+                    }
+                });
+            }
+            
+            // Extrair categorias únicas
+            const categories = [...new Set(businessExpenses.map(expense => expense.description))];
+            const categorySelect = document.getElementById('business-category');
+            
+            if (categorySelect) {
+                categorySelect.innerHTML = '<option value="">Todas</option>';
+                
+                categories.forEach(category => {
+                    if (category) {
+                        const option = document.createElement('option');
+                        option.value = category;
+                        option.textContent = category.length > 30 ? 
+                            category.substring(0, 30) + '...' : category;
+                        categorySelect.appendChild(option);
+                    }
+                });
+            }
+            
+        } catch (error) {
+            console.error('Erro ao popular opções de filtros:', error);
         }
     }
 
@@ -6326,6 +6771,58 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // ========== FUNCIONALIDADE PIX E BOLETO ==========
     
+    // Função para testar manualmente os dados PIX/Boleto
+    window.testPixBoleto = async function() {
+        console.log('🧪 === TESTE MANUAL PIX/BOLETO ===');
+        
+        try {
+            // 1. Buscar dados brutos
+            const allExpenses = await fetchPixBoletoExpenses();
+            console.log('📊 Total de expenses encontradas:', allExpenses.length);
+            
+            // 2. Filtrar por PIX e Boleto
+            const pixBoletoExpenses = allExpenses.filter(expense => 
+                expense.account === 'PIX' || expense.account === 'Boleto'
+            );
+            console.log('💳 Expenses PIX/Boleto:', pixBoletoExpenses.length);
+            
+            // 3. Mostrar detalhes
+            if (pixBoletoExpenses.length > 0) {
+                console.log('📋 DETALHES DOS GASTOS PIX/BOLETO:');
+                pixBoletoExpenses.forEach((expense, index) => {
+                    console.log(`${index + 1}. ${expense.account} - R$ ${expense.amount} - ${expense.description} - ${expense.transaction_date || expense.date}`);
+                });
+                
+                // 4. Calcular totais
+                const pixTotal = pixBoletoExpenses
+                    .filter(e => e.account === 'PIX')
+                    .reduce((sum, e) => sum + parseFloat(e.amount || 0), 0);
+                
+                const boletoTotal = pixBoletoExpenses
+                    .filter(e => e.account === 'Boleto')
+                    .reduce((sum, e) => sum + parseFloat(e.amount || 0), 0);
+                
+                console.log(`💳 PIX Total: R$ ${pixTotal.toFixed(2)}`);
+                console.log(`📄 Boleto Total: R$ ${boletoTotal.toFixed(2)}`);
+                console.log(`🏆 Total Geral: R$ ${(pixTotal + boletoTotal).toFixed(2)}`);
+                
+                // 5. Tentar atualizar elementos
+                updatePixBoletoStats(pixBoletoExpenses);
+                
+                // 6. Tentar renderizar gráficos
+                renderPixBoletoCharts(pixBoletoExpenses);
+                
+            } else {
+                console.log('⚠️ Nenhum gasto PIX/Boleto encontrado');
+            }
+            
+        } catch (error) {
+            console.error('❌ Erro no teste:', error);
+        }
+        
+        console.log('🧪 === FIM DO TESTE ===');
+    };
+
     async function loadPixBoletoData(forceRefresh = false) {
         console.log('🔄 Carregando dados PIX e Boleto...', forceRefresh ? '(Forçado)' : '');
         
@@ -6890,20 +7387,28 @@ document.addEventListener('DOMContentLoaded', function() {
         
         // Adicionar botão de atualização manual se não existir
         const filterSection = document.querySelector('#pix-boleto-tab .bg-white:has(h3:contains("Filtros"))');
-        if (filterSection && !document.getElementById('refresh-pix-boleto-btn')) {
+        if (filterSection && !document.getElementById('refresh-pix-boleto')) {
             const refreshBtn = document.createElement('button');
-            refreshBtn.id = 'refresh-pix-boleto-btn';
+            refreshBtn.id = 'refresh-pix-boleto-extra';
             refreshBtn.className = 'mt-4 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors';
-            refreshBtn.innerHTML = '🔄 Atualizar Dados';
+            refreshBtn.innerHTML = '🔄 Atualizar Dados PIX/Boleto';
             refreshBtn.addEventListener('click', () => {
-                console.log('🔄 Atualização manual solicitada');
-                loadPixBoletoData();
+                console.log('🔄 Atualização manual EXTRA solicitada');
+                refreshBtn.disabled = true;
+                refreshBtn.innerHTML = '🔄 Atualizando...';
+                
+                loadPixBoletoData(true).finally(() => {
+                    setTimeout(() => {
+                        refreshBtn.disabled = false;
+                        refreshBtn.innerHTML = '🔄 Atualizar Dados PIX/Boleto';
+                    }, 1000);
+                });
             });
             
             const filtersGrid = filterSection.querySelector('.grid');
             if (filtersGrid) {
                 filterSection.insertBefore(refreshBtn, filtersGrid.nextSibling);
-                console.log('✅ Botão de atualização manual adicionado');
+                console.log('✅ Botão de atualização manual EXTRA adicionado');
             }
         }
         

@@ -1575,6 +1575,180 @@ app.get('/api/business/summary', authenticateToken, async (req, res) => {
     }
 });
 
+// Nova API para análise empresarial avançada com metadatabase
+app.get('/api/business/advanced-analysis', authenticateToken, async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const { 
+            year, 
+            month, 
+            account, 
+            category, 
+            minAmount, 
+            maxAmount, 
+            invoiceStatus,
+            search 
+        } = req.query;
+        
+        // Query base com filtros
+        let baseQuery = `
+            SELECT 
+                id,
+                transaction_date,
+                description,
+                amount,
+                account,
+                account_plan_code,
+                invoice_path,
+                total_installments,
+                current_installment,
+                has_invoice
+            FROM expenses 
+            WHERE user_id = ? AND is_business_expense = 1
+        `;
+        
+        const queryParams = [userId];
+        
+        // Aplicar filtros de metadatabase
+        if (year) {
+            baseQuery += ' AND YEAR(transaction_date) = ?';
+            queryParams.push(year);
+        }
+        if (month) {
+            baseQuery += ' AND MONTH(transaction_date) = ?';
+            queryParams.push(month);
+        }
+        if (account) {
+            baseQuery += ' AND account = ?';
+            queryParams.push(account);
+        }
+        if (category) {
+            baseQuery += ' AND description LIKE ?';
+            queryParams.push(`%${category}%`);
+        }
+        if (minAmount) {
+            baseQuery += ' AND amount >= ?';
+            queryParams.push(parseFloat(minAmount));
+        }
+        if (maxAmount) {
+            baseQuery += ' AND amount <= ?';
+            queryParams.push(parseFloat(maxAmount));
+        }
+        if (invoiceStatus === 'with') {
+            baseQuery += ' AND invoice_path IS NOT NULL';
+        } else if (invoiceStatus === 'without') {
+            baseQuery += ' AND invoice_path IS NULL';
+        }
+        if (search) {
+            baseQuery += ' AND (description LIKE ? OR account LIKE ?)';
+            queryParams.push(`%${search}%`, `%${search}%`);
+        }
+        
+        baseQuery += ' ORDER BY transaction_date DESC';
+        
+        const [expenses] = await pool.query(baseQuery, queryParams);
+        
+        // Calcular estatísticas
+        const total = expenses.reduce((sum, exp) => sum + parseFloat(exp.amount), 0);
+        const count = expenses.length;
+        const average = count > 0 ? total / count : 0;
+        
+        // Agrupar por conta
+        const byAccount = {};
+        expenses.forEach(exp => {
+            const account = exp.account;
+            byAccount[account] = (byAccount[account] || 0) + parseFloat(exp.amount);
+        });
+        
+        // Agrupar por categoria
+        const byCategory = {};
+        expenses.forEach(exp => {
+            const category = exp.description || 'Sem categoria';
+            byCategory[category] = (byCategory[category] || 0) + parseFloat(exp.amount);
+        });
+        
+        res.json({
+            expenses,
+            summary: {
+                total,
+                count,
+                average,
+                byAccount,
+                byCategory
+            }
+        });
+        
+    } catch (error) {
+        console.error('Erro na análise empresarial avançada:', error);
+        res.status(500).json({ message: 'Erro na análise empresarial avançada.' });
+    }
+});
+
+// API para calcular gastos previstos e parcelas futuras
+app.get('/api/business/predictions', authenticateToken, async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const { year, month } = req.query;
+        
+        const currentYear = year ? parseInt(year) : new Date().getFullYear();
+        const currentMonth = month ? parseInt(month) : new Date().getMonth() + 1;
+        
+        // 1. Buscar gastos recorrentes empresariais
+        const [recurringExpenses] = await pool.query(`
+            SELECT * FROM recurring_expenses 
+            WHERE user_id = ? AND is_business_expense = 1 AND is_active = 1
+        `, [userId]);
+        
+        const predictedFromRecurring = recurringExpenses.reduce((sum, exp) => 
+            sum + parseFloat(exp.amount), 0);
+        
+        // 2. Calcular média histórica dos últimos 3 meses (excluindo mês atual)
+        const [historicalData] = await pool.query(`
+            SELECT AVG(monthly_total) as avg_amount
+            FROM (
+                SELECT SUM(amount) as monthly_total
+                FROM expenses 
+                WHERE user_id = ? AND is_business_expense = 1
+                AND (
+                    (YEAR(transaction_date) = ? AND MONTH(transaction_date) < ?) OR
+                    (YEAR(transaction_date) = ? AND MONTH(transaction_date) >= ?)
+                )
+                GROUP BY YEAR(transaction_date), MONTH(transaction_date)
+                ORDER BY YEAR(transaction_date) DESC, MONTH(transaction_date) DESC
+                LIMIT 3
+            ) as monthly_data
+        `, [userId, currentYear, currentMonth, currentYear - 1, currentMonth]);
+        
+        const historicalAverage = parseFloat(historicalData[0]?.avg_amount) || 0;
+        
+        // 3. Calcular previsão combinada (70% recorrente + 30% histórico)
+        const predictedExpenses = (predictedFromRecurring * 0.7) + (historicalAverage * 0.3);
+        
+        // 4. Calcular parcelas futuras
+        const [futureInstallments] = await pool.query(`
+            SELECT 
+                SUM(amount * (total_installments - COALESCE(current_installment, 1))) as future_total
+            FROM expenses 
+            WHERE user_id = ? AND is_business_expense = 1
+            AND total_installments > 1
+            AND COALESCE(current_installment, 1) < total_installments
+        `, [userId]);
+        
+        const futureTotal = parseFloat(futureInstallments[0]?.future_total) || 0;
+        
+        res.json({
+            predicted: predictedExpenses,
+            recurring: predictedFromRecurring,
+            historical: historicalAverage,
+            futureInstallments: futureTotal
+        });
+        
+    } catch (error) {
+        console.error('Erro ao calcular previsões:', error);
+        res.status(500).json({ message: 'Erro ao calcular previsões.' });
+    }
+});
+
 // Nova rota para análise de tendências empresariais
 app.get('/api/business/trends', authenticateToken, async (req, res) => {
     try {
