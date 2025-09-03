@@ -8858,6 +8858,9 @@ document.addEventListener('DOMContentLoaded', function() {
                     console.log('Token válido, mostrando dashboard');
                     showDashboard();
                     await fetchAllData();
+                    
+                    // Integrar novo sistema PIX/Boleto
+                    integratePixBoletoSystem();
                 } else {
                     console.log('Token inválido, limpando e mostrando login');
                     // Token inválido, limpar e mostrar login
@@ -11147,6 +11150,249 @@ document.addEventListener('DOMContentLoaded', function() {
             return 'Excelente controle de gastos!';
         }
     }
+    
+    // ========== NOVO SISTEMA PIX/BOLETO INTEGRADO ==========
+    
+    // Configurar eventos do formulário PIX/Boleto
+    function setupPixBoletoExpenseForm() {
+        const addButton = document.getElementById('add-pix-boleto-expense');
+        const formSection = document.getElementById('pix-boleto-form-section');
+        const closeButton = document.getElementById('close-pix-boleto-form');
+        const cancelButton = document.getElementById('cancel-pix-boleto-form');
+        const form = document.getElementById('pix-boleto-expense-form');
+        const hasInstallmentsCheckbox = document.getElementById('pix-boleto-has-installments');
+        const installmentSection = document.getElementById('pix-boleto-installment-section');
+        const isBusinessCheckbox = document.getElementById('pix-boleto-is-business');
+        const planCodeSelect = document.getElementById('pix-boleto-plan-code');
+        
+        // Definir data padrão como hoje
+        const dateInput = document.getElementById('pix-boleto-date');
+        if (dateInput) {
+            dateInput.value = new Date().toISOString().split('T')[0];
+        }
+        
+        // Abrir formulário
+        if (addButton) {
+            addButton.addEventListener('click', () => {
+                formSection.classList.remove('hidden');
+                loadAccountPlansForPixBoleto();
+            });
+        }
+        
+        // Fechar formulário
+        [closeButton, cancelButton].forEach(button => {
+            if (button) {
+                button.addEventListener('click', () => {
+                    formSection.classList.add('hidden');
+                    form.reset();
+                    dateInput.value = new Date().toISOString().split('T')[0];
+                    installmentSection.classList.add('hidden');
+                });
+            }
+        });
+        
+        // Toggle parcelamento
+        if (hasInstallmentsCheckbox) {
+            hasInstallmentsCheckbox.addEventListener('change', () => {
+                if (hasInstallmentsCheckbox.checked) {
+                    installmentSection.classList.remove('hidden');
+                } else {
+                    installmentSection.classList.add('hidden');
+                }
+            });
+        }
+        
+        // Lógica de gasto empresarial automático
+        if (planCodeSelect && isBusinessCheckbox) {
+            planCodeSelect.addEventListener('change', () => {
+                if (!planCodeSelect.value) {
+                    // Se não tem plano de conta, marcar como empresarial automaticamente
+                    isBusinessCheckbox.checked = true;
+                    isBusinessCheckbox.disabled = true;
+                } else {
+                    // Se tem plano de conta, permitir escolha
+                    isBusinessCheckbox.disabled = false;
+                    isBusinessCheckbox.checked = false;
+                }
+            });
+            
+            // Aplicar regra inicial
+            if (!planCodeSelect.value) {
+                isBusinessCheckbox.checked = true;
+                isBusinessCheckbox.disabled = true;
+            }
+        }
+        
+        // Enviar formulário
+        if (form) {
+            form.addEventListener('submit', handlePixBoletoExpenseSubmit);
+        }
+    }
+    
+    // Carregar planos de conta para PIX/Boleto
+    async function loadAccountPlansForPixBoleto() {
+        try {
+            const planSelect = document.getElementById('pix-boleto-plan-code');
+            if (!planSelect) return;
+            
+            const response = await authenticatedFetch(`${API_BASE_URL}/api/account-plans`);
+            if (!response.ok) {
+                throw new Error('Erro ao buscar planos de conta');
+            }
+            
+            const plans = await response.json();
+            
+            // Limpar opções existentes (manter primeira opção)
+            planSelect.innerHTML = '<option value="">Sem classificação (empresarial)</option>';
+            
+            // Adicionar planos
+            plans.forEach(plan => {
+                const option = document.createElement('option');
+                option.value = plan.PlanoContasID;
+                option.textContent = `${plan.PlanoContasID} - ${plan.NomePlanoConta}`;
+                planSelect.appendChild(option);
+            });
+            
+        } catch (error) {
+            console.error('❌ Erro ao carregar planos de conta:', error);
+            showNotification('Erro ao carregar planos de conta', 'error');
+        }
+    }
+    
+    // Tratar envio do formulário PIX/Boleto
+    async function handlePixBoletoExpenseSubmit(event) {
+        event.preventDefault();
+        
+        try {
+            const form = event.target;
+            const formData = new FormData(form);
+            
+            // Coletar dados do formulário
+            const account = document.getElementById('pix-boleto-account').value;
+            const date = document.getElementById('pix-boleto-date').value;
+            const amount = parseFloat(document.getElementById('pix-boleto-amount').value);
+            const description = document.getElementById('pix-boleto-description').value;
+            const planCode = document.getElementById('pix-boleto-plan-code').value;
+            const isBusiness = document.getElementById('pix-boleto-is-business').checked;
+            const hasInstallments = document.getElementById('pix-boleto-has-installments').checked;
+            
+            // Validações básicas
+            if (!account || !date || !amount || !description) {
+                showNotification('Preencha todos os campos obrigatórios', 'error');
+                return;
+            }
+            
+            if (amount <= 0) {
+                showNotification('O valor deve ser maior que zero', 'error');
+                return;
+            }
+            
+            // Aplicar regra automática: se não tem plano, é empresarial
+            const finalIsBusiness = !planCode || isBusiness;
+            
+            // Preparar dados da despesa
+            const expenseData = {
+                transaction_date: date,
+                amount: amount,
+                description: description,
+                account: account,
+                is_business_expense: finalIsBusiness,
+                account_plan_code: planCode || null
+            };
+            
+            // Se é parcelado, adicionar dados de parcelamento
+            if (hasInstallments) {
+                const totalAmount = parseFloat(document.getElementById('pix-boleto-total-amount').value);
+                const currentInstallment = parseInt(document.getElementById('pix-boleto-current-installment').value);
+                const totalInstallments = parseInt(document.getElementById('pix-boleto-total-installments').value);
+                
+                if (totalAmount && currentInstallment && totalInstallments) {
+                    expenseData.total_purchase_amount = totalAmount;
+                    expenseData.installment_number = currentInstallment;
+                    expenseData.total_installments = totalInstallments;
+                }
+            }
+            
+            console.log('📤 Enviando dados PIX/Boleto:', expenseData);
+            
+            // Enviar para o servidor
+            const response = await authenticatedFetch(`${API_BASE_URL}/api/expenses`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(expenseData)
+            });
+            
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.message || 'Erro ao salvar gasto');
+            }
+            
+            const result = await response.json();
+            console.log('✅ Gasto PIX/Boleto salvo:', result);
+            
+            // Mostrar sucesso
+            showNotification(`Gasto ${account} salvo com sucesso!`, 'success');
+            
+            // Fechar formulário e limpar
+            document.getElementById('pix-boleto-form-section').classList.add('hidden');
+            form.reset();
+            document.getElementById('pix-boleto-date').value = new Date().toISOString().split('T')[0];
+            document.getElementById('pix-boleto-installment-section').classList.add('hidden');
+            
+            // Recarregar dados da aba PIX/Boleto
+            await refreshPixBoletoData();
+            
+        } catch (error) {
+            console.error('❌ Erro ao salvar gasto PIX/Boleto:', error);
+            showNotification(error.message || 'Erro ao salvar gasto', 'error');
+        }
+    }
+    
+    // Função para implementar classificação automática de gastos empresariais
+    async function applyBusinessExpenseAutoClassification() {
+        try {
+            console.log('🔄 Aplicando classificação automática de gastos empresariais...');
+            
+            // Buscar todos os gastos sem plano de conta
+            const response = await authenticatedFetch(`${API_BASE_URL}/api/expenses/auto-classify-business`);
+            
+            if (!response.ok) {
+                throw new Error('Erro ao aplicar classificação automática');
+            }
+            
+            const result = await response.json();
+            console.log('✅ Classificação automática aplicada:', result);
+            
+            showNotification(`${result.updated} gastos foram classificados automaticamente como empresariais`, 'success');
+            
+            // Recarregar dados se estamos na aba PIX/Boleto
+            const activeTab = document.querySelector('.tab-button.active')?.getAttribute('data-tab');
+            if (activeTab === 'pix-boleto') {
+                await refreshPixBoletoData();
+            }
+            
+            return result;
+            
+        } catch (error) {
+            console.error('❌ Erro na classificação automática:', error);
+            showNotification('Erro ao aplicar classificação automática', 'error');
+            throw error;
+        }
+    }
+    
+    // Integrar ao sistema existente
+    function integratePixBoletoSystem() {
+        // Configurar formulário
+        setupPixBoletoExpenseForm();
+        
+        // Aplicar classificação automática no carregamento (se necessário)
+        // Comentado para não executar automaticamente sempre
+        // applyBusinessExpenseAutoClassification();
+    }
+    
+    // ========== FIM NOVO SISTEMA PIX/BOLETO ==========
     
     // ========== FIM ANÁLISE POR PERÍODO DA FATURA ==========
     

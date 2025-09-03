@@ -187,6 +187,18 @@ app.post('/api/expenses', authenticateToken, upload.single('invoice'), async (re
         const userId = req.user.id;
         const invoicePath = req.file ? req.file.path : null;
 
+        // REGRA AUTOMÁTICA: Se não tem plano de conta, é automaticamente empresarial
+        const finalIsBusiness = !account_plan_code || is_business_expense;
+        const finalAccountPlanCode = finalIsBusiness ? null : (account_plan_code || null);
+
+        console.log('📝 Dados de criação de despesa:', {
+            account_plan_code,
+            is_business_expense,
+            finalIsBusiness,
+            finalAccountPlanCode,
+            rule_applied: !account_plan_code ? 'AUTO_BUSINESS_NO_PLAN' : 'USER_CHOICE'
+        });
+
         // Validação dos campos obrigatórios
         if (!transaction_date || !amount || !description || !account || !total_installments) {
             return res.status(400).json({ message: 'Campos obrigatórios em falta.' });
@@ -222,10 +234,10 @@ app.post('/api/expenses', authenticateToken, upload.single('invoice'), async (re
                 installmentAmount.toFixed(2),
                 installmentDescription,
                 account,
-                is_business_expense,
-                is_business_expense ? null : (account_plan_code || null),
-                (is_business_expense && i === 0 && has_invoice) ? 1 : null,
-                (is_business_expense && i === 0 && has_invoice) ? invoicePath : null,
+                finalIsBusiness,
+                finalAccountPlanCode,
+                (finalIsBusiness && i === 0 && has_invoice) ? 1 : null,
+                (finalIsBusiness && i === 0 && has_invoice) ? invoicePath : null,
                 calculatedTotalAmount.toFixed(2),
                 i + 1,
                 numberOfInstallments
@@ -343,6 +355,18 @@ app.put('/api/expenses/:id', authenticateToken, upload.single('invoice'), async 
         const has_invoice = req.body.has_invoice === 'true';
         const invoicePath = req.file ? req.file.path : null;
 
+        // REGRA AUTOMÁTICA: Se não tem plano de conta, é automaticamente empresarial
+        const finalIsBusiness = !account_plan_code || is_business_expense;
+        const finalAccountPlanCode = finalIsBusiness ? null : (account_plan_code || null);
+
+        console.log('📝 Dados de atualização de despesa:', {
+            account_plan_code,
+            is_business_expense,
+            finalIsBusiness,
+            finalAccountPlanCode,
+            rule_applied: !account_plan_code ? 'AUTO_BUSINESS_NO_PLAN' : 'USER_CHOICE'
+        });
+
         // Validação dos campos obrigatórios
         if (!transaction_date || !amount || !description || !account) {
             return res.status(400).json({ message: 'Campos obrigatórios em falta.' });
@@ -369,8 +393,8 @@ app.put('/api/expenses/:id', authenticateToken, upload.single('invoice'), async 
             parseFloat(amount),
             description,
             account,
-            account_plan_code || null,
-            is_business_expense,
+            finalAccountPlanCode,
+            finalIsBusiness,
             has_invoice,
             invoicePath || existingExpense.invoice_path, // Manter fatura existente se não houver nova
             id,
@@ -420,6 +444,68 @@ app.delete('/api/expenses/:id', authenticateToken, async (req, res) => {
     } catch (error) {
         console.error('Erro ao apagar despesa:', error);
         res.status(500).json({ message: 'Erro ao apagar despesa.' });
+    }
+});
+
+// Rota para classificação automática de gastos empresariais
+app.get('/api/expenses/auto-classify-business', authenticateToken, async (req, res) => {
+    const userId = req.user.id;
+    
+    try {
+        console.log('🔄 Iniciando classificação automática de gastos empresariais para usuário:', userId);
+        
+        // Buscar todos os gastos sem plano de conta que não são empresariais
+        const [expensesWithoutPlan] = await pool.query(`
+            SELECT id, description, amount, account, account_plan_code, is_business_expense
+            FROM expenses 
+            WHERE user_id = ? 
+            AND (account_plan_code IS NULL OR account_plan_code = '') 
+            AND is_business_expense = 0
+        `, [userId]);
+        
+        console.log(`📊 Encontrados ${expensesWithoutPlan.length} gastos sem plano de conta para classificar`);
+        
+        if (expensesWithoutPlan.length === 0) {
+            return res.json({
+                message: 'Nenhum gasto encontrado para classificação automática',
+                updated: 0,
+                details: []
+            });
+        }
+        
+        // Atualizar todos os gastos sem plano para serem empresariais
+        const [updateResult] = await pool.query(`
+            UPDATE expenses 
+            SET is_business_expense = 1 
+            WHERE user_id = ? 
+            AND (account_plan_code IS NULL OR account_plan_code = '') 
+            AND is_business_expense = 0
+        `, [userId]);
+        
+        console.log(`✅ ${updateResult.affectedRows} gastos classificados como empresariais`);
+        
+        // Preparar detalhes dos gastos atualizados
+        const updatedDetails = expensesWithoutPlan.map(expense => ({
+            id: expense.id,
+            description: expense.description,
+            amount: expense.amount,
+            account: expense.account,
+            was_business: expense.is_business_expense,
+            now_business: true
+        }));
+        
+        res.json({
+            message: `${updateResult.affectedRows} gastos foram classificados automaticamente como empresariais`,
+            updated: updateResult.affectedRows,
+            details: updatedDetails
+        });
+        
+    } catch (error) {
+        console.error('❌ Erro na classificação automática de gastos empresariais:', error);
+        res.status(500).json({ 
+            message: 'Erro interno do servidor ao classificar gastos',
+            error: error.message 
+        });
     }
 });
 
@@ -1519,6 +1605,37 @@ app.get('/api/accounts', authenticateToken, async (req, res) => {
     } catch (error) {
         console.error('Erro ao buscar contas:', error);
         res.status(500).json({ message: 'Erro ao buscar contas.' });
+    }
+});
+
+// Rota para buscar planos de conta disponíveis
+app.get('/api/account-plans', authenticateToken, async (req, res) => {
+    try {
+        console.log('📋 Buscando planos de conta disponíveis...');
+        
+        // Retornar lista fixa de planos de conta baseada no sistema existente
+        const accountPlans = [
+            { PlanoContasID: 1, NomePlanoConta: 'Alimentação' },
+            { PlanoContasID: 2, NomePlanoConta: 'Transporte' },
+            { PlanoContasID: 3, NomePlanoConta: 'Moradia' },
+            { PlanoContasID: 4, NomePlanoConta: 'Saúde' },
+            { PlanoContasID: 5, NomePlanoConta: 'Educação' },
+            { PlanoContasID: 6, NomePlanoConta: 'Lazer' },
+            { PlanoContasID: 7, NomePlanoConta: 'Vestuário' },
+            { PlanoContasID: 8, NomePlanoConta: 'Serviços' },
+            { PlanoContasID: 9, NomePlanoConta: 'Investimentos' },
+            { PlanoContasID: 10, NomePlanoConta: 'Diversos' }
+        ];
+        
+        console.log(`✅ Retornando ${accountPlans.length} planos de conta`);
+        res.json(accountPlans);
+        
+    } catch (error) {
+        console.error('❌ Erro ao buscar planos de conta:', error);
+        res.status(500).json({ 
+            message: 'Erro interno do servidor ao buscar planos de conta',
+            error: error.message 
+        });
     }
 });
 
