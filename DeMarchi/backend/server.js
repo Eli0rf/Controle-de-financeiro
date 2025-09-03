@@ -911,24 +911,46 @@ async function generateChartsForPDF(porPlano, porConta, expenses, chartJSNodeCan
                             '#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6',
                             '#06B6D4', '#84CC16', '#F97316', '#EC4899', '#6366F1'
                         ],
-                        borderWidth: 2,
+                        borderWidth: 3,
                         borderColor: '#ffffff'
                     }]
                 },
                 options: {
                     responsive: false,
+                    maintainAspectRatio: false,
+                    layout: {
+                        padding: {
+                            top: 20,
+                            bottom: 20,
+                            left: 20,
+                            right: 20
+                        }
+                    },
                     plugins: {
                         legend: {
                             position: 'bottom',
                             labels: {
-                                padding: 20,
-                                usePointStyle: true
+                                padding: 15,
+                                usePointStyle: true,
+                                font: {
+                                    size: 12,
+                                    weight: 'bold'
+                                },
+                                color: '#374151'
                             }
                         },
                         title: {
                             display: true,
-                            text: 'Distribuição por Plano de Conta',
-                            font: { size: 16, weight: 'bold' }
+                            text: '📊 DISTRIBUIÇÃO POR PLANO DE CONTA',
+                            font: { 
+                                size: 18, 
+                                weight: 'bold' 
+                            },
+                            color: '#1F2937',
+                            padding: {
+                                top: 10,
+                                bottom: 20
+                            }
                         }
                     }
                 }
@@ -948,30 +970,75 @@ async function generateChartsForPDF(porPlano, porConta, expenses, chartJSNodeCan
                     datasets: [{
                         label: 'Valor (R$)',
                         data: accountValues,
-                        backgroundColor: '#3B82F6',
-                        borderColor: '#1E40AF',
-                        borderWidth: 1
+                        backgroundColor: [
+                            '#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6',
+                            '#06B6D4', '#84CC16', '#F97316', '#EC4899', '#6366F1'
+                        ],
+                        borderColor: [
+                            '#1E40AF', '#047857', '#D97706', '#DC2626', '#7C3AED',
+                            '#0891B2', '#65A30D', '#EA580C', '#DB2777', '#4F46E5'
+                        ],
+                        borderWidth: 2,
+                        borderRadius: 8,
+                        borderSkipped: false
                     }]
                 },
                 options: {
                     responsive: false,
+                    maintainAspectRatio: false,
+                    layout: {
+                        padding: {
+                            top: 20,
+                            bottom: 20,
+                            left: 20,
+                            right: 20
+                        }
+                    },
                     plugins: {
                         legend: {
                             display: false
                         },
                         title: {
                             display: true,
-                            text: 'Gastos por Conta',
-                            font: { size: 16, weight: 'bold' }
+                            text: '🏦 GASTOS POR CONTA',
+                            font: { 
+                                size: 18, 
+                                weight: 'bold' 
+                            },
+                            color: '#1F2937',
+                            padding: {
+                                top: 10,
+                                bottom: 20
+                            }
                         }
                     },
                     scales: {
+                        x: {
+                            grid: {
+                                display: false
+                            },
+                            ticks: {
+                                font: {
+                                    size: 11,
+                                    weight: 'bold'
+                                },
+                                color: '#374151'
+                            }
+                        },
                         y: {
                             beginAtZero: true,
+                            grid: {
+                                color: '#E5E7EB',
+                                lineWidth: 1
+                            },
                             ticks: {
                                 callback: function(value) {
                                     return 'R$ ' + value.toFixed(2);
-                                }
+                                },
+                                font: {
+                                    size: 11
+                                },
+                                color: '#6B7280'
                             }
                         }
                     }
@@ -988,28 +1055,53 @@ async function generateChartsForPDF(porPlano, porConta, expenses, chartJSNodeCan
             const comparisonConfig = {
                 type: 'doughnut',
                 data: {
-                    labels: ['Pessoal', 'Empresarial'],
+                    labels: ['🏠 Pessoal', '💼 Empresarial'],
                     datasets: [{
                         data: [totalPessoal, totalEmpresarial],
                         backgroundColor: ['#10B981', '#F59E0B'],
-                        borderWidth: 3,
-                        borderColor: '#ffffff'
+                        borderWidth: 4,
+                        borderColor: '#ffffff',
+                        hoverBackgroundColor: ['#059669', '#D97706'],
+                        hoverBorderWidth: 6
                     }]
                 },
                 options: {
                     responsive: false,
+                    maintainAspectRatio: false,
+                    cutout: '60%',
+                    layout: {
+                        padding: {
+                            top: 20,
+                            bottom: 20,
+                            left: 20,
+                            right: 20
+                        }
+                    },
                     plugins: {
                         legend: {
                             position: 'bottom',
                             labels: {
-                                padding: 20,
-                                usePointStyle: true
+                                padding: 15,
+                                usePointStyle: true,
+                                font: {
+                                    size: 14,
+                                    weight: 'bold'
+                                },
+                                color: '#374151'
                             }
                         },
                         title: {
                             display: true,
-                            text: 'Comparação: Pessoal vs Empresarial',
-                            font: { size: 16, weight: 'bold' }
+                            text: '💼 PESSOAL vs EMPRESARIAL',
+                            font: { 
+                                size: 18, 
+                                weight: 'bold' 
+                            },
+                            color: '#1F2937',
+                            padding: {
+                                top: 10,
+                                bottom: 20
+                            }
                         }
                     }
                 }
@@ -1025,7 +1117,7 @@ async function generateChartsForPDF(porPlano, porConta, expenses, chartJSNodeCan
         });
 
         const days = Object.keys(dailyData).map(Number).sort((a, b) => a - b);
-        if (days.length > 5) {
+        if (days.length > 3) {
             const evolutionConfig = {
                 type: 'line',
                 data: {
@@ -1035,30 +1127,73 @@ async function generateChartsForPDF(porPlano, porConta, expenses, chartJSNodeCan
                         data: days.map(d => dailyData[d]),
                         borderColor: '#3B82F6',
                         backgroundColor: 'rgba(59, 130, 246, 0.1)',
-                        borderWidth: 3,
+                        borderWidth: 4,
                         fill: true,
-                        tension: 0.4
+                        tension: 0.4,
+                        pointBackgroundColor: '#3B82F6',
+                        pointBorderColor: '#ffffff',
+                        pointBorderWidth: 3,
+                        pointRadius: 6,
+                        pointHoverRadius: 8
                     }]
                 },
                 options: {
                     responsive: false,
+                    maintainAspectRatio: false,
+                    layout: {
+                        padding: {
+                            top: 20,
+                            bottom: 20,
+                            left: 20,
+                            right: 20
+                        }
+                    },
                     plugins: {
                         legend: {
                             display: false
                         },
                         title: {
                             display: true,
-                            text: 'Evolução de Gastos por Dia',
-                            font: { size: 16, weight: 'bold' }
+                            text: '📈 EVOLUÇÃO DIÁRIA DOS GASTOS',
+                            font: { 
+                                size: 18, 
+                                weight: 'bold' 
+                            },
+                            color: '#1F2937',
+                            padding: {
+                                top: 10,
+                                bottom: 20
+                            }
                         }
                     },
                     scales: {
+                        x: {
+                            grid: {
+                                color: '#E5E7EB',
+                                lineWidth: 1
+                            },
+                            ticks: {
+                                font: {
+                                    size: 11,
+                                    weight: 'bold'
+                                },
+                                color: '#374151'
+                            }
+                        },
                         y: {
                             beginAtZero: true,
+                            grid: {
+                                color: '#E5E7EB',
+                                lineWidth: 1
+                            },
                             ticks: {
                                 callback: function(value) {
                                     return 'R$ ' + value.toFixed(2);
-                                }
+                                },
+                                font: {
+                                    size: 11
+                                },
+                                color: '#6B7280'
                             }
                         }
                     }
@@ -1286,11 +1421,24 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
             doc.fillColor('#FFFFFF').fontSize(24).text('📊 DISTRIBUIÇÃO POR PLANO', 50, 25);
             doc.moveDown(3);
 
-            // Gráfico
-            doc.image(chartImages.planChart, 50, doc.y, { width: 500, height: 300 });
-            doc.y += 320;
+            // Centralizar e ajustar gráfico
+            const chartWidth = 480;
+            const chartHeight = 280;
+            const chartX = (doc.page.width - chartWidth) / 2;
+            
+            doc.image(chartImages.planChart, chartX, doc.y, { 
+                width: chartWidth, 
+                height: chartHeight,
+                fit: [chartWidth, chartHeight],
+                align: 'center'
+            });
+            doc.y += chartHeight + 20;
 
             // Dados detalhados por plano
+            if (doc.y > 650) {
+                doc.addPage();
+                doc.moveDown(1);
+            }
             doc.fontSize(16).fillColor('#1E293B').text('📋 DETALHAMENTO POR PLANO', { underline: true });
             doc.moveDown(0.5);
             
@@ -1317,11 +1465,24 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
             doc.fillColor('#FFFFFF').fontSize(24).text('🏦 DISTRIBUIÇÃO POR CONTA', 50, 25);
             doc.moveDown(3);
 
-            // Gráfico
-            doc.image(chartImages.accountChart, 50, doc.y, { width: 500, height: 300 });
-            doc.y += 320;
+            // Centralizar e ajustar gráfico
+            const chartWidth = 480;
+            const chartHeight = 280;
+            const chartX = (doc.page.width - chartWidth) / 2;
+            
+            doc.image(chartImages.accountChart, chartX, doc.y, { 
+                width: chartWidth, 
+                height: chartHeight,
+                fit: [chartWidth, chartHeight],
+                align: 'center'
+            });
+            doc.y += chartHeight + 20;
 
             // Dados detalhados por conta
+            if (doc.y > 650) {
+                doc.addPage();
+                doc.moveDown(1);
+            }
             doc.fontSize(16).fillColor('#1E293B').text('💳 DETALHAMENTO POR CONTA', { underline: true });
             doc.moveDown(0.5);
             
@@ -1348,11 +1509,24 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
             doc.fillColor('#FFFFFF').fontSize(24).text('💼 PESSOAL VS EMPRESARIAL', 50, 25);
             doc.moveDown(3);
 
-            // Gráfico
-            doc.image(chartImages.comparisonChart, 50, doc.y, { width: 500, height: 300 });
-            doc.y += 320;
+            // Centralizar e ajustar gráfico
+            const chartWidth = 400;
+            const chartHeight = 280;
+            const chartX = (doc.page.width - chartWidth) / 2;
+            
+            doc.image(chartImages.comparisonChart, chartX, doc.y, { 
+                width: chartWidth, 
+                height: chartHeight,
+                fit: [chartWidth, chartHeight],
+                align: 'center'
+            });
+            doc.y += chartHeight + 20;
 
             // Análise comparativa
+            if (doc.y > 600) {
+                doc.addPage();
+                doc.moveDown(1);
+            }
             doc.fontSize(16).fillColor('#1E293B').text('📈 ANÁLISE COMPARATIVA', { underline: true });
             doc.moveDown(0.5);
 
@@ -1378,11 +1552,24 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
             doc.fillColor('#FFFFFF').fontSize(24).text('📈 EVOLUÇÃO DIÁRIA', 50, 25);
             doc.moveDown(3);
 
-            // Gráfico
-            doc.image(chartImages.evolutionChart, 50, doc.y, { width: 500, height: 300 });
-            doc.y += 320;
+            // Centralizar e ajustar gráfico
+            const chartWidth = 480;
+            const chartHeight = 280;
+            const chartX = (doc.page.width - chartWidth) / 2;
+            
+            doc.image(chartImages.evolutionChart, chartX, doc.y, { 
+                width: chartWidth, 
+                height: chartHeight,
+                fit: [chartWidth, chartHeight],
+                align: 'center'
+            });
+            doc.y += chartHeight + 20;
 
             // Análise da evolução
+            if (doc.y > 650) {
+                doc.addPage();
+                doc.moveDown(1);
+            }
             doc.fontSize(16).fillColor('#1E293B').text('📊 ANÁLISE DA EVOLUÇÃO', { underline: true });
             doc.moveDown(0.5);
 
