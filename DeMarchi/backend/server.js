@@ -1347,8 +1347,8 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
         // 🎨 GERAR GRÁFICOS
         console.log('📊 Gerando gráficos para o PDF...');
         const chartJSNodeCanvas = new ChartJSNodeCanvas({ 
-            width: 600, 
-            height: 400, 
+            width: 800, 
+            height: 500, 
             backgroundColour: 'white'
         });
 
@@ -1459,15 +1459,15 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
             doc.moveDown(3);
 
             // Centralizar e ajustar gráfico
-            const chartWidth = 500;
-            const chartHeight = 320;
+            const chartWidth = 480;
+            const chartHeight = 300;
             const chartX = (doc.page.width - chartWidth) / 2;
             
             doc.image(chartImages.planChart, chartX, doc.y, { 
                 width: chartWidth, 
                 height: chartHeight
             });
-            doc.y += chartHeight + 30;
+            doc.y += chartHeight + 40;
 
             // Dados detalhados por plano
             if (doc.y > 550) {
@@ -1488,7 +1488,7 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
                 doc.y += 60;
             } else {
                 Object.entries(porPlano).forEach(([plano, valor], index) => {
-                    if (doc.y > 650) {
+                    if (doc.y > 620) {
                         doc.addPage();
                         doc.moveDown(2);
                     }
@@ -1496,30 +1496,37 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
                     const colors = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#14B8A6'];
                     const color = colors[index % colors.length];
                     
-                    // Card principal com sombra
-                    doc.roundedRect(52, doc.y + 2, 490, 70, 12).fill('#00000010'); // Sombra
-                    doc.roundedRect(50, doc.y, 490, 70, 12).fill(color);
+                    // Card principal com sombra (tamanho reduzido)
+                    doc.roundedRect(52, doc.y + 2, 490, 80, 12).fill('#00000010'); // Sombra
+                    doc.roundedRect(50, doc.y, 490, 80, 12).fill(color);
                     
-                    // Ícone e título do plano
-                    doc.fillColor('#FFFFFF').fontSize(18).text(`💳`, 70, doc.y + 15);
-                    doc.fontSize(16).text(`PLANO ${plano}`, 100, doc.y + 15, { width: 200, align: 'left' });
+                    // Posições relativas para evitar cortes
+                    const cardY = doc.y;
                     
-                    // Valor em destaque com formatação
-                    doc.fontSize(24).text(`R$ ${valor.toFixed(2)}`, 320, doc.y + 10, { width: 150, align: 'right' });
+                    // Ícone e título do plano - linha 1
+                    doc.fillColor('#FFFFFF').fontSize(16).text(`💳`, 65, cardY + 15);
+                    doc.fontSize(18).text(`PLANO ${plano}`, 90, cardY + 15, { width: 200, align: 'left' });
                     
-                    // Informações secundárias em linha separada
+                    // Valor em destaque - linha 1, alinhado à direita
+                    doc.fontSize(22).text(`R$ ${valor.toFixed(2)}`, 300, cardY + 12, { width: 170, align: 'right' });
+                    
+                    // Informações secundárias - linha 2
                     const percentual = ((valor/total)*100).toFixed(1);
                     const transacoesPlano = expenses.filter(e => e.installment_plan == plano).length;
                     
-                    doc.fontSize(12).text(`📊 ${percentual}% do total`, 100, doc.y + 40, { width: 150, align: 'left' });
-                    doc.fontSize(12).text(`📝 ${transacoesPlano} transação${transacoesPlano !== 1 ? 's' : ''}`, 270, doc.y + 40, { width: 150, align: 'left' });
+                    doc.fontSize(12).text(`📊 ${percentual}% do total`, 90, cardY + 45, { width: 180, align: 'left' });
+                    doc.fontSize(12).text(`📝 ${transacoesPlano} transação${transacoesPlano !== 1 ? 's' : ''}`, 280, cardY + 45, { width: 180, align: 'left' });
                     
-                    // Barra de progresso visual
-                    const barWidth = (valor / Math.max(...Object.values(porPlano))) * 200;
-                    doc.roundedRect(100, doc.y + 55, 200, 6, 3).fill('#FFFFFF40');
-                    doc.roundedRect(100, doc.y + 55, barWidth, 6, 3).fill('#FFFFFF');
+                    // Barra de progresso visual - linha 3
+                    const maxValue = Math.max(...Object.values(porPlano));
+                    const barWidth = maxValue > 0 ? (valor / maxValue) * 180 : 0;
+                    doc.roundedRect(90, cardY + 65, 180, 6, 3).fill('#FFFFFF40');
+                    if (barWidth > 0) {
+                        doc.roundedRect(90, cardY + 65, barWidth, 6, 3).fill('#FFFFFF');
+                    }
                     
-                    doc.y += 85;
+                    doc.y += 95; // Espaçamento entre cards
+                });
                 });
             }
         }
@@ -1532,15 +1539,15 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
             doc.moveDown(3);
 
             // Centralizar e ajustar gráfico
-            const chartWidth = 500;
-            const chartHeight = 320;
+            const chartWidth = 480;
+            const chartHeight = 300;
             const chartX = (doc.page.width - chartWidth) / 2;
             
             doc.image(chartImages.accountChart, chartX, doc.y, { 
                 width: chartWidth, 
                 height: chartHeight
             });
-            doc.y += chartHeight + 30;
+            doc.y += chartHeight + 40;
 
             // Dados detalhados por conta
             if (doc.y > 600) {
@@ -1586,15 +1593,15 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
             doc.moveDown(3);
 
             // Centralizar e ajustar gráfico
-            const chartWidth = 450;
-            const chartHeight = 300;
+            const chartWidth = 400;
+            const chartHeight = 280;
             const chartX = (doc.page.width - chartWidth) / 2;
             
             doc.image(chartImages.comparisonChart, chartX, doc.y, { 
                 width: chartWidth, 
                 height: chartHeight
             });
-            doc.y += chartHeight + 30;
+            doc.y += chartHeight + 40;
 
             // Análise comparativa
             if (doc.y > 600) {
@@ -1627,15 +1634,15 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
             doc.moveDown(3);
 
             // Centralizar e ajustar gráfico
-            const chartWidth = 500;
-            const chartHeight = 320;
+            const chartWidth = 480;
+            const chartHeight = 300;
             const chartX = (doc.page.width - chartWidth) / 2;
             
             doc.image(chartImages.evolutionChart, chartX, doc.y, { 
                 width: chartWidth, 
                 height: chartHeight
             });
-            doc.y += chartHeight + 30;
+            doc.y += chartHeight + 40;
 
             // Análise da evolução
             if (doc.y > 650) {
