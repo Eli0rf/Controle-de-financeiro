@@ -1373,21 +1373,21 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
         
         // Card Total
         doc.roundedRect(50, cardY, 150, 100, 10).fill('#3B82F6');
-        doc.fillColor('#FFFFFF').fontSize(12).text('TOTAL GERAL', 60, cardY + 15);
-        doc.fontSize(20).text(`R$ ${total.toFixed(2)}`, 60, cardY + 35);
-        doc.fontSize(10).text(`${expenses.length} transações`, 60, cardY + 65);
+        doc.fillColor('#FFFFFF').fontSize(12).text('TOTAL GERAL', 60, cardY + 15, { width: 130, align: 'left' });
+        doc.fontSize(16).text(`R$ ${total.toFixed(2)}`, 60, cardY + 35, { width: 130, align: 'left' });
+        doc.fontSize(10).text(`${expenses.length} transações`, 60, cardY + 65, { width: 130, align: 'left' });
 
         // Card Pessoal
         doc.roundedRect(220, cardY, 150, 100, 10).fill('#10B981');
-        doc.fillColor('#FFFFFF').fontSize(12).text('PESSOAL 🏠', 230, cardY + 15);
-        doc.fontSize(20).text(`R$ ${totalPessoal.toFixed(2)}`, 230, cardY + 35);
-        doc.fontSize(10).text(`${pessoais.length} transações`, 230, cardY + 65);
+        doc.fillColor('#FFFFFF').fontSize(12).text('PESSOAL 🏠', 230, cardY + 15, { width: 130, align: 'left' });
+        doc.fontSize(16).text(`R$ ${totalPessoal.toFixed(2)}`, 230, cardY + 35, { width: 130, align: 'left' });
+        doc.fontSize(10).text(`${pessoais.length} transações`, 230, cardY + 65, { width: 130, align: 'left' });
 
         // Card Empresarial
         doc.roundedRect(390, cardY, 150, 100, 10).fill('#F59E0B');
-        doc.fillColor('#FFFFFF').fontSize(12).text('EMPRESARIAL 💼', 400, cardY + 15);
-        doc.fontSize(20).text(`R$ ${totalEmpresarial.toFixed(2)}`, 400, cardY + 35);
-        doc.fontSize(10).text(`${empresariais.length} transações`, 400, cardY + 65);
+        doc.fillColor('#FFFFFF').fontSize(12).text('EMPRESARIAL 💼', 400, cardY + 15, { width: 130, align: 'left' });
+        doc.fontSize(16).text(`R$ ${totalEmpresarial.toFixed(2)}`, 400, cardY + 35, { width: 130, align: 'left' });
+        doc.fontSize(10).text(`${empresariais.length} transações`, 400, cardY + 65, { width: 130, align: 'left' });
 
         doc.y = cardY + 120;
         doc.moveDown(1);
@@ -1398,20 +1398,20 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
 
         if (maiorGasto) {
             doc.roundedRect(50, doc.y, 490, 40, 8).fill('#FEF3C7');
-            doc.fillColor('#92400E').fontSize(12).text(`🔥 MAIOR GASTO: R$ ${parseFloat(maiorGasto.amount).toFixed(2)} - ${maiorGasto.description}`, 60, doc.y + 12);
+            doc.fillColor('#92400E').fontSize(12).text(`🔥 MAIOR GASTO: R$ ${parseFloat(maiorGasto.amount).toFixed(2)} - ${maiorGasto.description}`, 60, doc.y + 12, { width: 470, align: 'left' });
             doc.y += 50;
         }
 
         if (menorGasto && menorGasto !== maiorGasto) {
             doc.roundedRect(50, doc.y, 490, 40, 8).fill('#D1FAE5');
-            doc.fillColor('#065F46').fontSize(12).text(`💚 MENOR GASTO: R$ ${parseFloat(menorGasto.amount).toFixed(2)} - ${menorGasto.description}`, 60, doc.y + 12);
+            doc.fillColor('#065F46').fontSize(12).text(`💚 MENOR GASTO: R$ ${parseFloat(menorGasto.amount).toFixed(2)} - ${menorGasto.description}`, 60, doc.y + 12, { width: 470, align: 'left' });
             doc.y += 50;
         }
 
         // Média diária
         const mediaDiaria = total / new Date(year, month, 0).getDate();
         doc.roundedRect(50, doc.y, 490, 40, 8).fill('#DBEAFE');
-        doc.fillColor('#1E40AF').fontSize(12).text(`📊 MÉDIA DIÁRIA: R$ ${mediaDiaria.toFixed(2)}`, 60, doc.y + 12);
+        doc.fillColor('#1E40AF').fontSize(12).text(`📊 MÉDIA DIÁRIA: R$ ${mediaDiaria.toFixed(2)}`, 60, doc.y + 12, { width: 470, align: 'left' });
         doc.y += 60;
 
         // 📊 PÁGINA DE GRÁFICO - DISTRIBUIÇÃO POR PLANO
@@ -1451,9 +1451,9 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
                 const color = colors[index % colors.length];
                 
                 doc.roundedRect(50, doc.y, 490, 35, 8).fill(color);
-                doc.fillColor('#FFFFFF').fontSize(12).text(`Plano ${plano}`, 70, doc.y + 8);
-                doc.fontSize(16).text(`R$ ${valor.toFixed(2)}`, 350, doc.y + 5);
-                doc.fontSize(10).text(`${((valor/total)*100).toFixed(1)}% do total`, 70, doc.y + 20);
+                doc.fillColor('#FFFFFF').fontSize(12).text(`Plano ${plano}`, 70, doc.y + 8, { width: 200, align: 'left' });
+                doc.fontSize(14).text(`R$ ${valor.toFixed(2)}`, 350, doc.y + 8, { width: 120, align: 'left' });
+                doc.fontSize(10).text(`${((valor/total)*100).toFixed(1)}% do total`, 70, doc.y + 20, { width: 200, align: 'left' });
                 doc.y += 40;
             });
         }
@@ -1495,9 +1495,9 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
                 const color = colors[index % colors.length];
                 
                 doc.roundedRect(50, doc.y, 490, 40, 8).fill(color);
-                doc.fillColor('#FFFFFF').fontSize(14).text(conta, 70, doc.y + 8);
-                doc.fontSize(18).text(`R$ ${valor.toFixed(2)}`, 350, doc.y + 5);
-                doc.fontSize(10).text(`${((valor/total)*100).toFixed(1)}% do total`, 70, doc.y + 25);
+                doc.fillColor('#FFFFFF').fontSize(12).text(conta, 70, doc.y + 8, { width: 250, align: 'left' });
+                doc.fontSize(14).text(`R$ ${valor.toFixed(2)}`, 350, doc.y + 8, { width: 120, align: 'left' });
+                doc.fontSize(10).text(`${((valor/total)*100).toFixed(1)}% do total`, 70, doc.y + 25, { width: 200, align: 'left' });
                 doc.y += 50;
             });
         }
@@ -1532,15 +1532,15 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
 
             // Card Pessoal
             doc.roundedRect(50, doc.y, 220, 80, 10).fill('#10B981');
-            doc.fillColor('#FFFFFF').fontSize(14).text('GASTOS PESSOAIS 🏠', 60, doc.y + 15);
-            doc.fontSize(20).text(`R$ ${totalPessoal.toFixed(2)}`, 60, doc.y + 35);
-            doc.fontSize(10).text(`${pessoais.length} transações`, 60, doc.y + 60);
+            doc.fillColor('#FFFFFF').fontSize(12).text('GASTOS PESSOAIS 🏠', 60, doc.y + 15, { width: 200, align: 'left' });
+            doc.fontSize(16).text(`R$ ${totalPessoal.toFixed(2)}`, 60, doc.y + 35, { width: 200, align: 'left' });
+            doc.fontSize(10).text(`${pessoais.length} transações`, 60, doc.y + 55, { width: 200, align: 'left' });
 
             // Card Empresarial
             doc.roundedRect(290, doc.y, 220, 80, 10).fill('#F59E0B');
-            doc.fillColor('#FFFFFF').fontSize(14).text('GASTOS EMPRESARIAIS 💼', 300, doc.y + 15);
-            doc.fontSize(20).text(`R$ ${totalEmpresarial.toFixed(2)}`, 300, doc.y + 35);
-            doc.fontSize(10).text(`${empresariais.length} transações`, 300, doc.y + 60);
+            doc.fillColor('#FFFFFF').fontSize(12).text('GASTOS EMPRESARIAIS 💼', 300, doc.y + 15, { width: 200, align: 'left' });
+            doc.fontSize(16).text(`R$ ${totalEmpresarial.toFixed(2)}`, 300, doc.y + 35, { width: 200, align: 'left' });
+            doc.fontSize(10).text(`${empresariais.length} transações`, 300, doc.y + 55, { width: 200, align: 'left' });
 
             doc.y += 100;
         }
@@ -1577,12 +1577,12 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
             const maiorDia = Object.entries(porDia).reduce((max, [dia, valor]) => valor > max.valor ? {dia, valor} : max, {dia: '', valor: 0});
 
             doc.roundedRect(50, doc.y, 490, 35, 8).fill('#DBEAFE');
-            doc.fillColor('#1E40AF').fontSize(12).text(`📅 Dias com gastos: ${diasComGastos}`, 60, doc.y + 8);
+            doc.fillColor('#1E40AF').fontSize(12).text(`📅 Dias com gastos: ${diasComGastos}`, 60, doc.y + 8, { width: 470, align: 'left' });
             doc.y += 40;
 
             if (maiorDia.dia) {
                 doc.roundedRect(50, doc.y, 490, 35, 8).fill('#FEF3C7');
-                doc.fillColor('#92400E').fontSize(12).text(`🔥 Dia com maior gasto: ${maiorDia.dia} - R$ ${maiorDia.valor.toFixed(2)}`, 60, doc.y + 8);
+                doc.fillColor('#92400E').fontSize(12).text(`🔥 Dia com maior gasto: ${maiorDia.dia} - R$ ${maiorDia.valor.toFixed(2)}`, 60, doc.y + 8, { width: 470, align: 'left' });
                 doc.y += 40;
             }
         }
@@ -1604,12 +1604,12 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
 
                 doc.roundedRect(50, doc.y, 490, 50, 8).fill('#FEF3C7');
                 doc.fillColor('#92400E').fontSize(11);
-                doc.text(`📅 ${new Date(e.transaction_date).toLocaleDateString('pt-BR')}`, 60, doc.y + 8);
-                doc.text(`💰 R$ ${parseFloat(e.amount).toFixed(2)}`, 160, doc.y + 8);
-                doc.text(`🏦 ${e.account}`, 280, doc.y + 8);
-                doc.text(`📝 ${e.description.substring(0, 30)}`, 60, doc.y + 25);
+                doc.text(`📅 ${new Date(e.transaction_date).toLocaleDateString('pt-BR')}`, 60, doc.y + 8, { width: 100, align: 'left' });
+                doc.text(`💰 R$ ${parseFloat(e.amount).toFixed(2)}`, 160, doc.y + 8, { width: 100, align: 'left' });
+                doc.text(`🏦 ${e.account}`, 280, doc.y + 8, { width: 200, align: 'left' });
+                doc.text(`📝 ${e.description.substring(0, 40)}`, 60, doc.y + 25, { width: 300, align: 'left' });
                 if (e.has_invoice) {
-                    doc.text(`📄 Nota Fiscal: Sim`, 300, doc.y + 25);
+                    doc.text(`📄 Nota Fiscal: Sim`, 380, doc.y + 25, { width: 100, align: 'left' });
                 }
                 doc.y += 60;
             });
@@ -1632,10 +1632,10 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
 
                 doc.roundedRect(50, doc.y, 490, 50, 8).fill('#DBEAFE');
                 doc.fillColor('#1E40AF').fontSize(11);
-                doc.text(`📅 ${new Date(e.transaction_date).toLocaleDateString('pt-BR')}`, 60, doc.y + 8);
-                doc.text(`💰 R$ ${parseFloat(e.amount).toFixed(2)}`, 160, doc.y + 8);
-                doc.text(`🏦 ${e.account}`, 280, doc.y + 8);
-                doc.text(`📝 ${e.description.substring(0, 30)}`, 60, doc.y + 25);
+                doc.text(`📅 ${new Date(e.transaction_date).toLocaleDateString('pt-BR')}`, 60, doc.y + 8, { width: 100, align: 'left' });
+                doc.text(`💰 R$ ${parseFloat(e.amount).toFixed(2)}`, 160, doc.y + 8, { width: 100, align: 'left' });
+                doc.text(`🏦 ${e.account}`, 280, doc.y + 8, { width: 200, align: 'left' });
+                doc.text(`📝 ${e.description.substring(0, 40)}`, 60, doc.y + 25, { width: 420, align: 'left' });
                 doc.y += 60;
             });
         }
@@ -1652,9 +1652,9 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
             const color = colors[index % colors.length];
             
             doc.roundedRect(50, contaY, 490, 50, 8).fill(color);
-            doc.fillColor('#FFFFFF').fontSize(16).text(conta, 70, contaY + 10);
-            doc.fontSize(20).text(`R$ ${valor.toFixed(2)}`, 350, contaY + 8);
-            doc.fontSize(10).text(`${((valor/total)*100).toFixed(1)}% do total`, 70, contaY + 30);
+            doc.fillColor('#FFFFFF').fontSize(14).text(conta, 70, contaY + 10, { width: 250, align: 'left' });
+            doc.fontSize(16).text(`R$ ${valor.toFixed(2)}`, 350, contaY + 10, { width: 120, align: 'left' });
+            doc.fontSize(10).text(`${((valor/total)*100).toFixed(1)}% do total`, 70, contaY + 30, { width: 200, align: 'left' });
             
             contaY += 60;
             if (contaY > 700) {
@@ -1681,10 +1681,10 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
 
             doc.roundedRect(50, doc.y, 490, 45, 5).fill(bgColor);
             doc.fillColor(textColor).fontSize(10);
-            doc.text(`${emoji} ${new Date(e.transaction_date).toLocaleDateString('pt-BR')}`, 60, doc.y + 8);
-            doc.text(`💰 R$ ${parseFloat(e.amount).toFixed(2)}`, 180, doc.y + 8);
-            doc.text(`🏦 ${e.account}`, 300, doc.y + 8);
-            doc.text(`📝 ${e.description.substring(0, 35)}`, 60, doc.y + 25);
+            doc.text(`${emoji} ${new Date(e.transaction_date).toLocaleDateString('pt-BR')}`, 60, doc.y + 8, { width: 100, align: 'left' });
+            doc.text(`💰 R$ ${parseFloat(e.amount).toFixed(2)}`, 180, doc.y + 8, { width: 100, align: 'left' });
+            doc.text(`🏦 ${e.account}`, 300, doc.y + 8, { width: 180, align: 'left' });
+            doc.text(`📝 ${e.description.substring(0, 50)}`, 60, doc.y + 25, { width: 420, align: 'left' });
             doc.y += 50;
         });
 
