@@ -715,79 +715,121 @@
             </div>
             </div>
 
-            <!-- Aba PIX & Boleto -->
+            <!-- Aba PIX & Boleto - Estrutura Reformulada -->
             <div id="pix-boleto-tab" class="tab-content hidden">
-                <div class="flex justify-between items-center mb-6">
-                    <h2 class="text-2xl font-bold text-gray-800">PIX & Boleto</h2>
-                    <button id="refresh-pix-boleto" 
-                            class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg transition-colors flex items-center">
-                        <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
-                        </svg>
-                        Atualizar
-                    </button>
-                </div>
-                
-                <!-- Cards de Resumo PIX/Boleto -->
-                <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-                    <div class="bg-gradient-to-br from-green-500 to-green-300 p-6 rounded-2xl shadow-lg">
-                        <div class="flex items-center gap-4">
-                            <span class="text-4xl">💸</span>
-                            <div>
-                                <h3 class="font-semibold text-white text-sm">PIX Total</h3>
-                                <p id="pix-total" class="text-2xl font-bold text-white">R$ 0,00</p>
-                            </div>
+                <!-- Header com Dashboard Executivo -->
+                <div class="bg-gradient-to-r from-green-600 to-blue-600 text-white p-6 rounded-lg shadow-lg mb-8">
+                    <div class="flex justify-between items-center mb-4">
+                        <div>
+                            <h2 class="text-3xl font-bold">💳 PIX & Boleto Dashboard</h2>
+                            <p class="text-green-100 mt-2">Análise completa de pagamentos instantâneos e boletos</p>
+                        </div>
+                        <div class="flex gap-2">
+                            <button id="refresh-pix-boleto" 
+                                    class="bg-white bg-opacity-20 hover:bg-opacity-30 text-white px-4 py-2 rounded-lg transition-all flex items-center">
+                                <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                                </svg>
+                                Atualizar
+                            </button>
+                            <button id="export-pix-boleto" 
+                                    class="bg-white bg-opacity-20 hover:bg-opacity-30 text-white px-4 py-2 rounded-lg transition-all flex items-center">
+                                <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                                </svg>
+                                Exportar
+                            </button>
                         </div>
                     </div>
-                    <div class="bg-gradient-to-br from-blue-500 to-blue-300 p-6 rounded-2xl shadow-lg">
-                        <div class="flex items-center gap-4">
-                            <span class="text-4xl">🧾</span>
-                            <div>
-                                <h3 class="font-semibold text-white text-sm">Boleto Total</h3>
-                                <p id="boleto-total" class="text-2xl font-bold text-white">R$ 0,00</p>
+                    
+                    <!-- Indicadores Principais -->
+                    <div class="grid grid-cols-1 md:grid-cols-5 gap-4">
+                        <div class="bg-gradient-to-br from-green-500 to-green-400 p-4 rounded-xl shadow-md">
+                            <div class="flex items-center gap-3">
+                                <span class="text-3xl">💸</span>
+                                <div>
+                                    <p class="text-sm opacity-90">PIX Total</p>
+                                    <p id="pix-total" class="text-xl font-bold">R$ 0,00</p>
+                                    <p class="text-xs opacity-75">Qtd: <span id="pix-count">0</span></p>
+                                </div>
                             </div>
                         </div>
-                    </div>
-                    <div class="bg-gradient-to-br from-purple-500 to-purple-300 p-6 rounded-2xl shadow-lg">
-                        <div class="flex items-center gap-4">
-                            <span class="text-4xl">🔢</span>
-                            <div>
-                                <h3 class="font-semibold text-white text-sm">Total Transações</h3>
-                                <p id="pix-boleto-transactions" class="text-2xl font-bold text-white">0</p>
+                        <div class="bg-gradient-to-br from-blue-500 to-blue-400 p-4 rounded-xl shadow-md">
+                            <div class="flex items-center gap-3">
+                                <span class="text-3xl">🧾</span>
+                                <div>
+                                    <p class="text-sm opacity-90">Boleto Total</p>
+                                    <p id="boleto-total" class="text-xl font-bold">R$ 0,00</p>
+                                    <p class="text-xs opacity-75">Qtd: <span id="boleto-count">0</span></p>
+                                </div>
                             </div>
                         </div>
-                    </div>
-                    <div class="bg-gradient-to-br from-orange-500 to-orange-300 p-6 rounded-2xl shadow-lg">
-                        <div class="flex items-center gap-4">
-                            <span class="text-4xl">📊</span>
-                            <div>
-                                <h3 class="font-semibold text-white text-sm">Total Geral</h3>
-                                <p id="pix-boleto-grand-total" class="text-2xl font-bold text-white">R$ 0,00</p>
+                        <div class="bg-gradient-to-br from-purple-500 to-purple-400 p-4 rounded-xl shadow-md">
+                            <div class="flex items-center gap-3">
+                                <span class="text-3xl">📊</span>
+                                <div>
+                                    <p class="text-sm opacity-90">Total Geral</p>
+                                    <p id="pix-boleto-grand-total" class="text-xl font-bold">R$ 0,00</p>
+                                    <p class="text-xs opacity-75">Soma: PIX + Boleto</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="bg-gradient-to-br from-orange-500 to-orange-400 p-4 rounded-xl shadow-md">
+                            <div class="flex items-center gap-3">
+                                <span class="text-3xl">📈</span>
+                                <div>
+                                    <p class="text-sm opacity-90">Crescimento</p>
+                                    <p id="pix-boleto-growth" class="text-xl font-bold">+0%</p>
+                                    <p class="text-xs opacity-75">vs Mês Anterior</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="bg-gradient-to-br from-red-500 to-red-400 p-4 rounded-xl shadow-md">
+                            <div class="flex items-center gap-3">
+                                <span class="text-3xl">💰</span>
+                                <div>
+                                    <p class="text-sm opacity-90">Ticket Médio</p>
+                                    <p id="pix-boleto-average" class="text-xl font-bold">R$ 0,00</p>
+                                    <p class="text-xs opacity-75">Por transação</p>
+                                </div>
                             </div>
                         </div>
                     </div>
                 </div>
 
-                <!-- Seção de Filtros Específicos PIX/Boleto -->
+                <!-- Sistema de Filtros Avançado -->
                 <div class="bg-white p-6 rounded-lg shadow-md mb-8">
-                    <h3 class="text-xl font-semibold text-gray-700 mb-4">🔍 Filtros PIX & Boleto</h3>
-                    <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <h3 class="text-xl font-semibold text-gray-700 mb-4">🔍 Centro de Filtros e Análise</h3>
+                    
+                    <!-- Filtros Primários -->
+                    <div class="grid grid-cols-1 md:grid-cols-5 gap-4 mb-4">
                         <div>
-                            <label class="block text-sm font-medium">Tipo</label>
-                            <select id="pix-boleto-type" class="mt-1 block w-full p-2 border rounded-lg">
-                                <option value="">Todos</option>
-                                <option value="PIX">PIX</option>
-                                <option value="Boleto">Boleto</option>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Período</label>
+                            <select id="pix-boleto-period" class="mt-1 block w-full p-2 border rounded-lg">
+                                <option value="current-month">Mês Atual</option>
+                                <option value="last-month">Mês Anterior</option>
+                                <option value="quarter">Trimestre</option>
+                                <option value="semester">Semestre</option>
+                                <option value="year" selected>Ano Atual</option>
+                                <option value="custom">Personalizado</option>
                             </select>
                         </div>
                         <div>
-                            <label class="block text-sm font-medium">Ano</label>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Tipo de Pagamento</label>
+                            <select id="pix-boleto-type" class="mt-1 block w-full p-2 border rounded-lg">
+                                <option value="">Todos</option>
+                                <option value="PIX">💸 PIX</option>
+                                <option value="Boleto">🧾 Boleto</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Ano</label>
                             <select id="pix-boleto-year" class="mt-1 block w-full p-2 border rounded-lg">
                                 <!-- Preenchido via JS -->
                             </select>
                         </div>
                         <div>
-                            <label class="block text-sm font-medium">Mês</label>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Mês</label>
                             <select id="pix-boleto-month" class="mt-1 block w-full p-2 border rounded-lg">
                                 <option value="">Todos</option>
                                 <option value="1">Janeiro</option>
@@ -805,76 +847,303 @@
                             </select>
                         </div>
                         <div>
-                            <label class="block text-sm font-medium">Buscar</label>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Buscar</label>
                             <input type="text" id="pix-boleto-search" placeholder="Descrição..." class="mt-1 block w-full p-2 border rounded-lg">
                         </div>
                     </div>
+                    
+                    <!-- Filtros Avançados -->
+                    <div class="bg-gray-50 p-4 rounded-lg">
+                        <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Valor Mínimo</label>
+                                <input type="number" id="pix-boleto-min-amount" step="0.01" placeholder="0.00" class="mt-1 block w-full p-2 border rounded-lg">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Valor Máximo</label>
+                                <input type="number" id="pix-boleto-max-amount" step="0.01" placeholder="999999.99" class="mt-1 block w-full p-2 border rounded-lg">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Plano de Conta</label>
+                                <select id="pix-boleto-plan" class="mt-1 block w-full p-2 border rounded-lg">
+                                    <option value="">Todos</option>
+                                    <!-- Preenchido via JS -->
+                                </select>
+                            </div>
+                            <div class="flex items-end">
+                                <button id="apply-pix-boleto-filters" class="w-full bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors">
+                                    🔄 Aplicar Filtros
+                                </button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
-                <!-- Gráficos PIX/Boleto -->
+                <!-- Gráficos e Visualizações -->
+                <div class="grid grid-cols-1 xl:grid-cols-3 gap-6 mb-8">
+                    <!-- Gráfico Principal: Evolução Temporal -->
+                    <div class="xl:col-span-2 bg-white p-6 rounded-lg shadow-md">
+                        <div class="flex justify-between items-center mb-4">
+                            <h3 class="text-xl font-semibold text-gray-700">📈 Evolução Temporal PIX vs Boleto</h3>
+                            <select id="evolution-period" class="p-2 border rounded-lg text-sm">
+                                <option value="monthly">Mensal</option>
+                                <option value="weekly">Semanal</option>
+                                <option value="daily">Diário</option>
+                            </select>
+                        </div>
+                        <div style="height: 350px;">
+                            <canvas id="pix-boleto-evolution-chart" style="height: 100%; width: 100%;"></canvas>
+                        </div>
+                    </div>
+                    
+                    <!-- Distribuição PIX vs Boleto -->
+                    <div class="bg-white p-6 rounded-lg shadow-md">
+                        <h3 class="text-xl font-semibold text-gray-700 mb-4">🥧 Distribuição PIX vs Boleto</h3>
+                        <div style="height: 350px;">
+                            <canvas id="pix-boleto-distribution-chart" style="height: 100%; width: 100%;"></canvas>
+                        </div>
+                        <!-- Legendas -->
+                        <div class="mt-4 space-y-2">
+                            <div class="flex justify-between items-center">
+                                <span class="flex items-center">
+                                    <div class="w-3 h-3 bg-green-500 rounded mr-2"></div>
+                                    PIX
+                                </span>
+                                <span id="pix-percentage" class="font-semibold">0%</span>
+                            </div>
+                            <div class="flex justify-between items-center">
+                                <span class="flex items-center">
+                                    <div class="w-3 h-3 bg-blue-500 rounded mr-2"></div>
+                                    Boleto
+                                </span>
+                                <span id="boleto-percentage" class="font-semibold">0%</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Análises por Categoria -->
                 <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+                    <!-- PIX por Categoria -->
                     <div class="bg-white p-6 rounded-lg shadow-md">
-                        <h3 class="text-xl font-semibold text-gray-700 mb-4">📊 PIX vs Boleto</h3>
-                        <canvas id="pix-boleto-comparison-chart"></canvas>
+                        <h3 class="text-xl font-semibold text-gray-700 mb-4">💸 PIX por Categoria</h3>
+                        <div style="height: 300px;">
+                            <canvas id="pix-categories-chart" style="height: 100%; width: 100%;"></canvas>
+                        </div>
                     </div>
+                    
+                    <!-- Boleto por Categoria -->
                     <div class="bg-white p-6 rounded-lg shadow-md">
-                        <h3 class="text-xl font-semibold text-gray-700 mb-4">📈 Evolução Mensal</h3>
-                        <canvas id="pix-boleto-evolution-chart"></canvas>
+                        <h3 class="text-xl font-semibold text-gray-700 mb-4">🧾 Boleto por Categoria</h3>
+                        <div style="height: 300px;">
+                            <canvas id="boleto-categories-chart" style="height: 100%; width: 100%;"></canvas>
+                        </div>
                     </div>
                 </div>
 
-                <!-- Detalhamento PIX -->
+                <!-- Dados Tabulares Inteligentes -->
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+                    <!-- Top PIX -->
+                    <div class="bg-white p-6 rounded-lg shadow-md">
+                        <div class="flex justify-between items-center mb-4">
+                            <h3 class="text-xl font-semibold text-green-700">💸 Top 10 PIX</h3>
+                            <span class="text-sm text-gray-500">Maiores valores</span>
+                        </div>
+                        <div class="space-y-3" id="top-pix-list">
+                            <!-- Preenchido via JS -->
+                        </div>
+                    </div>
+                    
+                    <!-- Top Boleto -->
+                    <div class="bg-white p-6 rounded-lg shadow-md">
+                        <div class="flex justify-between items-center mb-4">
+                            <h3 class="text-xl font-semibold text-blue-700">🧾 Top 10 Boleto</h3>
+                            <span class="text-sm text-gray-500">Maiores valores</span>
+                        </div>
+                        <div class="space-y-3" id="top-boleto-list">
+                            <!-- Preenchido via JS -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Resumo Estatístico Detalhado -->
                 <div class="bg-white p-6 rounded-lg shadow-md mb-8">
-                    <h3 class="text-xl font-semibold text-gray-700 mb-4">💸 Detalhamento PIX</h3>
+                    <h3 class="text-xl font-semibold text-gray-700 mb-4">📊 Resumo Estatístico Detalhado</h3>
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                        <!-- Estatísticas PIX -->
+                        <div class="bg-green-50 p-4 rounded-lg border-l-4 border-green-500">
+                            <h4 class="font-semibold text-green-800 mb-3">💸 Estatísticas PIX</h4>
+                            <div class="space-y-2 text-sm">
+                                <div class="flex justify-between">
+                                    <span>Total:</span>
+                                    <span id="pix-stats-total" class="font-semibold">R$ 0,00</span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span>Transações:</span>
+                                    <span id="pix-stats-count" class="font-semibold">0</span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span>Média:</span>
+                                    <span id="pix-stats-average" class="font-semibold">R$ 0,00</span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span>Maior valor:</span>
+                                    <span id="pix-stats-max" class="font-semibold">R$ 0,00</span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span>Menor valor:</span>
+                                    <span id="pix-stats-min" class="font-semibold">R$ 0,00</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Estatísticas Boleto -->
+                        <div class="bg-blue-50 p-4 rounded-lg border-l-4 border-blue-500">
+                            <h4 class="font-semibold text-blue-800 mb-3">🧾 Estatísticas Boleto</h4>
+                            <div class="space-y-2 text-sm">
+                                <div class="flex justify-between">
+                                    <span>Total:</span>
+                                    <span id="boleto-stats-total" class="font-semibold">R$ 0,00</span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span>Transações:</span>
+                                    <span id="boleto-stats-count" class="font-semibold">0</span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span>Média:</span>
+                                    <span id="boleto-stats-average" class="font-semibold">R$ 0,00</span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span>Maior valor:</span>
+                                    <span id="boleto-stats-max" class="font-semibold">R$ 0,00</span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span>Menor valor:</span>
+                                    <span id="boleto-stats-min" class="font-semibold">R$ 0,00</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Análise Temporal -->
+                        <div class="bg-purple-50 p-4 rounded-lg border-l-4 border-purple-500">
+                            <h4 class="font-semibold text-purple-800 mb-3">📅 Análise Temporal</h4>
+                            <div class="space-y-2 text-sm">
+                                <div class="flex justify-between">
+                                    <span>Período:</span>
+                                    <span id="temporal-period" class="font-semibold">-</span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span>Dias ativos:</span>
+                                    <span id="temporal-active-days" class="font-semibold">0</span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span>Média/dia:</span>
+                                    <span id="temporal-daily-average" class="font-semibold">R$ 0,00</span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span>Dia mais ativo:</span>
+                                    <span id="temporal-best-day" class="font-semibold">-</span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span>Tendência:</span>
+                                    <span id="temporal-trend" class="font-semibold">-</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Padrões de Uso -->
+                        <div class="bg-orange-50 p-4 rounded-lg border-l-4 border-orange-500">
+                            <h4 class="font-semibold text-orange-800 mb-3">🎯 Padrões de Uso</h4>
+                            <div class="space-y-2 text-sm">
+                                <div class="flex justify-between">
+                                    <span>PIX/Total:</span>
+                                    <span id="pattern-pix-ratio" class="font-semibold">0%</span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span>Boleto/Total:</span>
+                                    <span id="pattern-boleto-ratio" class="font-semibold">0%</span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span>Preferência:</span>
+                                    <span id="pattern-preference" class="font-semibold">-</span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span>Sazonalidade:</span>
+                                    <span id="pattern-seasonality" class="font-semibold">-</span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span>Regularidade:</span>
+                                    <span id="pattern-regularity" class="font-semibold">-</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tabela Consolidada de Dados -->
+                <div class="bg-white p-6 rounded-lg shadow-md">
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="text-xl font-semibold text-gray-700">📋 Dados Consolidados</h3>
+                        <div class="flex gap-2">
+                            <button id="toggle-pix-data" class="bg-green-500 text-white px-3 py-1 rounded text-sm hover:bg-green-600">
+                                PIX
+                            </button>
+                            <button id="toggle-boleto-data" class="bg-blue-500 text-white px-3 py-1 rounded text-sm hover:bg-blue-600">
+                                Boleto
+                            </button>
+                            <button id="toggle-all-data" class="bg-gray-500 text-white px-3 py-1 rounded text-sm hover:bg-gray-600">
+                                Todos
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <!-- Estatísticas da Tabela -->
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4 p-3 bg-gray-50 rounded-lg">
+                        <div class="text-center">
+                            <div class="text-sm text-gray-600">Registros Exibidos</div>
+                            <div id="table-visible-count" class="text-lg font-bold text-gray-800">0</div>
+                        </div>
+                        <div class="text-center">
+                            <div class="text-sm text-gray-600">Total Exibido</div>
+                            <div id="table-visible-total" class="text-lg font-bold text-gray-800">R$ 0,00</div>
+                        </div>
+                        <div class="text-center">
+                            <div class="text-sm text-gray-600">Média Exibida</div>
+                            <div id="table-visible-average" class="text-lg font-bold text-gray-800">R$ 0,00</div>
+                        </div>
+                        <div class="text-center">
+                            <div class="text-sm text-gray-600">Tipo Predominante</div>
+                            <div id="table-predominant-type" class="text-lg font-bold text-gray-800">-</div>
+                        </div>
+                    </div>
+                    
                     <div class="overflow-x-auto">
                         <table class="w-full text-left">
-                            <thead class="bg-green-50">
+                            <thead class="bg-gray-50 sticky top-0">
                                 <tr>
-                                    <th class="p-3 text-green-700">Data</th>
-                                    <th class="p-3 text-green-700">Descrição</th>
-                                    <th class="p-3 text-green-700">Valor</th>
-                                    <th class="p-3 text-green-700">Tipo</th>
-                                    <th class="p-3 text-green-700">Plano</th>
-                                    <th class="p-3 text-green-700">Recorrente</th>
+                                    <th class="p-3 font-medium cursor-pointer hover:bg-gray-100" onclick="sortPixBoletoTable('date')">
+                                        Data <span class="text-xs">↕️</span>
+                                    </th>
+                                    <th class="p-3 font-medium cursor-pointer hover:bg-gray-100" onclick="sortPixBoletoTable('description')">
+                                        Descrição <span class="text-xs">↕️</span>
+                                    </th>
+                                    <th class="p-3 font-medium cursor-pointer hover:bg-gray-100" onclick="sortPixBoletoTable('amount')">
+                                        Valor <span class="text-xs">↕️</span>
+                                    </th>
+                                    <th class="p-3 font-medium cursor-pointer hover:bg-gray-100" onclick="sortPixBoletoTable('account')">
+                                        Tipo <span class="text-xs">↕️</span>
+                                    </th>
+                                    <th class="p-3 font-medium cursor-pointer hover:bg-gray-100" onclick="sortPixBoletoTable('plan')">
+                                        Categoria <span class="text-xs">↕️</span>
+                                    </th>
+                                    <th class="p-3 font-medium">Status</th>
+                                    <th class="p-3 font-medium">Ações</th>
                                 </tr>
                             </thead>
-                            <tbody id="pix-details-table"></tbody>
+                            <tbody id="pix-boleto-consolidated-table">
+                                <!-- Preenchido via JavaScript -->
+                            </tbody>
                         </table>
-                    </div>
-                </div>
-
-                <!-- Detalhamento Boleto -->
-                <div class="bg-white p-6 rounded-lg shadow-md mb-8">
-                    <h3 class="text-xl font-semibold text-gray-700 mb-4">🧾 Detalhamento Boleto</h3>
-                    <div class="overflow-x-auto">
-                        <table class="w-full text-left">
-                            <thead class="bg-blue-50">
-                                <tr>
-                                    <th class="p-3 text-blue-700">Data</th>
-                                    <th class="p-3 text-blue-700">Descrição</th>
-                                    <th class="p-3 text-blue-700">Valor</th>
-                                    <th class="p-3 text-blue-700">Tipo</th>
-                                    <th class="p-3 text-blue-700">Plano</th>
-                                    <th class="p-3 text-blue-700">Recorrente</th>
-                                </tr>
-                            </thead>
-                            <tbody id="boleto-details-table"></tbody>
-                        </table>
-                    </div>
-                </div>
-
-                <!-- Resumo por Categoria -->
-                <div class="bg-white p-6 rounded-lg shadow-md mb-8">
-                    <h3 class="text-xl font-semibold text-gray-700 mb-4">📋 Resumo por Categoria</h3>
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div>
-                            <h4 class="font-semibold text-green-600 mb-3">💸 PIX por Plano de Conta</h4>
-                            <div id="pix-category-summary" class="space-y-2"></div>
-                        </div>
-                        <div>
-                            <h4 class="font-semibold text-blue-600 mb-3">🧾 Boleto por Plano de Conta</h4>
-                            <div id="boleto-category-summary" class="space-y-2"></div>
-                        </div>
                     </div>
                 </div>
             </div>

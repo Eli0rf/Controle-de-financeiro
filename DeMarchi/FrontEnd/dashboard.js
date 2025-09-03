@@ -6823,64 +6823,537 @@ document.addEventListener('DOMContentLoaded', function() {
         console.log('🧪 === FIM DO TESTE ===');
     };
 
+    // ========== PIX & BOLETO - ESTRUTURA REFORMULADA ==========
     async function loadPixBoletoData(forceRefresh = false) {
-        console.log('🔄 Carregando dados PIX e Boleto...', forceRefresh ? '(Forçado)' : '');
-        
         try {
-            // Verificar se estamos na aba correta (apenas se não for refresh forçado)
-            if (!forceRefresh) {
-                const pixBoletoTab = document.getElementById('pix-boleto-tab');
-                if (!pixBoletoTab || pixBoletoTab.classList.contains('hidden')) {
-                    console.log('⚠️ Aba PIX e Boleto não está visível, aguardando...');
-                    // Tentar novamente após um delay
-                    setTimeout(() => loadPixBoletoData(), 500);
-                    return;
-                }
+            const token = getToken();
+            if (!token) return;
+
+            console.log('🔄 Carregando dados PIX e Boleto...');
+            showNotification('Carregando dados PIX e Boleto...', 'info', 2000);
+
+            // Aguardar Chart.js
+            if (!await waitForChartJs()) {
+                console.warn('Chart.js não carregado para PIX/Boleto');
+                setTimeout(() => loadPixBoletoData(), 500);
+                return;
+            }
+
+            // Carregar dados completos
+            await loadPixBoletoMetrics();
+            await loadPixBoletoCharts();
+            await loadPixBoletoTables();
+            setupPixBoletoFilters();
+
+            showNotification('Dados PIX e Boleto carregados com sucesso!', 'success', 2000);
+            console.log('✅ PIX/Boleto carregado com sucesso');
+
+        } catch (error) {
+            console.error('❌ Erro ao carregar PIX/Boleto:', error);
+            showNotification('Erro ao carregar dados PIX/Boleto: ' + error.message, 'error');
+        }
+    }
+
+    // Função para carregar métricas PIX e Boleto
+    async function loadPixBoletoMetrics() {
+        try {
+            const currentDate = new Date();
+            const currentYear = currentDate.getFullYear();
+            const currentMonth = currentDate.getMonth() + 1;
+            
+            // Buscar dados atuais
+            const currentData = await fetchPixBoletoData(currentYear, currentMonth);
+            
+            // Buscar dados do mês anterior para comparação
+            const lastMonth = currentMonth === 1 ? 12 : currentMonth - 1;
+            const lastMonthYear = currentMonth === 1 ? currentYear - 1 : currentYear;
+            const lastMonthData = await fetchPixBoletoData(lastMonthYear, lastMonth);
+            
+            // Calcular estatísticas
+            const pixData = currentData.filter(item => item.account === 'PIX');
+            const boletoData = currentData.filter(item => item.account === 'Boleto');
+            
+            const pixTotal = pixData.reduce((sum, item) => sum + parseFloat(item.amount), 0);
+            const boletoTotal = boletoData.reduce((sum, item) => sum + parseFloat(item.amount), 0);
+            const grandTotal = pixTotal + boletoTotal;
+            
+            const lastMonthTotal = lastMonthData.reduce((sum, item) => sum + parseFloat(item.amount), 0);
+            const growth = lastMonthTotal > 0 ? ((grandTotal - lastMonthTotal) / lastMonthTotal * 100) : 0;
+            
+            const totalTransactions = currentData.length;
+            const averageTransaction = totalTransactions > 0 ? grandTotal / totalTransactions : 0;
+            
+            // Atualizar interface
+            updatePixBoletoMetrics({
+                pixTotal,
+                boletoTotal,
+                grandTotal,
+                pixCount: pixData.length,
+                boletoCount: boletoData.length,
+                growth,
+                average: averageTransaction
+            });
+            
+            // Calcular e exibir estatísticas detalhadas
+            updatePixBoletoDetailedStats(pixData, boletoData);
+            
+        } catch (error) {
+            console.error('Erro ao carregar métricas PIX/Boleto:', error);
+            throw error;
+        }
+    }
+
+    // Função para buscar dados PIX e Boleto
+    async function fetchPixBoletoData(year, month) {
+        try {
+            let url = `${API_BASE_URL}/api/expenses?year=${year}`;
+            if (month) {
+                url += `&month=${month}`;
             }
             
-            console.log('✅ Iniciando carregamento de dados PIX e Boleto...');
+            const response = await authenticatedFetch(url);
             
-            // Buscar todos os gastos sem filtro de período para PIX/Boleto
-            const expenses = await fetchPixBoletoExpenses();
-            console.log('📊 Total de gastos carregados:', expenses.length);
+            if (!response.ok) {
+                throw new Error('Erro ao buscar dados PIX/Boleto');
+            }
             
-            const pixBoletoExpenses = expenses.filter(expense => 
+            const allExpenses = await response.json();
+            
+            // Filtrar apenas PIX e Boleto
+            return allExpenses.filter(expense => 
                 expense.account === 'PIX' || expense.account === 'Boleto'
             );
             
-            console.log('💳 Gastos PIX e Boleto filtrados:', pixBoletoExpenses.length);
+        } catch (error) {
+            console.error('Erro ao buscar dados PIX/Boleto:', error);
+            return [];
+        }
+    }
+
+    // Função para atualizar métricas na interface
+    function updatePixBoletoMetrics(data) {
+        const pixTotalEl = document.getElementById('pix-total');
+        const boletoTotalEl = document.getElementById('boleto-total');
+        const grandTotalEl = document.getElementById('pix-boleto-grand-total');
+        const pixCountEl = document.getElementById('pix-count');
+        const boletoCountEl = document.getElementById('boleto-count');
+        const growthEl = document.getElementById('pix-boleto-growth');
+        const averageEl = document.getElementById('pix-boleto-average');
+        
+        if (pixTotalEl) pixTotalEl.textContent = formatCurrency(data.pixTotal);
+        if (boletoTotalEl) boletoTotalEl.textContent = formatCurrency(data.boletoTotal);
+        if (grandTotalEl) grandTotalEl.textContent = formatCurrency(data.grandTotal);
+        if (pixCountEl) pixCountEl.textContent = data.pixCount;
+        if (boletoCountEl) boletoCountEl.textContent = data.boletoCount;
+        if (averageEl) averageEl.textContent = formatCurrency(data.average);
+        
+        // Atualizar crescimento
+        if (growthEl) {
+            const growthText = data.growth >= 0 ? `+${data.growth.toFixed(1)}%` : `${data.growth.toFixed(1)}%`;
+            const growthColor = data.growth >= 0 ? 'text-green-400' : 'text-red-400';
             
-            if (pixBoletoExpenses.length > 0) {
-                console.log('📋 Primeiros 3 gastos PIX/Boleto:', pixBoletoExpenses.slice(0, 3).map(e => ({ 
-                    account: e.account, 
-                    amount: e.amount, 
-                    description: e.description,
-                    date: e.transaction_date || e.date
-                })));
+            growthEl.textContent = growthText;
+            growthEl.className = `text-xl font-bold ${growthColor}`;
+        }
+    }
+
+    // Função para carregar gráficos PIX e Boleto
+    async function loadPixBoletoCharts() {
+        try {
+            const currentDate = new Date();
+            const currentYear = currentDate.getFullYear();
+            const currentMonth = currentDate.getMonth() + 1;
+            
+            // Buscar dados dos últimos 12 meses
+            const monthlyData = [];
+            for (let i = 11; i >= 0; i--) {
+                const date = new Date(currentYear, currentMonth - 1 - i);
+                const year = date.getFullYear();
+                const month = date.getMonth() + 1;
+                
+                const data = await fetchPixBoletoData(year, month);
+                monthlyData.push({
+                    month: date.toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' }),
+                    pixTotal: data.filter(item => item.account === 'PIX').reduce((sum, item) => sum + parseFloat(item.amount), 0),
+                    boletoTotal: data.filter(item => item.account === 'Boleto').reduce((sum, item) => sum + parseFloat(item.amount), 0)
+                });
             }
             
-            // Atualizar estatísticas SEMPRE
-            updatePixBoletoStats(pixBoletoExpenses);
-            
-            // Renderizar gráficos com delay para garantir que o DOM está pronto
-            setTimeout(() => {
-                renderPixBoletoCharts(pixBoletoExpenses);
-            }, 200);
-            
-            // Configurar filtros
-            setupPixBoletoFilters();
-            
-            console.log('✅ Dados PIX e Boleto carregados com sucesso!');
-            
-            // Mostrar notificação de sucesso se for refresh manual
-            if (forceRefresh) {
-                showNotification('✅ Dados PIX e Boleto atualizados!', 'success', 2000);
-            }
+            // Renderizar gráficos
+            renderPixBoletoEvolutionChart(monthlyData);
+            await renderPixBoletoDistributionChart(currentYear, currentMonth);
+            await renderPixBoletoCategoryChart(currentYear, currentMonth);
             
         } catch (error) {
-            console.error('❌ Erro ao carregar dados PIX e Boleto:', error);
-            showNotification('Erro ao carregar dados PIX e Boleto', 'error');
+            console.error('Erro ao carregar gráficos PIX/Boleto:', error);
+            throw error;
         }
+    }
+
+    // Função para carregar tabelas PIX e Boleto
+    async function loadPixBoletoTables() {
+        try {
+            const currentDate = new Date();
+            const currentYear = currentDate.getFullYear();
+            const currentMonth = currentDate.getMonth() + 1;
+            
+            const data = await fetchPixBoletoData(currentYear, currentMonth);
+            
+            // Renderizar tabelas
+            renderPixBoletoTransactionsTable(data);
+            renderPixBoletoSummaryTable(data);
+            
+        } catch (error) {
+            console.error('Erro ao carregar tabelas PIX/Boleto:', error);
+            throw error;
+        }
+    }
+
+    // Função para configurar filtros PIX e Boleto
+    function setupPixBoletoFilters() {
+        const monthSelect = document.getElementById('pix-boleto-month-filter');
+        const yearSelect = document.getElementById('pix-boleto-year-filter');
+        const typeSelect = document.getElementById('pix-boleto-type-filter');
+        
+        if (monthSelect) {
+            monthSelect.addEventListener('change', handlePixBoletoFilterChange);
+        }
+        
+        if (yearSelect) {
+            yearSelect.addEventListener('change', handlePixBoletoFilterChange);
+        }
+        
+        if (typeSelect) {
+            typeSelect.addEventListener('change', handlePixBoletoFilterChange);
+        }
+    }
+
+    // Função para lidar com mudanças nos filtros
+    async function handlePixBoletoFilterChange() {
+        try {
+            await loadPixBoletoMetrics();
+            await loadPixBoletoCharts();
+            await loadPixBoletoTables();
+        } catch (error) {
+            console.error('Erro ao atualizar dados PIX/Boleto:', error);
+            showNotification('Erro ao atualizar dados', 'error');
+        }
+    }
+
+    // ========== GRÁFICOS PIX & BOLETO ==========
+    // Função para renderizar gráfico de evolução PIX e Boleto
+    function renderPixBoletoEvolutionChart(monthlyData) {
+        const canvas = document.getElementById('pix-boleto-evolution-chart');
+        if (!canvas) return;
+
+        const ctx = canvas.getContext('2d');
+        
+        // Destruir gráfico existente
+        if (window.pixBoletoEvolutionChart) {
+            window.pixBoletoEvolutionChart.destroy();
+        }
+
+        window.pixBoletoEvolutionChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: monthlyData.map(item => item.month),
+                datasets: [
+                    {
+                        label: 'PIX',
+                        data: monthlyData.map(item => item.pixTotal),
+                        borderColor: '#10B981',
+                        backgroundColor: '#10B98120',
+                        fill: false,
+                        tension: 0.4
+                    },
+                    {
+                        label: 'Boleto',
+                        data: monthlyData.map(item => item.boletoTotal),
+                        borderColor: '#F59E0B',
+                        backgroundColor: '#F59E0B20',
+                        fill: false,
+                        tension: 0.4
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        display: true,
+                        position: 'top'
+                    },
+                    tooltip: {
+                        mode: 'index',
+                        intersect: false,
+                        callbacks: {
+                            label: function(context) {
+                                return `${context.dataset.label}: ${formatCurrency(context.parsed.y)}`;
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            callback: function(value) {
+                                return formatCurrency(value);
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    // Função para renderizar gráfico de distribuição PIX e Boleto
+    async function renderPixBoletoDistributionChart(year, month) {
+        const canvas = document.getElementById('pix-boleto-distribution-chart');
+        if (!canvas) return;
+
+        const ctx = canvas.getContext('2d');
+        const data = await fetchPixBoletoData(year, month);
+        
+        const pixTotal = data.filter(item => item.account === 'PIX').reduce((sum, item) => sum + parseFloat(item.amount), 0);
+        const boletoTotal = data.filter(item => item.account === 'Boleto').reduce((sum, item) => sum + parseFloat(item.amount), 0);
+
+        // Destruir gráfico existente
+        if (window.pixBoletoDistributionChart) {
+            window.pixBoletoDistributionChart.destroy();
+        }
+
+        window.pixBoletoDistributionChart = new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: ['PIX', 'Boleto'],
+                datasets: [{
+                    data: [pixTotal, boletoTotal],
+                    backgroundColor: ['#10B981', '#F59E0B'],
+                    borderWidth: 2,
+                    borderColor: '#fff'
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        display: true,
+                        position: 'bottom'
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                const total = pixTotal + boletoTotal;
+                                const percentage = total > 0 ? ((context.parsed / total) * 100).toFixed(1) : 0;
+                                return `${context.label}: ${formatCurrency(context.parsed)} (${percentage}%)`;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    // Função para renderizar gráfico de categorias PIX e Boleto
+    async function renderPixBoletoCategoryChart(year, month) {
+        const canvas = document.getElementById('pix-boleto-category-chart');
+        if (!canvas) return;
+
+        const ctx = canvas.getContext('2d');
+        const data = await fetchPixBoletoData(year, month);
+        
+        // Agrupar por categoria
+        const categoryTotals = {};
+        data.forEach(item => {
+            const category = item.category || 'Outros';
+            if (!categoryTotals[category]) {
+                categoryTotals[category] = { pix: 0, boleto: 0 };
+            }
+            
+            if (item.account === 'PIX') {
+                categoryTotals[category].pix += parseFloat(item.amount);
+            } else {
+                categoryTotals[category].boleto += parseFloat(item.amount);
+            }
+        });
+
+        const categories = Object.keys(categoryTotals);
+        const pixData = categories.map(cat => categoryTotals[cat].pix);
+        const boletoData = categories.map(cat => categoryTotals[cat].boleto);
+
+        // Destruir gráfico existente
+        if (window.pixBoletoCategoryChart) {
+            window.pixBoletoCategoryChart.destroy();
+        }
+
+        window.pixBoletoCategoryChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: categories,
+                datasets: [
+                    {
+                        label: 'PIX',
+                        data: pixData,
+                        backgroundColor: '#10B981',
+                        borderColor: '#059669',
+                        borderWidth: 1
+                    },
+                    {
+                        label: 'Boleto',
+                        data: boletoData,
+                        backgroundColor: '#F59E0B',
+                        borderColor: '#D97706',
+                        borderWidth: 1
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        display: true,
+                        position: 'top'
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                return `${context.dataset.label}: ${formatCurrency(context.parsed.y)}`;
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        stacked: false
+                    },
+                    y: {
+                        beginAtZero: true,
+                        stacked: false,
+                        ticks: {
+                            callback: function(value) {
+                                return formatCurrency(value);
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    // ========== TABELAS PIX & BOLETO ==========
+    // Função para renderizar tabela de transações PIX e Boleto
+    function renderPixBoletoTransactionsTable(data) {
+        const container = document.getElementById('pix-boleto-transactions');
+        if (!container) return;
+
+        // Ordenar por data (mais recente primeiro)
+        const sortedData = data.sort((a, b) => new Date(b.transaction_date || b.date) - new Date(a.transaction_date || a.date));
+
+        const tableHtml = `
+            <div class="overflow-x-auto">
+                <table class="min-w-full bg-white rounded-lg shadow">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Data</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tipo</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Descrição</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Categoria</th>
+                            <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Valor</th>
+                        </tr>
+                    </thead>
+                    <tbody class="bg-white divide-y divide-gray-200">
+                        ${sortedData.map(item => `
+                            <tr class="hover:bg-gray-50">
+                                <td class="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
+                                    ${new Date(item.transaction_date || item.date).toLocaleDateString('pt-BR')}
+                                </td>
+                                <td class="px-4 py-4 whitespace-nowrap">
+                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${item.account === 'PIX' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}">
+                                        ${item.account}
+                                    </span>
+                                </td>
+                                <td class="px-4 py-4 text-sm text-gray-900">${item.description}</td>
+                                <td class="px-4 py-4 whitespace-nowrap text-sm text-gray-500">${item.category || 'N/A'}</td>
+                                <td class="px-4 py-4 whitespace-nowrap text-sm font-medium text-right text-red-600">
+                                    ${formatCurrency(item.amount)}
+                                </td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            </div>
+        `;
+
+        container.innerHTML = tableHtml;
+    }
+
+    // Função para renderizar tabela de resumo PIX e Boleto
+    function renderPixBoletoSummaryTable(data) {
+        const container = document.getElementById('pix-boleto-summary');
+        if (!container) return;
+
+        // Agrupar por categoria
+        const categoryTotals = {};
+        data.forEach(item => {
+            const category = item.category || 'Outros';
+            if (!categoryTotals[category]) {
+                categoryTotals[category] = { pix: 0, boleto: 0, total: 0, count: 0 };
+            }
+            
+            const amount = parseFloat(item.amount);
+            categoryTotals[category].total += amount;
+            categoryTotals[category].count++;
+            
+            if (item.account === 'PIX') {
+                categoryTotals[category].pix += amount;
+            } else {
+                categoryTotals[category].boleto += amount;
+            }
+        });
+
+        const categories = Object.entries(categoryTotals)
+            .sort((a, b) => b[1].total - a[1].total);
+
+        const tableHtml = `
+            <div class="overflow-x-auto">
+                <table class="min-w-full bg-white rounded-lg shadow">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Categoria</th>
+                            <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">PIX</th>
+                            <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Boleto</th>
+                            <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Total</th>
+                            <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Transações</th>
+                        </tr>
+                    </thead>
+                    <tbody class="bg-white divide-y divide-gray-200">
+                        ${categories.map(([category, totals]) => `
+                            <tr class="hover:bg-gray-50">
+                                <td class="px-4 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${category}</td>
+                                <td class="px-4 py-4 whitespace-nowrap text-sm text-right ${totals.pix > 0 ? 'text-green-600 font-medium' : 'text-gray-400'}">
+                                    ${totals.pix > 0 ? formatCurrency(totals.pix) : '-'}
+                                </td>
+                                <td class="px-4 py-4 whitespace-nowrap text-sm text-right ${totals.boleto > 0 ? 'text-yellow-600 font-medium' : 'text-gray-400'}">
+                                    ${totals.boleto > 0 ? formatCurrency(totals.boleto) : '-'}
+                                </td>
+                                <td class="px-4 py-4 whitespace-nowrap text-sm font-bold text-right text-red-600">
+                                    ${formatCurrency(totals.total)}
+                                </td>
+                                <td class="px-4 py-4 whitespace-nowrap text-sm text-center text-gray-500">
+                                    ${totals.count}
+                                </td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            </div>
+        `;
+
+        container.innerHTML = tableHtml;
     }
     
     // Função específica para buscar gastos PIX e Boleto (todos os períodos)
