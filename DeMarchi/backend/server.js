@@ -1172,6 +1172,17 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
         const maiorGasto = maiores[0];
         const menorGasto = maiores[maiores.length - 1];
 
+        // 🎨 GERAR GRÁFICOS
+        console.log('📊 Gerando gráficos para o PDF...');
+        const chartJSNodeCanvas = new ChartJSNodeCanvas({ 
+            width: 500, 
+            height: 300, 
+            backgroundColour: 'white'
+        });
+
+        const chartImages = await generateChartsForPDF(porPlano, porConta, expenses, chartJSNodeCanvas);
+        console.log('✅ Gráficos gerados com sucesso!');
+
         // Gera PDF estilizado
         const doc = new pdfkit();
         doc.registerFont('NotoSans', path.join(__dirname, 'fonts', 'NotoSans-Regular.ttf'));
@@ -1268,10 +1279,184 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
         doc.fillColor('#1E40AF').fontSize(12).text(`📊 MÉDIA DIÁRIA: R$ ${mediaDiaria.toFixed(2)}`, 60, doc.y + 12);
         doc.y += 60;
 
-        // 🏦 PÁGINA POR CONTAS
+        // 📊 PÁGINA DE GRÁFICO - DISTRIBUIÇÃO POR PLANO
+        if (chartImages.planChart) {
+            doc.addPage();
+            doc.rect(0, 0, doc.page.width, 80).fill('#3B82F6');
+            doc.fillColor('#FFFFFF').fontSize(24).text('📊 DISTRIBUIÇÃO POR PLANO', 50, 25);
+            doc.moveDown(3);
+
+            // Gráfico
+            doc.image(chartImages.planChart, 50, doc.y, { width: 500, height: 300 });
+            doc.y += 320;
+
+            // Dados detalhados por plano
+            doc.fontSize(16).fillColor('#1E293B').text('📋 DETALHAMENTO POR PLANO', { underline: true });
+            doc.moveDown(0.5);
+            
+            Object.entries(porPlano).forEach(([plano, valor], index) => {
+                if (doc.y > 700) {
+                    doc.addPage();
+                    doc.moveDown(1);
+                }
+                const colors = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6'];
+                const color = colors[index % colors.length];
+                
+                doc.roundedRect(50, doc.y, 490, 35, 8).fill(color);
+                doc.fillColor('#FFFFFF').fontSize(12).text(`Plano ${plano}`, 70, doc.y + 8);
+                doc.fontSize(16).text(`R$ ${valor.toFixed(2)}`, 350, doc.y + 5);
+                doc.fontSize(10).text(`${((valor/total)*100).toFixed(1)}% do total`, 70, doc.y + 20);
+                doc.y += 40;
+            });
+        }
+
+        // 🏦 PÁGINA DE GRÁFICO - DISTRIBUIÇÃO POR CONTA
+        if (chartImages.accountChart) {
+            doc.addPage();
+            doc.rect(0, 0, doc.page.width, 80).fill('#8B5CF6');
+            doc.fillColor('#FFFFFF').fontSize(24).text('🏦 DISTRIBUIÇÃO POR CONTA', 50, 25);
+            doc.moveDown(3);
+
+            // Gráfico
+            doc.image(chartImages.accountChart, 50, doc.y, { width: 500, height: 300 });
+            doc.y += 320;
+
+            // Dados detalhados por conta
+            doc.fontSize(16).fillColor('#1E293B').text('💳 DETALHAMENTO POR CONTA', { underline: true });
+            doc.moveDown(0.5);
+            
+            Object.entries(porConta).forEach(([conta, valor], index) => {
+                if (doc.y > 700) {
+                    doc.addPage();
+                    doc.moveDown(1);
+                }
+                const colors = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899'];
+                const color = colors[index % colors.length];
+                
+                doc.roundedRect(50, doc.y, 490, 40, 8).fill(color);
+                doc.fillColor('#FFFFFF').fontSize(14).text(conta, 70, doc.y + 8);
+                doc.fontSize(18).text(`R$ ${valor.toFixed(2)}`, 350, doc.y + 5);
+                doc.fontSize(10).text(`${((valor/total)*100).toFixed(1)}% do total`, 70, doc.y + 25);
+                doc.y += 50;
+            });
+        }
+
+        // 💼 PÁGINA DE GRÁFICO - PESSOAL VS EMPRESARIAL
+        if (chartImages.comparisonChart) {
+            doc.addPage();
+            doc.rect(0, 0, doc.page.width, 80).fill('#10B981');
+            doc.fillColor('#FFFFFF').fontSize(24).text('💼 PESSOAL VS EMPRESARIAL', 50, 25);
+            doc.moveDown(3);
+
+            // Gráfico
+            doc.image(chartImages.comparisonChart, 50, doc.y, { width: 500, height: 300 });
+            doc.y += 320;
+
+            // Análise comparativa
+            doc.fontSize(16).fillColor('#1E293B').text('📈 ANÁLISE COMPARATIVA', { underline: true });
+            doc.moveDown(0.5);
+
+            // Card Pessoal
+            doc.roundedRect(50, doc.y, 220, 80, 10).fill('#10B981');
+            doc.fillColor('#FFFFFF').fontSize(14).text('GASTOS PESSOAIS 🏠', 60, doc.y + 15);
+            doc.fontSize(20).text(`R$ ${totalPessoal.toFixed(2)}`, 60, doc.y + 35);
+            doc.fontSize(10).text(`${pessoais.length} transações`, 60, doc.y + 60);
+
+            // Card Empresarial
+            doc.roundedRect(290, doc.y, 220, 80, 10).fill('#F59E0B');
+            doc.fillColor('#FFFFFF').fontSize(14).text('GASTOS EMPRESARIAIS 💼', 300, doc.y + 15);
+            doc.fontSize(20).text(`R$ ${totalEmpresarial.toFixed(2)}`, 300, doc.y + 35);
+            doc.fontSize(10).text(`${empresariais.length} transações`, 300, doc.y + 60);
+
+            doc.y += 100;
+        }
+
+        // 📅 PÁGINA DE GRÁFICO - EVOLUÇÃO DIÁRIA
+        if (chartImages.evolutionChart) {
+            doc.addPage();
+            doc.rect(0, 0, doc.page.width, 80).fill('#F59E0B');
+            doc.fillColor('#FFFFFF').fontSize(24).text('📈 EVOLUÇÃO DIÁRIA', 50, 25);
+            doc.moveDown(3);
+
+            // Gráfico
+            doc.image(chartImages.evolutionChart, 50, doc.y, { width: 500, height: 300 });
+            doc.y += 320;
+
+            // Análise da evolução
+            doc.fontSize(16).fillColor('#1E293B').text('📊 ANÁLISE DA EVOLUÇÃO', { underline: true });
+            doc.moveDown(0.5);
+
+            const diasComGastos = Object.keys(porDia).length;
+            const maiorDia = Object.entries(porDia).reduce((max, [dia, valor]) => valor > max.valor ? {dia, valor} : max, {dia: '', valor: 0});
+
+            doc.roundedRect(50, doc.y, 490, 35, 8).fill('#DBEAFE');
+            doc.fillColor('#1E40AF').fontSize(12).text(`📅 Dias com gastos: ${diasComGastos}`, 60, doc.y + 8);
+            doc.y += 40;
+
+            if (maiorDia.dia) {
+                doc.roundedRect(50, doc.y, 490, 35, 8).fill('#FEF3C7');
+                doc.fillColor('#92400E').fontSize(12).text(`🔥 Dia com maior gasto: ${maiorDia.dia} - R$ ${maiorDia.valor.toFixed(2)}`, 60, doc.y + 8);
+                doc.y += 40;
+            }
+        }
+
+        // 💼 PÁGINA DE GASTOS EMPRESARIAIS DETALHADOS
+        doc.addPage();
+        doc.rect(0, 0, doc.page.width, 80).fill('#EF4444');
+        doc.fillColor('#FFFFFF').fontSize(24).text('💼 GASTOS EMPRESARIAIS', 50, 25);
+        doc.moveDown(3);
+
+        if (empresariais.length === 0) {
+            doc.fontSize(16).fillColor('#6B7280').text('Nenhum gasto empresarial registrado no período.', { align: 'center' });
+        } else {
+            empresariais.forEach((e, index) => {
+                if (doc.y > 720) {
+                    doc.addPage();
+                    doc.moveDown(1);
+                }
+
+                doc.roundedRect(50, doc.y, 490, 50, 8).fill('#FEF3C7');
+                doc.fillColor('#92400E').fontSize(11);
+                doc.text(`📅 ${new Date(e.transaction_date).toLocaleDateString('pt-BR')}`, 60, doc.y + 8);
+                doc.text(`💰 R$ ${parseFloat(e.amount).toFixed(2)}`, 160, doc.y + 8);
+                doc.text(`🏦 ${e.account}`, 280, doc.y + 8);
+                doc.text(`📝 ${e.description.substring(0, 30)}`, 60, doc.y + 25);
+                if (e.has_invoice) {
+                    doc.text(`📄 Nota Fiscal: Sim`, 300, doc.y + 25);
+                }
+                doc.y += 60;
+            });
+        }
+
+        // 🏠 PÁGINA DE GASTOS PESSOAIS DETALHADOS
+        doc.addPage();
+        doc.rect(0, 0, doc.page.width, 80).fill('#059669');
+        doc.fillColor('#FFFFFF').fontSize(24).text('🏠 GASTOS PESSOAIS', 50, 25);
+        doc.moveDown(3);
+
+        if (pessoais.length === 0) {
+            doc.fontSize(16).fillColor('#6B7280').text('Nenhum gasto pessoal registrado no período.', { align: 'center' });
+        } else {
+            pessoais.forEach((e, index) => {
+                if (doc.y > 720) {
+                    doc.addPage();
+                    doc.moveDown(1);
+                }
+
+                doc.roundedRect(50, doc.y, 490, 50, 8).fill('#DBEAFE');
+                doc.fillColor('#1E40AF').fontSize(11);
+                doc.text(`📅 ${new Date(e.transaction_date).toLocaleDateString('pt-BR')}`, 60, doc.y + 8);
+                doc.text(`💰 R$ ${parseFloat(e.amount).toFixed(2)}`, 160, doc.y + 8);
+                doc.text(`🏦 ${e.account}`, 280, doc.y + 8);
+                doc.text(`📝 ${e.description.substring(0, 30)}`, 60, doc.y + 25);
+                doc.y += 60;
+            });
+        }
+
+        // 🏦 PÁGINA POR CONTAS (LISTA RESUMIDA)
         doc.addPage();
         doc.rect(0, 0, doc.page.width, 80).fill('#8B5CF6');
-        doc.fillColor('#FFFFFF').fontSize(24).text('🏦 GASTOS POR CONTA', 50, 25);
+        doc.fillColor('#FFFFFF').fontSize(24).text('🏦 RESUMO POR CONTAS', 50, 25);
         doc.moveDown(3);
 
         let contaY = doc.y;
@@ -1307,13 +1492,13 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
             const textColor = e.is_business_expense ? '#92400E' : '#1E40AF';
             const emoji = e.is_business_expense ? '💼' : '🏠';
 
-            doc.roundedRect(50, doc.y, 490, 35, 5).fill(bgColor);
+            doc.roundedRect(50, doc.y, 490, 45, 5).fill(bgColor);
             doc.fillColor(textColor).fontSize(10);
             doc.text(`${emoji} ${new Date(e.transaction_date).toLocaleDateString('pt-BR')}`, 60, doc.y + 8);
-            doc.text(`R$ ${parseFloat(e.amount).toFixed(2)}`, 160, doc.y - 22);
-            doc.text(e.account, 250, doc.y - 22);
-            doc.text(e.description.substring(0, 40), 350, doc.y - 22);
-            doc.y += 40;
+            doc.text(`💰 R$ ${parseFloat(e.amount).toFixed(2)}`, 180, doc.y + 8);
+            doc.text(`🏦 ${e.account}`, 300, doc.y + 8);
+            doc.text(`📝 ${e.description.substring(0, 35)}`, 60, doc.y + 25);
+            doc.y += 50;
         });
 
         // 🎊 PÁGINA FINAL MOTIVACIONAL
@@ -1344,7 +1529,7 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
 
         doc.end();
         res.setHeader('Content-Type', 'application/pdf');
-        res.setHeader('Content-Disposition', `attachment; filename=relatorio-premium-${year}-${month}${account ? '-' + account : ''}.pdf`);
+        res.setHeader('Content-Disposition', `attachment; filename=relatorio-completo-graficos-${year}-${month}${account ? '-' + account : ''}.pdf`);
         doc.pipe(res);
 
     } catch (error) {
