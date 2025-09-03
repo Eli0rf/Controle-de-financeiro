@@ -904,7 +904,12 @@ async function generateChartsForPDF(porPlano, porConta, expenses, chartJSNodeCan
             const planConfig = {
                 type: 'pie',
                 data: {
-                    labels: planLabels.map(p => `Plano ${p}`),
+                    labels: planLabels.map((p, index) => {
+                        const valor = planValues[index];
+                        const total = planValues.reduce((a, b) => a + b, 0);
+                        const percentage = ((valor / total) * 100).toFixed(1);
+                        return `Plano ${p}: R$ ${valor.toFixed(2)} (${percentage}%)`;
+                    }),
                     datasets: [{
                         data: planValues,
                         backgroundColor: [
@@ -950,6 +955,17 @@ async function generateChartsForPDF(porPlano, porConta, expenses, chartJSNodeCan
                             padding: {
                                 top: 10,
                                 bottom: 20
+                            }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    const label = context.label || '';
+                                    const value = context.parsed;
+                                    const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                                    const percentage = ((value / total) * 100).toFixed(1);
+                                    return `${label}: R$ ${value.toFixed(2)} (${percentage}%)`;
+                                }
                             }
                         }
                     }
@@ -1010,6 +1026,14 @@ async function generateChartsForPDF(porPlano, porConta, expenses, chartJSNodeCan
                                 top: 10,
                                 bottom: 20
                             }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    const value = context.parsed.y;
+                                    return `${context.label}: R$ ${value.toFixed(2)}`;
+                                }
+                            }
                         }
                     },
                     scales: {
@@ -1055,7 +1079,10 @@ async function generateChartsForPDF(porPlano, porConta, expenses, chartJSNodeCan
             const comparisonConfig = {
                 type: 'doughnut',
                 data: {
-                    labels: ['🏠 Pessoal', '💼 Empresarial'],
+                    labels: [
+                        `🏠 Pessoal: R$ ${totalPessoal.toFixed(2)}`,
+                        `💼 Empresarial: R$ ${totalEmpresarial.toFixed(2)}`
+                    ],
                     datasets: [{
                         data: [totalPessoal, totalEmpresarial],
                         backgroundColor: ['#10B981', '#F59E0B'],
@@ -1101,6 +1128,16 @@ async function generateChartsForPDF(porPlano, porConta, expenses, chartJSNodeCan
                             padding: {
                                 top: 10,
                                 bottom: 20
+                            }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    const value = context.parsed;
+                                    const total = totalPessoal + totalEmpresarial;
+                                    const percentage = ((value / total) * 100).toFixed(1);
+                                    return `${context.label} (${percentage}%)`;
+                                }
                             }
                         }
                     }
@@ -1433,39 +1470,58 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
             doc.y += chartHeight + 30;
 
             // Dados detalhados por plano
-            if (doc.y > 600) {
+            if (doc.y > 550) {
                 doc.addPage();
                 doc.moveDown(2);
             }
-            doc.fontSize(18).fillColor('#1E293B').text('📋 DETALHAMENTO POR PLANO', { underline: true });
-            doc.moveDown(1);
             
-            Object.entries(porPlano).forEach(([plano, valor], index) => {
-                if (doc.y > 680) {
-                    doc.addPage();
-                    doc.moveDown(2);
-                }
-                const colors = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6'];
-                const color = colors[index % colors.length];
-                
-                // Card maior e mais bem formatado
-                doc.roundedRect(50, doc.y, 490, 60, 12).fill(color);
-                
-                // Título do plano
-                doc.fillColor('#FFFFFF').fontSize(16).text(`💳 Plano ${plano}`, 70, doc.y + 12, { width: 250, align: 'left' });
-                
-                // Valor em destaque
-                doc.fontSize(22).text(`R$ ${valor.toFixed(2)}`, 350, doc.y + 8, { width: 130, align: 'right' });
-                
-                // Percentual
-                doc.fontSize(12).text(`${((valor/total)*100).toFixed(1)}% do total`, 70, doc.y + 35, { width: 200, align: 'left' });
-                
-                // Número de transações para este plano
-                const transacoesPlano = expenses.filter(e => e.installment_plan == plano).length;
-                doc.fontSize(10).text(`${transacoesPlano} transações`, 350, doc.y + 35, { width: 130, align: 'right' });
-                
-                doc.y += 75;
-            });
+            // Título da seção com fundo
+            doc.roundedRect(50, doc.y, 490, 40, 8).fill('#1E293B');
+            doc.fillColor('#FFFFFF').fontSize(18).text('📋 DETALHAMENTO POR PLANO', 70, doc.y + 12, { width: 400, align: 'left' });
+            doc.y += 50;
+            doc.moveDown(0.5);
+            
+            // Verificar se existem planos
+            if (Object.keys(porPlano).length === 0) {
+                doc.roundedRect(50, doc.y, 490, 50, 8).fill('#F3F4F6');
+                doc.fillColor('#6B7280').fontSize(14).text('📝 Nenhum plano de conta encontrado neste período', 70, doc.y + 18, { width: 400, align: 'center' });
+                doc.y += 60;
+            } else {
+                Object.entries(porPlano).forEach(([plano, valor], index) => {
+                    if (doc.y > 650) {
+                        doc.addPage();
+                        doc.moveDown(2);
+                    }
+                    
+                    const colors = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#14B8A6'];
+                    const color = colors[index % colors.length];
+                    
+                    // Card principal com sombra
+                    doc.roundedRect(52, doc.y + 2, 490, 70, 12).fill('#00000010'); // Sombra
+                    doc.roundedRect(50, doc.y, 490, 70, 12).fill(color);
+                    
+                    // Ícone e título do plano
+                    doc.fillColor('#FFFFFF').fontSize(18).text(`💳`, 70, doc.y + 15);
+                    doc.fontSize(16).text(`PLANO ${plano}`, 100, doc.y + 15, { width: 200, align: 'left' });
+                    
+                    // Valor em destaque com formatação
+                    doc.fontSize(24).text(`R$ ${valor.toFixed(2)}`, 320, doc.y + 10, { width: 150, align: 'right' });
+                    
+                    // Informações secundárias em linha separada
+                    const percentual = ((valor/total)*100).toFixed(1);
+                    const transacoesPlano = expenses.filter(e => e.installment_plan == plano).length;
+                    
+                    doc.fontSize(12).text(`📊 ${percentual}% do total`, 100, doc.y + 40, { width: 150, align: 'left' });
+                    doc.fontSize(12).text(`📝 ${transacoesPlano} transação${transacoesPlano !== 1 ? 's' : ''}`, 270, doc.y + 40, { width: 150, align: 'left' });
+                    
+                    // Barra de progresso visual
+                    const barWidth = (valor / Math.max(...Object.values(porPlano))) * 200;
+                    doc.roundedRect(100, doc.y + 55, 200, 6, 3).fill('#FFFFFF40');
+                    doc.roundedRect(100, doc.y + 55, barWidth, 6, 3).fill('#FFFFFF');
+                    
+                    doc.y += 85;
+                });
+            }
         }
 
         // 🏦 PÁGINA DE GRÁFICO - DISTRIBUIÇÃO POR CONTA
