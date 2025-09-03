@@ -805,6 +805,189 @@ app.get('/api/reports/weekly', authenticateToken, async (req, res) => {
     }
 });
 
+// Função para gerar gráficos para o PDF
+async function generateChartsForPDF(porPlano, porConta, expenses, chartJSNodeCanvas) {
+    const charts = {};
+    
+    try {
+        // 1. Gráfico de pizza - Distribuição por Plano de Conta
+        const planLabels = Object.keys(porPlano);
+        const planValues = Object.values(porPlano);
+        
+        if (planLabels.length > 0) {
+            const planConfig = {
+                type: 'pie',
+                data: {
+                    labels: planLabels.map(p => `Plano ${p}`),
+                    datasets: [{
+                        data: planValues,
+                        backgroundColor: [
+                            '#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6',
+                            '#06B6D4', '#84CC16', '#F97316', '#EC4899', '#6366F1'
+                        ],
+                        borderWidth: 2,
+                        borderColor: '#ffffff'
+                    }]
+                },
+                options: {
+                    responsive: false,
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: {
+                                padding: 20,
+                                usePointStyle: true
+                            }
+                        },
+                        title: {
+                            display: true,
+                            text: 'Distribuição por Plano de Conta',
+                            font: { size: 16, weight: 'bold' }
+                        }
+                    }
+                }
+            };
+            charts.planChart = await chartJSNodeCanvas.renderToBuffer(planConfig);
+        }
+
+        // 2. Gráfico de barras - Distribuição por Conta
+        const accountLabels = Object.keys(porConta);
+        const accountValues = Object.values(porConta);
+        
+        if (accountLabels.length > 0) {
+            const accountConfig = {
+                type: 'bar',
+                data: {
+                    labels: accountLabels,
+                    datasets: [{
+                        label: 'Valor (R$)',
+                        data: accountValues,
+                        backgroundColor: '#3B82F6',
+                        borderColor: '#1E40AF',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: false,
+                    plugins: {
+                        legend: {
+                            display: false
+                        },
+                        title: {
+                            display: true,
+                            text: 'Gastos por Conta',
+                            font: { size: 16, weight: 'bold' }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                callback: function(value) {
+                                    return 'R$ ' + value.toFixed(2);
+                                }
+                            }
+                        }
+                    }
+                }
+            };
+            charts.accountChart = await chartJSNodeCanvas.renderToBuffer(accountConfig);
+        }
+
+        // 3. Gráfico de comparação - Pessoal vs Empresarial
+        const totalPessoal = expenses.filter(e => !e.is_business_expense).reduce((sum, e) => sum + parseFloat(e.amount), 0);
+        const totalEmpresarial = expenses.filter(e => e.is_business_expense).reduce((sum, e) => sum + parseFloat(e.amount), 0);
+        
+        if (totalPessoal > 0 || totalEmpresarial > 0) {
+            const comparisonConfig = {
+                type: 'doughnut',
+                data: {
+                    labels: ['Pessoal', 'Empresarial'],
+                    datasets: [{
+                        data: [totalPessoal, totalEmpresarial],
+                        backgroundColor: ['#10B981', '#F59E0B'],
+                        borderWidth: 3,
+                        borderColor: '#ffffff'
+                    }]
+                },
+                options: {
+                    responsive: false,
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: {
+                                padding: 20,
+                                usePointStyle: true
+                            }
+                        },
+                        title: {
+                            display: true,
+                            text: 'Comparação: Pessoal vs Empresarial',
+                            font: { size: 16, weight: 'bold' }
+                        }
+                    }
+                }
+            };
+            charts.comparisonChart = await chartJSNodeCanvas.renderToBuffer(comparisonConfig);
+        }
+
+        // 4. Gráfico de linha - Evolução diária (se houver dados suficientes)
+        const dailyData = {};
+        expenses.forEach(e => {
+            const day = new Date(e.transaction_date).getDate();
+            dailyData[day] = (dailyData[day] || 0) + parseFloat(e.amount);
+        });
+
+        const days = Object.keys(dailyData).map(Number).sort((a, b) => a - b);
+        if (days.length > 5) {
+            const evolutionConfig = {
+                type: 'line',
+                data: {
+                    labels: days.map(d => `Dia ${d}`),
+                    datasets: [{
+                        label: 'Gastos Diários (R$)',
+                        data: days.map(d => dailyData[d]),
+                        borderColor: '#3B82F6',
+                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                        borderWidth: 3,
+                        fill: true,
+                        tension: 0.4
+                    }]
+                },
+                options: {
+                    responsive: false,
+                    plugins: {
+                        legend: {
+                            display: false
+                        },
+                        title: {
+                            display: true,
+                            text: 'Evolução de Gastos por Dia',
+                            font: { size: 16, weight: 'bold' }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                callback: function(value) {
+                                    return 'R$ ' + value.toFixed(2);
+                                }
+                            }
+                        }
+                    }
+                }
+            };
+            charts.evolutionChart = await chartJSNodeCanvas.renderToBuffer(evolutionConfig);
+        }
+
+    } catch (error) {
+        console.error('Erro ao gerar gráficos para PDF:', error);
+    }
+    
+    return charts;
+}
+
 app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
     const userId = req.user.id;
     const { year, month, account } = req.body;
@@ -866,10 +1049,20 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
             porConta[conta] += parseFloat(e.amount);
         });
 
-        // Gera PDF
+        // Gera PDF com gráficos
         const doc = new pdfkit({ autoFirstPage: false });
         doc.registerFont('NotoSans', path.join(__dirname, 'fonts', 'NotoSans-Regular.ttf'));
         doc.font('NotoSans');
+
+        // Configurar ChartJS para gerar gráficos
+        const chartJSNodeCanvas = new ChartJSNodeCanvas({ 
+            width: 500, 
+            height: 300, 
+            backgroundColour: 'white'
+        });
+
+        // Gerar gráficos
+        const chartImages = await generateChartsForPDF(porPlano, porConta, expenses, chartJSNodeCanvas);
 
         // Capa
         doc.addPage({ margin: 40, size: 'A4', layout: 'portrait', bufferPages: true });
@@ -892,6 +1085,15 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
         doc.text(`Total pessoal: R$ ${totalPessoal.toFixed(2)}`);
         doc.text(`Total empresarial: R$ ${totalEmpresarial.toFixed(2)}`);
         doc.moveDown();
+
+        // Adicionar gráfico de distribuição por categoria
+        if (chartImages.planChart) {
+            doc.addPage();
+            doc.fontSize(18).fillColor('#3B82F6').text('📊 Distribuição por Plano de Conta', { align: 'center' });
+            doc.moveDown(1);
+            doc.image(chartImages.planChart, 50, doc.y, { width: 500, height: 300 });
+            doc.moveDown(2);
+        }
 
         // Por plano de conta
         doc.fontSize(16).fillColor('#6366F1').text('Gastos por Plano de Conta', { underline: true });
@@ -1032,12 +1234,39 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
         }
         doc.moveDown();
 
+        // Adicionar gráfico de distribuição por conta
+        if (chartImages.accountChart) {
+            doc.addPage();
+            doc.fontSize(18).fillColor('#3B82F6').text('🏦 Distribuição por Conta', { align: 'center' });
+            doc.moveDown(1);
+            doc.image(chartImages.accountChart, 50, doc.y, { width: 500, height: 300 });
+            doc.moveDown(2);
+        }
+
         // Por conta
         doc.fontSize(16).fillColor('#6366F1').text('Gastos por Conta', { underline: true });
         Object.entries(porConta).forEach(([conta, valor]) => {
             doc.fontSize(12).fillColor('#222').text(`${conta}: R$ ${valor.toFixed(2)}`);
         });
         doc.moveDown();
+
+        // Adicionar gráfico de comparação Pessoal vs Empresarial
+        if (chartImages.comparisonChart) {
+            doc.addPage();
+            doc.fontSize(18).fillColor('#3B82F6').text('💼 Comparação: Pessoal vs Empresarial', { align: 'center' });
+            doc.moveDown(1);
+            doc.image(chartImages.comparisonChart, 50, doc.y, { width: 500, height: 300 });
+            doc.moveDown(2);
+        }
+
+        // Adicionar gráfico de evolução diária
+        if (chartImages.evolutionChart) {
+            doc.addPage();
+            doc.fontSize(18).fillColor('#3B82F6').text('📈 Evolução de Gastos por Dia', { align: 'center' });
+            doc.moveDown(1);
+            doc.image(chartImages.evolutionChart, 50, doc.y, { width: 500, height: 300 });
+            doc.moveDown(2);
+        }
 
         // Detalhe dos gastos empresariais
         doc.addPage();
