@@ -1310,8 +1310,8 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
         // 🎨 GERAR GRÁFICOS
         console.log('📊 Gerando gráficos para o PDF...');
         const chartJSNodeCanvas = new ChartJSNodeCanvas({ 
-            width: 500, 
-            height: 300, 
+            width: 600, 
+            height: 400, 
             backgroundColour: 'white'
         });
 
@@ -1422,39 +1422,49 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
             doc.moveDown(3);
 
             // Centralizar e ajustar gráfico
-            const chartWidth = 480;
-            const chartHeight = 280;
+            const chartWidth = 500;
+            const chartHeight = 320;
             const chartX = (doc.page.width - chartWidth) / 2;
             
             doc.image(chartImages.planChart, chartX, doc.y, { 
                 width: chartWidth, 
-                height: chartHeight,
-                fit: [chartWidth, chartHeight],
-                align: 'center'
+                height: chartHeight
             });
-            doc.y += chartHeight + 20;
+            doc.y += chartHeight + 30;
 
             // Dados detalhados por plano
-            if (doc.y > 650) {
+            if (doc.y > 600) {
                 doc.addPage();
-                doc.moveDown(1);
+                doc.moveDown(2);
             }
-            doc.fontSize(16).fillColor('#1E293B').text('📋 DETALHAMENTO POR PLANO', { underline: true });
-            doc.moveDown(0.5);
+            doc.fontSize(18).fillColor('#1E293B').text('📋 DETALHAMENTO POR PLANO', { underline: true });
+            doc.moveDown(1);
             
             Object.entries(porPlano).forEach(([plano, valor], index) => {
-                if (doc.y > 700) {
+                if (doc.y > 680) {
                     doc.addPage();
-                    doc.moveDown(1);
+                    doc.moveDown(2);
                 }
                 const colors = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6'];
                 const color = colors[index % colors.length];
                 
-                doc.roundedRect(50, doc.y, 490, 35, 8).fill(color);
-                doc.fillColor('#FFFFFF').fontSize(12).text(`Plano ${plano}`, 70, doc.y + 8, { width: 200, align: 'left' });
-                doc.fontSize(14).text(`R$ ${valor.toFixed(2)}`, 350, doc.y + 8, { width: 120, align: 'left' });
-                doc.fontSize(10).text(`${((valor/total)*100).toFixed(1)}% do total`, 70, doc.y + 20, { width: 200, align: 'left' });
-                doc.y += 40;
+                // Card maior e mais bem formatado
+                doc.roundedRect(50, doc.y, 490, 60, 12).fill(color);
+                
+                // Título do plano
+                doc.fillColor('#FFFFFF').fontSize(16).text(`💳 Plano ${plano}`, 70, doc.y + 12, { width: 250, align: 'left' });
+                
+                // Valor em destaque
+                doc.fontSize(22).text(`R$ ${valor.toFixed(2)}`, 350, doc.y + 8, { width: 130, align: 'right' });
+                
+                // Percentual
+                doc.fontSize(12).text(`${((valor/total)*100).toFixed(1)}% do total`, 70, doc.y + 35, { width: 200, align: 'left' });
+                
+                // Número de transações para este plano
+                const transacoesPlano = expenses.filter(e => e.installment_plan == plano).length;
+                doc.fontSize(10).text(`${transacoesPlano} transações`, 350, doc.y + 35, { width: 130, align: 'right' });
+                
+                doc.y += 75;
             });
         }
 
@@ -1466,39 +1476,49 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
             doc.moveDown(3);
 
             // Centralizar e ajustar gráfico
-            const chartWidth = 480;
-            const chartHeight = 280;
+            const chartWidth = 500;
+            const chartHeight = 320;
             const chartX = (doc.page.width - chartWidth) / 2;
             
             doc.image(chartImages.accountChart, chartX, doc.y, { 
                 width: chartWidth, 
-                height: chartHeight,
-                fit: [chartWidth, chartHeight],
-                align: 'center'
+                height: chartHeight
             });
-            doc.y += chartHeight + 20;
+            doc.y += chartHeight + 30;
 
             // Dados detalhados por conta
-            if (doc.y > 650) {
+            if (doc.y > 600) {
                 doc.addPage();
-                doc.moveDown(1);
+                doc.moveDown(2);
             }
-            doc.fontSize(16).fillColor('#1E293B').text('💳 DETALHAMENTO POR CONTA', { underline: true });
-            doc.moveDown(0.5);
+            doc.fontSize(18).fillColor('#1E293B').text('💳 DETALHAMENTO POR CONTA', { underline: true });
+            doc.moveDown(1);
             
             Object.entries(porConta).forEach(([conta, valor], index) => {
-                if (doc.y > 700) {
+                if (doc.y > 680) {
                     doc.addPage();
-                    doc.moveDown(1);
+                    doc.moveDown(2);
                 }
                 const colors = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899'];
                 const color = colors[index % colors.length];
                 
-                doc.roundedRect(50, doc.y, 490, 40, 8).fill(color);
-                doc.fillColor('#FFFFFF').fontSize(12).text(conta, 70, doc.y + 8, { width: 250, align: 'left' });
-                doc.fontSize(14).text(`R$ ${valor.toFixed(2)}`, 350, doc.y + 8, { width: 120, align: 'left' });
-                doc.fontSize(10).text(`${((valor/total)*100).toFixed(1)}% do total`, 70, doc.y + 25, { width: 200, align: 'left' });
-                doc.y += 50;
+                // Card maior e mais bem formatado
+                doc.roundedRect(50, doc.y, 490, 60, 12).fill(color);
+                
+                // Nome da conta
+                doc.fillColor('#FFFFFF').fontSize(16).text(`🏦 ${conta}`, 70, doc.y + 12, { width: 270, align: 'left' });
+                
+                // Valor em destaque
+                doc.fontSize(22).text(`R$ ${valor.toFixed(2)}`, 350, doc.y + 8, { width: 130, align: 'right' });
+                
+                // Percentual
+                doc.fontSize(12).text(`${((valor/total)*100).toFixed(1)}% do total`, 70, doc.y + 35, { width: 200, align: 'left' });
+                
+                // Número de transações para esta conta
+                const transacoesConta = expenses.filter(e => e.account === conta).length;
+                doc.fontSize(10).text(`${transacoesConta} transações`, 350, doc.y + 35, { width: 130, align: 'right' });
+                
+                doc.y += 75;
             });
         }
 
@@ -1510,17 +1530,15 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
             doc.moveDown(3);
 
             // Centralizar e ajustar gráfico
-            const chartWidth = 400;
-            const chartHeight = 280;
+            const chartWidth = 450;
+            const chartHeight = 300;
             const chartX = (doc.page.width - chartWidth) / 2;
             
             doc.image(chartImages.comparisonChart, chartX, doc.y, { 
                 width: chartWidth, 
-                height: chartHeight,
-                fit: [chartWidth, chartHeight],
-                align: 'center'
+                height: chartHeight
             });
-            doc.y += chartHeight + 20;
+            doc.y += chartHeight + 30;
 
             // Análise comparativa
             if (doc.y > 600) {
@@ -1553,17 +1571,15 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
             doc.moveDown(3);
 
             // Centralizar e ajustar gráfico
-            const chartWidth = 480;
-            const chartHeight = 280;
+            const chartWidth = 500;
+            const chartHeight = 320;
             const chartX = (doc.page.width - chartWidth) / 2;
             
             doc.image(chartImages.evolutionChart, chartX, doc.y, { 
                 width: chartWidth, 
-                height: chartHeight,
-                fit: [chartWidth, chartHeight],
-                align: 'center'
+                height: chartHeight
             });
-            doc.y += chartHeight + 20;
+            doc.y += chartHeight + 30;
 
             // Análise da evolução
             if (doc.y > 650) {
