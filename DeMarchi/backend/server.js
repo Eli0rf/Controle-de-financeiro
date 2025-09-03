@@ -1082,25 +1082,28 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
         return res.status(400).json({ message: 'Ano e mês são obrigatórios.' });
     }
 
-    // Determina período vigente se for por conta
-    let startDate, endDate;
-    let contaNome = account || 'Todas as Contas';
-    if (account && billingPeriods[account]) {
-        const { startDay, endDay } = billingPeriods[account];
-        startDate = new Date(year, month - 1, startDay);
-        let endMonth = Number(month);
-        let endYear = Number(year);
-        if (endDay <= startDay) {
-            endMonth++;
-            if (endMonth > 12) { endMonth = 1; endYear++; }
-        }
-        endDate = new Date(endYear, endMonth - 1, endDay);
-    } else {
-        startDate = new Date(year, month - 1, 1);
-        endDate = new Date(year, month, 0);
-    }
-
     try {
+        console.log(`🎯 Iniciando geração de relatório mensal - User: ${userId}, Ano: ${year}, Mês: ${month}, Conta: ${account || 'Todas'}`);
+
+        // Determina período vigente se for por conta
+        let startDate, endDate;
+        let contaNome = account || 'Todas as Contas';
+        
+        if (account && billingPeriods[account]) {
+            const { startDay, endDay } = billingPeriods[account];
+            startDate = new Date(year, month - 1, startDay);
+            let endMonth = Number(month);
+            let endYear = Number(year);
+            if (endDay <= startDay) {
+                endMonth++;
+                if (endMonth > 12) { endMonth = 1; endYear++; }
+            }
+            endDate = new Date(endYear, endMonth - 1, endDay);
+        } else {
+            startDate = new Date(year, month - 1, 1);
+            endDate = new Date(year, month, 0);
+        }
+
         // Busca despesas do período - incluindo PIX e Boleto
         let sql = `SELECT * FROM expenses WHERE user_id = ? AND transaction_date >= ? AND transaction_date <= ?`;
         let params = [userId, startDate.toISOString().slice(0,10), endDate.toISOString().slice(0,10)];
@@ -1110,350 +1113,247 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
             sql += ' AND account = ?';
             params.push(account);
         }
-        // Caso contrário, incluir todas as contas (incluindo PIX e Boleto)
         
         sql += ' ORDER BY transaction_date';
         const [expenses] = await pool.query(sql, params);
 
-        console.log(`Relatório PDF: Encontradas ${expenses.length} despesas para o período`);
-        console.log('Contas encontradas:', [...new Set(expenses.map(e => e.account))]);
+        console.log(`📊 Encontradas ${expenses.length} despesas para o período`);
 
-        // Gastos empresariais detalhados
+        if (expenses.length === 0) {
+            // Criar PDF simples para período sem gastos
+            const doc = new pdfkit();
+            doc.registerFont('NotoSans', path.join(__dirname, 'fonts', 'NotoSans-Regular.ttf'));
+            doc.font('NotoSans');
+
+            // Capa colorida para período sem gastos
+            doc.rect(0, 0, doc.page.width, doc.page.height).fill('#F0FDF4');
+            doc.fillColor('#059669').fontSize(48).text('🎉', 250, 200);
+            doc.moveDown(2);
+            doc.fontSize(24).fillColor('#065F46').text('Parabéns!', { align: 'center' });
+            doc.moveDown(1);
+            doc.fontSize(16).fillColor('#047857').text('Nenhum gasto registrado neste período', { align: 'center' });
+            doc.moveDown(0.5);
+            doc.fontSize(14).fillColor('#059669').text(`Período: ${startDate.toLocaleDateString('pt-BR')} a ${endDate.toLocaleDateString('pt-BR')}`, { align: 'center' });
+            doc.moveDown(0.5);
+            doc.fontSize(12).fillColor('#065F46').text(`Conta: ${contaNome}`, { align: 'center' });
+            
+            doc.end();
+            res.setHeader('Content-Type', 'application/pdf');
+            res.setHeader('Content-Disposition', `attachment; filename=relatorio-vazio-${year}-${month}.pdf`);
+            doc.pipe(res);
+            return;
+        }
+
+        // Análise dos dados
         const empresariais = expenses.filter(e => e.is_business_expense);
-
-        // Resumo geral
+        const pessoais = expenses.filter(e => !e.is_business_expense);
+        
         const total = expenses.reduce((sum, e) => sum + parseFloat(e.amount), 0);
         const totalEmpresarial = empresariais.reduce((sum, e) => sum + parseFloat(e.amount), 0);
         const totalPessoal = total - totalEmpresarial;
 
-        // Por plano de conta (incluindo PIX e Boleto)
+        // Agrupamentos para gráficos
         const porPlano = {};
+        const porConta = {};
+        const porDia = {};
+        
         expenses.forEach(e => {
             const plano = e.account_plan_code || 'Sem Plano';
-            if (!porPlano[plano]) porPlano[plano] = 0;
-            porPlano[plano] += parseFloat(e.amount);
-        });
-
-        // Por conta (incluindo PIX e Boleto)
-        const porConta = {};
-        expenses.forEach(e => {
             const conta = e.account || 'Sem Conta';
-            if (!porConta[conta]) porConta[conta] = 0;
-            porConta[conta] += parseFloat(e.amount);
+            const dia = new Date(e.transaction_date).getDate();
+            
+            porPlano[plano] = (porPlano[plano] || 0) + parseFloat(e.amount);
+            porConta[conta] = (porConta[conta] || 0) + parseFloat(e.amount);
+            porDia[dia] = (porDia[dia] || 0) + parseFloat(e.amount);
         });
 
-        console.log('Distribuição por conta para gráficos:', porConta);
-        console.log('Distribuição por plano para gráficos:', porPlano);
+        // Maior gasto e menor gasto
+        const maiores = expenses.sort((a, b) => parseFloat(b.amount) - parseFloat(a.amount));
+        const maiorGasto = maiores[0];
+        const menorGasto = maiores[maiores.length - 1];
 
-        // Gera PDF com gráficos
-        const doc = new pdfkit({ autoFirstPage: false });
+        // Gera PDF estilizado
+        const doc = new pdfkit();
         doc.registerFont('NotoSans', path.join(__dirname, 'fonts', 'NotoSans-Regular.ttf'));
         doc.font('NotoSans');
 
-        // Configurar ChartJS para gerar gráficos
-        const chartJSNodeCanvas = new ChartJSNodeCanvas({ 
-            width: 500, 
-            height: 300, 
-            backgroundColour: 'white'
-        });
+        // 🎨 CAPA SUPER ESTILIZADA
+        doc.rect(0, 0, doc.page.width, doc.page.height)
+           .fill('#1E293B'); // Fundo escuro elegante
 
-        // Gerar gráficos incluindo PIX e Boleto
-        const chartImages = await generateChartsForPDF(porPlano, porConta, expenses, chartJSNodeCanvas);
+        // Gradiente simulado com retângulos
+        doc.rect(0, 0, doc.page.width, 200).fill('#3B82F6');
+        doc.rect(0, 150, doc.page.width, 100).fill('#6366F1');
+        doc.rect(0, 200, doc.page.width, 50).fill('#8B5CF6');
 
-        // Capa
-        doc.fontSize(32).fillColor('#3B82F6').text('📅 Relatório Mensal de Gastos', 50, 50);
+        // Título principal com emoji grande
+        doc.fillColor('#FFFFFF').fontSize(60).text('📊', 250, 80);
         doc.moveDown(1);
-        doc.fontSize(16).fillColor('#222').text(`Período: ${startDate.toLocaleDateString('pt-BR')} a ${endDate.toLocaleDateString('pt-BR')}`);
+        doc.fontSize(28).fillColor('#FFFFFF').text('RELATÓRIO FINANCEIRO', { align: 'center' });
         doc.moveDown(0.5);
-        doc.fontSize(14).fillColor('#10B981').text(`Total gasto: R$ ${total.toFixed(2)}`);
-        doc.moveDown(0.5);
-        doc.fontSize(12).fillColor('#6366F1').text(`Conta: ${contaNome}`);
-        doc.moveDown(0.5);
-        doc.fillColor('#6B7280').fontSize(10).text('Relatório gerado automaticamente pelo sistema Controle de Gastos');
+        doc.fontSize(24).fillColor('#E0E7FF').text('✨ MENSAL PREMIUM ✨', { align: 'center' });
+        
+        // Período em destaque
+        doc.moveDown(1.5);
+        doc.roundedRect(100, doc.y, 400, 60, 15).fill('#FFFFFF');
+        doc.fillColor('#1E293B').fontSize(18).text(`🗓️ ${startDate.toLocaleDateString('pt-BR')} até ${endDate.toLocaleDateString('pt-BR')}`, 120, doc.y + 20);
         doc.moveDown(3);
 
-        // Resumo geral
-        doc.fontSize(20).fillColor('#3B82F6').text('Resumo Geral');
-        doc.moveDown(1);
-        doc.fontSize(14).fillColor('#222').text(`Total de despesas: R$ ${total.toFixed(2)}`);
-        doc.moveDown(0.3);
-        doc.text(`Total pessoal: R$ ${totalPessoal.toFixed(2)}`);
-        doc.moveDown(0.3);
-        doc.text(`Total empresarial: R$ ${totalEmpresarial.toFixed(2)}`);
-        doc.moveDown(1);
+        // Total em destaque gigante
+        doc.roundedRect(50, doc.y, 500, 120, 20).fill('#10B981');
+        doc.fillColor('#FFFFFF').fontSize(48).text('💰', 100, doc.y + 25);
+        doc.fontSize(24).text(`R$ ${total.toFixed(2)}`, 200, doc.y - 15);
+        doc.fontSize(14).text('TOTAL GASTO NO PERÍODO', 200, doc.y + 10);
+        doc.moveDown(5);
 
-        // Adicionar gráfico de distribuição por categoria
-        if (chartImages.planChart) {
-            // Verificar se há espaço na página
-            if (doc.y > 600) {
-                doc.addPage();
-            }
-            doc.fontSize(18).fillColor('#3B82F6').text('📊 Distribuição por Plano de Conta');
-            doc.moveDown(1);
-            doc.image(chartImages.planChart, 50, doc.y, { width: 450, height: 280 });
-            doc.y += 290; // Garantir espaçamento após o gráfico
-        }
+        // Conta em foco
+        doc.roundedRect(150, doc.y, 300, 50, 10).fill('#F59E0B');
+        doc.fillColor('#FFFFFF').fontSize(16).text(`🏦 ${contaNome}`, { align: 'center', y: doc.y + 15 });
+        doc.moveDown(3);
 
-        // Por plano de conta
-        if (doc.y > 650) {
-            doc.addPage();
-        }
-        doc.fontSize(16).fillColor('#6366F1').text('Gastos por Plano de Conta', { underline: true });
-        doc.moveDown(0.5);
-        Object.entries(porPlano).forEach(([plano, valor]) => {
-            doc.fontSize(12).fillColor('#222').text(`Plano ${plano}: R$ ${valor.toFixed(2)}`);
-            doc.moveDown(0.2);
-        });
-        doc.moveDown(0.5);
+        // Rodapé da capa
+        doc.fillColor('#CBD5E1').fontSize(12).text('Gerado pelo Sistema de Controle Financeiro 🚀', { align: 'center', y: doc.page.height - 50 });
 
-        // Análise de Tetos vs Gastos por Plano
-        if (doc.y > 650) {
-            doc.addPage();
-        }
-        doc.fontSize(16).fillColor('#10B981').text('🎯 Controle de Limites de Gastos por Plano', { underline: true });
-        doc.moveDown(0.5);
-        doc.fontSize(12).fillColor('#6B7280').text('Análise comparativa entre tetos configurados e gastos realizados:');
-        doc.moveDown(0.5);
-
-        // Coletar dados de tetos vs gastos
-        const planosComTetos = [];
-        Object.entries(porPlano).forEach(([plano, valor]) => {
-            const planoId = parseInt(plano);
-            if (!isNaN(planoId) && tetos[planoId]) {
-                const teto = tetos[planoId];
-                const percentual = (valor / teto) * 100;
-                planosComTetos.push({
-                    plano: planoId,
-                    gasto: valor,
-                    teto: teto,
-                    percentual: percentual
-                });
-            }
-        });
-
-        // Ordenar por percentual (maior utilização primeiro)
-        planosComTetos.sort((a, b) => b.percentual - a.percentual);
-
-        if (planosComTetos.length === 0) {
-            doc.fontSize(12).fillColor('#6B7280').text('• Nenhum plano com teto configurado encontrado no período.');
-        } else {
-            // Cabeçalho da tabela
-            doc.fontSize(11).fillColor('#374151');
-            const tableY = doc.y;
-            doc.text('Plano', 50, tableY, { width: 60 });
-            doc.text('Gasto Atual', 120, tableY, { width: 80 });
-            doc.text('Teto Config.', 210, tableY, { width: 80 });
-            doc.text('Utilização', 300, tableY, { width: 70 });
-            doc.text('Status', 380, tableY, { width: 80 });
-            doc.moveDown(0.7);
-
-            // Linha separadora
-            doc.strokeColor('#E5E7EB').moveTo(50, doc.y).lineTo(480, doc.y).stroke();
-            doc.moveDown(0.3);
-
-            // Dados da tabela
-            planosComTetos.forEach(item => {
-                // Verificar se há espaço para mais uma linha
-                if (doc.y > 730) {
-                    doc.addPage();
-                    // Recriar cabeçalho na nova página
-                    doc.fontSize(11).fillColor('#374151');
-                    const newTableY = doc.y;
-                    doc.text('Plano', 50, newTableY, { width: 60 });
-                    doc.text('Gasto Atual', 120, newTableY, { width: 80 });
-                    doc.text('Teto Config.', 210, newTableY, { width: 80 });
-                    doc.text('Utilização', 300, newTableY, { width: 70 });
-                    doc.text('Status', 380, newTableY, { width: 80 });
-                    doc.moveDown(0.7);
-                    doc.strokeColor('#E5E7EB').moveTo(50, doc.y).lineTo(480, doc.y).stroke();
-                    doc.moveDown(0.3);
-                }
-
-                let statusColor = '#10B981'; // Verde
-                let statusText = '✅ Seguro';
-                let statusEmoji = '🟢';
-
-                if (item.percentual > 100) {
-                    statusColor = '#EF4444'; // Vermelho
-                    statusText = '🚨 Ultrapassou';
-                    statusEmoji = '🔴';
-                } else if (item.percentual >= 90) {
-                    statusColor = '#F59E0B'; // Laranja
-                    statusText = '⚠️ Próximo';
-                    statusEmoji = '🟡';
-                } else if (item.percentual >= 70) {
-                    statusColor = '#EAB308'; // Amarelo
-                    statusText = '⚡ Atenção';
-                    statusEmoji = '🟡';
-                }
-
-                const currentY = doc.y;
-                doc.fontSize(10).fillColor('#374151');
-                doc.text(`${item.plano}`, 50, currentY, { width: 60 });
-                doc.text(`R$ ${item.gasto.toFixed(2)}`, 120, currentY, { width: 80 });
-                doc.text(`R$ ${item.teto.toFixed(2)}`, 210, currentY, { width: 80 });
-                doc.text(`${item.percentual.toFixed(1)}%`, 300, currentY, { width: 70 });
-                doc.fillColor(statusColor).text(`${statusEmoji} ${statusText}`, 380, currentY, { width: 80 });
-                doc.moveDown(0.8);
-            });
-
-            doc.moveDown(0.5);
-            
-            // Resumo dos alertas
-            const ultrapassaram = planosComTetos.filter(p => p.percentual > 100).length;
-            const proximosLimite = planosComTetos.filter(p => p.percentual >= 90 && p.percentual <= 100).length;
-            const seguros = planosComTetos.filter(p => p.percentual < 70).length;
-
-            doc.fontSize(12).fillColor('#374151').text('📊 Resumo dos Alertas:', { underline: true });
-            doc.moveDown(0.3);
-            doc.fontSize(10);
-            
-            if (ultrapassaram > 0) {
-                doc.fillColor('#EF4444').text(`🔴 ${ultrapassaram} plano(s) ultrapassaram o limite`);
-                doc.moveDown(0.2);
-            }
-            if (proximosLimite > 0) {
-                doc.fillColor('#F59E0B').text(`🟡 ${proximosLimite} plano(s) próximos do limite (>90%)`);
-                doc.moveDown(0.2);
-            }
-            doc.fillColor('#10B981').text(`🟢 ${seguros} plano(s) em situação segura (<70%)`);
-            doc.moveDown(0.3);
-            
-            // Valor total disponível vs utilizado
-            const tetoTotal = planosComTetos.reduce((sum, p) => sum + p.teto, 0);
-            const gastoTotal = planosComTetos.reduce((sum, p) => sum + p.gasto, 0);
-            const utilizacaoGeral = tetoTotal > 0 ? (gastoTotal / tetoTotal) * 100 : 0;
-            
-            doc.fontSize(11).fillColor('#3B82F6');
-            doc.text(`💰 Total de tetos configurados: R$ ${tetoTotal.toFixed(2)}`);
-            doc.moveDown(0.2);
-            doc.text(`💸 Total gasto nos planos: R$ ${gastoTotal.toFixed(2)}`);
-            doc.moveDown(0.2);
-            doc.text(`📈 Utilização geral dos tetos: ${utilizacaoGeral.toFixed(1)}%`);
-            
-            if (utilizacaoGeral > 85) {
-                doc.moveDown(0.3);
-                doc.fillColor('#EF4444').fontSize(10).text('⚠️ ATENÇÃO: Utilização geral dos tetos está alta! Monitore os gastos.');
-            }
-
-            // Recomendações baseadas na análise
-            if (doc.y > 670) {
-                doc.addPage();
-            }
-            doc.moveDown(0.5);
-            doc.fontSize(12).fillColor('#6366F1').text('💡 Recomendações:', { underline: true });
-            doc.moveDown(0.3);
-            doc.fontSize(10).fillColor('#374151');
-
-            const planosRisco = planosComTetos.filter(p => p.percentual >= 85);
-            const planosSegurosBaixaUtilizacao = planosComTetos.filter(p => p.percentual < 30);
-
-            if (planosRisco.length > 0) {
-                doc.text(`• Monitore de perto os planos: ${planosRisco.map(p => p.plano).join(', ')} - estão próximos ou acima do limite`);
-                doc.moveDown(0.2);
-            }
-
-            if (planosSegurosBaixaUtilizacao.length > 0) {
-                doc.text(`• Planos ${planosSegurosBaixaUtilizacao.map(p => p.plano).join(', ')} têm baixa utilização - considere redistribuir orçamento`);
-                doc.moveDown(0.2);
-            }
-
-            if (ultrapassaram > 0) {
-                doc.fillColor('#EF4444').text(`• URGENTE: Revisar gastos dos planos que ultrapassaram o limite`);
-                doc.moveDown(0.2);
-            }
-
-            doc.fillColor('#10B981').text(`• Continue monitorando para manter controle financeiro eficiente`);
-        }
-        doc.moveDown(1);
-
-        // Adicionar gráfico de distribuição por conta
-        if (chartImages.accountChart) {
-            // Nova página para o gráfico de contas
-            doc.addPage();
-            doc.fontSize(18).fillColor('#3B82F6').text('🏦 Distribuição por Conta');
-            doc.moveDown(1);
-            doc.image(chartImages.accountChart, 50, doc.y, { width: 450, height: 280 });
-            doc.y += 290; // Garantir espaçamento após o gráfico
-        }
-
-        // Por conta (dados textuais)
-        if (doc.y > 650) {
-            doc.addPage();
-        }
-        doc.fontSize(16).fillColor('#6366F1').text('Gastos por Conta', { underline: true });
-        doc.moveDown(0.5);
-        Object.entries(porConta).forEach(([conta, valor]) => {
-            doc.fontSize(12).fillColor('#222').text(`${conta}: R$ ${valor.toFixed(2)}`);
-            doc.moveDown(0.2);
-        });
-        doc.moveDown(0.5);
-
-        // Adicionar gráfico de comparação Pessoal vs Empresarial
-        if (chartImages.comparisonChart) {
-            // Nova página para o gráfico de comparação
-            doc.addPage();
-            doc.fontSize(18).fillColor('#3B82F6').text('💼 Comparação: Pessoal vs Empresarial');
-            doc.moveDown(1);
-            doc.image(chartImages.comparisonChart, 50, doc.y, { width: 450, height: 280 });
-            doc.y += 290; // Garantir espaçamento após o gráfico
-        }
-
-        // Adicionar gráfico de evolução diária
-        if (chartImages.evolutionChart) {
-            // Nova página para o gráfico de evolução
-            doc.addPage();
-            doc.fontSize(18).fillColor('#3B82F6').text('📈 Evolução de Gastos por Dia');
-            doc.moveDown(1);
-            doc.image(chartImages.evolutionChart, 50, doc.y, { width: 450, height: 280 });
-            doc.y += 290; // Garantir espaçamento após o gráfico
-        }
-
-        // Detalhe dos gastos empresariais
+        // 📈 PÁGINA DE RESUMO EXECUTIVO
         doc.addPage();
-        doc.fontSize(18).fillColor('#EF4444').text('Gastos Empresariais Detalhados');
-        doc.moveDown(1);
-        if (empresariais.length === 0) {
-            doc.fontSize(12).fillColor('#888').text('Nenhum gasto empresarial registrado no período.');
-        } else {
-            empresariais.forEach(e => {
-                // Verificar se há espaço na página
-                if (doc.y > 730) {
-                    doc.addPage();
-                }
-                doc.fontSize(11).fillColor('#222').text(
-                    `Data: ${new Date(e.transaction_date).toLocaleDateString('pt-BR')} | Valor: R$ ${parseFloat(e.amount).toFixed(2)} | Conta: ${e.account} | Descrição: ${e.description}${e.has_invoice ? ' | Nota Fiscal: Sim' : ''}`
-                );
-                doc.moveDown(0.3);
-            });
-        }
+        
+        // Cabeçalho colorido
+        doc.rect(0, 0, doc.page.width, 80).fill('#EF4444');
+        doc.fillColor('#FFFFFF').fontSize(24).text('🎯 RESUMO EXECUTIVO', 50, 25);
+        doc.moveDown(3);
+
+        // Cards de resumo estilizados
+        const cardY = doc.y;
+        
+        // Card Total
+        doc.roundedRect(50, cardY, 150, 100, 10).fill('#3B82F6');
+        doc.fillColor('#FFFFFF').fontSize(12).text('TOTAL GERAL', 60, cardY + 15);
+        doc.fontSize(20).text(`R$ ${total.toFixed(2)}`, 60, cardY + 35);
+        doc.fontSize(10).text(`${expenses.length} transações`, 60, cardY + 65);
+
+        // Card Pessoal
+        doc.roundedRect(220, cardY, 150, 100, 10).fill('#10B981');
+        doc.fillColor('#FFFFFF').fontSize(12).text('PESSOAL 🏠', 230, cardY + 15);
+        doc.fontSize(20).text(`R$ ${totalPessoal.toFixed(2)}`, 230, cardY + 35);
+        doc.fontSize(10).text(`${pessoais.length} transações`, 230, cardY + 65);
+
+        // Card Empresarial
+        doc.roundedRect(390, cardY, 150, 100, 10).fill('#F59E0B');
+        doc.fillColor('#FFFFFF').fontSize(12).text('EMPRESARIAL 💼', 400, cardY + 15);
+        doc.fontSize(20).text(`R$ ${totalEmpresarial.toFixed(2)}`, 400, cardY + 35);
+        doc.fontSize(10).text(`${empresariais.length} transações`, 400, cardY + 65);
+
+        doc.y = cardY + 120;
         doc.moveDown(1);
 
-        // Todas as despesas do mês
+        // Destaques importantes
+        doc.fontSize(16).fillColor('#1E293B').text('🌟 DESTAQUES DO PERÍODO', { underline: true });
+        doc.moveDown(0.5);
+
+        if (maiorGasto) {
+            doc.roundedRect(50, doc.y, 490, 40, 8).fill('#FEF3C7');
+            doc.fillColor('#92400E').fontSize(12).text(`🔥 MAIOR GASTO: R$ ${parseFloat(maiorGasto.amount).toFixed(2)} - ${maiorGasto.description}`, 60, doc.y + 12);
+            doc.y += 50;
+        }
+
+        if (menorGasto && menorGasto !== maiorGasto) {
+            doc.roundedRect(50, doc.y, 490, 40, 8).fill('#D1FAE5');
+            doc.fillColor('#065F46').fontSize(12).text(`💚 MENOR GASTO: R$ ${parseFloat(menorGasto.amount).toFixed(2)} - ${menorGasto.description}`, 60, doc.y + 12);
+            doc.y += 50;
+        }
+
+        // Média diária
+        const mediaDiaria = total / new Date(year, month, 0).getDate();
+        doc.roundedRect(50, doc.y, 490, 40, 8).fill('#DBEAFE');
+        doc.fillColor('#1E40AF').fontSize(12).text(`📊 MÉDIA DIÁRIA: R$ ${mediaDiaria.toFixed(2)}`, 60, doc.y + 12);
+        doc.y += 60;
+
+        // 🏦 PÁGINA POR CONTAS
         doc.addPage();
-        doc.fontSize(18).fillColor('#3B82F6').text('Todas as Despesas do Mês');
-        doc.moveDown(1);
-        expenses.forEach(e => {
-            // Verificar se há espaço na página
-            if (doc.y > 730) {
+        doc.rect(0, 0, doc.page.width, 80).fill('#8B5CF6');
+        doc.fillColor('#FFFFFF').fontSize(24).text('🏦 GASTOS POR CONTA', 50, 25);
+        doc.moveDown(3);
+
+        let contaY = doc.y;
+        Object.entries(porConta).forEach(([conta, valor], index) => {
+            const colors = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899'];
+            const color = colors[index % colors.length];
+            
+            doc.roundedRect(50, contaY, 490, 50, 8).fill(color);
+            doc.fillColor('#FFFFFF').fontSize(16).text(conta, 70, contaY + 10);
+            doc.fontSize(20).text(`R$ ${valor.toFixed(2)}`, 350, contaY + 8);
+            doc.fontSize(10).text(`${((valor/total)*100).toFixed(1)}% do total`, 70, contaY + 30);
+            
+            contaY += 60;
+            if (contaY > 700) {
                 doc.addPage();
+                contaY = 50;
             }
-            doc.fontSize(10).fillColor('#222').text(
-                `Data: ${new Date(e.transaction_date).toLocaleDateString('pt-BR')} | Valor: R$ ${parseFloat(e.amount).toFixed(2)} | Conta: ${e.account} | Tipo: ${e.is_business_expense ? 'Empresarial' : 'Pessoal'} | Plano: ${e.account_plan_code || '-'} | Descrição: ${e.description}${e.has_invoice ? ' | Nota Fiscal: Sim' : ''}`
-            );
-            doc.moveDown(0.3);
         });
 
-        // Rodapé - apenas na última página
-        doc.fontSize(10).fillColor('#6B7280').text('Obrigado por usar o Controle de Gastos! 🚀', 50, doc.page.height - 50);
+        // 📋 PÁGINA DE TODAS AS TRANSAÇÕES
+        doc.addPage();
+        doc.rect(0, 0, doc.page.width, 80).fill('#059669');
+        doc.fillColor('#FFFFFF').fontSize(24).text('📋 TODAS AS TRANSAÇÕES', 50, 25);
+        doc.moveDown(3);
+
+        expenses.forEach((e, index) => {
+            if (doc.y > 720) {
+                doc.addPage();
+                doc.moveDown(1);
+            }
+
+            const bgColor = e.is_business_expense ? '#FEF3C7' : '#DBEAFE';
+            const textColor = e.is_business_expense ? '#92400E' : '#1E40AF';
+            const emoji = e.is_business_expense ? '💼' : '🏠';
+
+            doc.roundedRect(50, doc.y, 490, 35, 5).fill(bgColor);
+            doc.fillColor(textColor).fontSize(10);
+            doc.text(`${emoji} ${new Date(e.transaction_date).toLocaleDateString('pt-BR')}`, 60, doc.y + 8);
+            doc.text(`R$ ${parseFloat(e.amount).toFixed(2)}`, 160, doc.y - 22);
+            doc.text(e.account, 250, doc.y - 22);
+            doc.text(e.description.substring(0, 40), 350, doc.y - 22);
+            doc.y += 40;
+        });
+
+        // 🎊 PÁGINA FINAL MOTIVACIONAL
+        doc.addPage();
+        doc.rect(0, 0, doc.page.width, doc.page.height).fill('#F0FDF4');
+        
+        // Parabéns por controlar as finanças
+        doc.fillColor('#059669').fontSize(72).text('🎉', 250, 150);
+        doc.moveDown(2);
+        doc.fontSize(28).fillColor('#065F46').text('PARABÉNS!', { align: 'center' });
+        doc.moveDown(1);
+        doc.fontSize(16).fillColor('#047857').text('Você está no controle das suas finanças!', { align: 'center' });
+        doc.moveDown(1);
+        doc.fontSize(14).fillColor('#059669').text('Continue assim e alcance seus objetivos! 🚀', { align: 'center' });
+        
+        // Dicas motivacionais
+        doc.moveDown(2);
+        doc.fontSize(12).fillColor('#065F46').text('💡 DICAS PARA O PRÓXIMO MÉS:', { align: 'center' });
+        doc.moveDown(0.5);
+        doc.fontSize(10).fillColor('#047857');
+        doc.text('• Monitore gastos diariamente', { align: 'center' });
+        doc.text('• Estabeleça metas de economia', { align: 'center' });
+        doc.text('• Revise este relatório regularmente', { align: 'center' });
+        
+        // Assinatura
+        doc.moveDown(3);
+        doc.fontSize(10).fillColor('#6B7280').text('Relatório gerado com ❤️ pelo Sistema de Controle Financeiro', { align: 'center' });
 
         doc.end();
         res.setHeader('Content-Type', 'application/pdf');
-        res.setHeader('Content-Disposition', `attachment; filename=relatorio-mensal-${year}-${month}${account ? '-' + account : ''}.pdf`);
+        res.setHeader('Content-Disposition', `attachment; filename=relatorio-premium-${year}-${month}${account ? '-' + account : ''}.pdf`);
         doc.pipe(res);
+
     } catch (error) {
-        console.error('Erro ao gerar relatório mensal:', error);
-        res.status(500).json({ message: 'Erro ao gerar relatório mensal.' });
+        console.error('❌ Erro ao gerar relatório mensal:', error);
+        res.status(500).json({ 
+            message: 'Erro ao gerar relatório mensal.', 
+            details: error.message,
+            timestamp: new Date().toISOString()
+        });
     }
 });
 
