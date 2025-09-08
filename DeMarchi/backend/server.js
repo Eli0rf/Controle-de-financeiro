@@ -1838,32 +1838,55 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
             const kCard2 = (x, titulo, valor, cor) => { doc.roundedRect(x, kpi2Y, 230, 60, 10).fill(cor); doc.fillColor('#FFFFFF').fontSize(11).text(titulo, x+12, kpi2Y+10, {width:210}); doc.fontSize(14).text(valor, x+12, kpi2Y+32, {width:210}); };
             kCard2(55, 'Maior Despesa', `R$ ${maiorEmp.toFixed(2)}`, '#DC2626');
             kCard2(305, 'Menor Despesa', `R$ ${menorEmp.toFixed(2)}`, '#10B981');
-            // Top 5 planos
-            const byPlanoEmp = {};
-            empresariais.forEach(e=> { const p = e.account_plan_code || 'N/A'; byPlanoEmp[p] = (byPlanoEmp[p]||0) + parseFloat(e.amount); });
-            const top5 = Object.entries(byPlanoEmp).sort((a,b)=>b[1]-a[1]).slice(0,5);
-            let tableY = 280;
-            doc.fontSize(16).fillColor('#1E293B').text('🏆 Top 5 Planos (Empresarial)', 50, tableY); tableY += 30;
-            doc.fontSize(11);
-            doc.roundedRect(50, tableY, 490, 22, 6).fill('#E2E8F0');
-            doc.fillColor('#1E293B').text('Plano', 60, tableY + 7, {width:120});
-            doc.text('Valor', 200, tableY + 7, {width:100});
-            doc.text('% Total Emp.', 320, tableY + 7, {width:100});
-            doc.text('Share', 420, tableY + 7, {width:100});
-            tableY += 30;
-            top5.forEach(([pl, val], i) => {
-                if (tableY + 24 > doc.page.height - 120) { doc.addPage(); tableY = 80; }
-                const pct = (val/totalEmpresarial)*100;
-                doc.roundedRect(50, tableY, 490, 20, 4).fill(i%2? '#F8FAFC':'#FFFFFF');
-                doc.fillColor('#1E293B').fontSize(10).text(pl, 60, tableY + 5, {width:120});
-                doc.text(`R$ ${val.toFixed(2)}`, 200, tableY + 5, {width:100});
-                doc.text(`${pct.toFixed(1)}%`, 320, tableY + 5, {width:100});
-                // Barra share
-                const barW = Math.min(120, (pct/100)*120);
-                doc.roundedRect(420, tableY + 7, 120, 6, 3).fill('#E2E8F0');
-                doc.roundedRect(420, tableY + 7, barW, 6, 3).fill('#6366F1');
-                tableY += 28;
+            // Distribuição completa por planos (com uso do teto) - cabe em uma página
+            const byPlanoEmp = {}; empresariais.forEach(e=>{const p=e.account_plan_code||'N/A'; byPlanoEmp[p]=(byPlanoEmp[p]||0)+parseFloat(e.amount)});
+            const planosOrdenadosEmp = Object.entries(byPlanoEmp).sort((a,b)=>b[1]-a[1]);
+            let tableY = 280; doc.fontSize(14).fillColor('#1E293B').text('📊 Distribuição por Planos (Empresarial)',50,tableY); tableY+=18;
+            // Cabeçalho
+            doc.fontSize(8);
+            const headerH=16; const rowH=13; const maxHeight= doc.page.height - 140; // limite visual
+            doc.roundedRect(50,tableY,490,headerH,4).fill('#CBD5E1');
+            doc.fillColor('#0F172A');
+            doc.text('Plano',58,tableY+4,{width:90});
+            doc.text('Valor',148,tableY+4,{width:70,align:'right'});
+            doc.text('% Total',218,tableY+4,{width:50,align:'right'});
+            doc.text('Teto',268,tableY+4,{width:70,align:'right'});
+            doc.text('% do Teto',338,tableY+4,{width:60,align:'right'});
+            doc.text('Uso',398,tableY+4,{width:142});
+            tableY+=headerH+2;
+            const barWidth=140;
+            planosOrdenadosEmp.forEach(([pl,val],i)=>{
+                if(tableY+rowH>maxHeight){ // corta se ultrapassar limite e adiciona nota
+                    doc.fillColor('#64748B').fontSize(7).text('...demais planos omitidos para caber em uma página...',50,tableY+4,{width:490,align:'center'});
+                    tableY = maxHeight+10; // força sair
+                    return;
+                }
+                const pctTotal = (val/totalEmpresarial)*100;
+                const id = parseInt(pl); const teto = tetos[id] || 0; const pctTeto = teto>0 ? (val/teto)*100 : 0;
+                const bg = i % 2 === 0 ? '#FFFFFF':'#F8FAFC';
+                doc.roundedRect(50,tableY,490,rowH-1,2).fill(bg);
+                doc.fillColor('#334155');
+                doc.text(pl,58,tableY+3,{width:90});
+                doc.text(`R$ ${val.toFixed(2)}`,148,tableY+3,{width:70,align:'right'});
+                doc.text(`${pctTotal.toFixed(1)}%`,218,tableY+3,{width:50,align:'right'});
+                doc.text(teto>0?`R$ ${teto.toFixed(0)}`:'-',268,tableY+3,{width:70,align:'right'});
+                const pctTetoFmt = teto>0?`${Math.min(pctTeto,999).toFixed(0)}%`:'-';
+                doc.text(pctTetoFmt,338,tableY+3,{width:60,align:'right'});
+                // Barra de uso do teto
+                const barX = 398; const barY = tableY+3; const pctClamped = Math.min(100, pctTeto);
+                doc.roundedRect(barX,barY,barWidth,6,3).fill('#E2E8F0');
+                doc.roundedRect(barX,barY,(pctClamped/100)*barWidth,6,3).fill(pctTeto>100?'#DC2626':pctTeto>85?'#F59E0B':'#10B981');
+                tableY+=rowH;
             });
+            // Mini BI (resumo de concentração) — logo abaixo se couber
+            if (tableY < maxHeight - 40) {
+                const hhi = planosOrdenadosEmp.reduce((acc,[,v])=>{const s=v/totalEmpresarial; return acc + s*s;},0); // índice de concentração
+                const maiorShare = planosOrdenadosEmp.length? (planosOrdenadosEmp[0][1]/totalEmpresarial)*100 : 0;
+                doc.fontSize(8).fillColor('#1E293B').text(`Concentração (HHI): ${(hhi*10000).toFixed(0)}`,50,tableY+6,{width:160});
+                doc.text(`Maior Plano: ${maiorShare.toFixed(1)}%`,210,tableY+6,{width:150});
+                const acima85 = planosOrdenadosEmp.filter(([pln,v])=>{const id=parseInt(pln); const teto=tetos[id]||0; return teto>0 && (v/teto)*100>=85;}).length;
+                doc.text(`Planos >=85% do teto: ${acima85}`,370,tableY+6,{width:170});
+            }
             // Tabela detalhada
             let detY = tableY + 30;
             if (detY > doc.page.height - 160) { doc.addPage(); detY = 80; }
@@ -2007,9 +2030,11 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
         pCard(385,'Média por Dia',`R$ ${mediaDiariaPes.toFixed(2)}`,'#10B981');
         const byPlanoPes={}; pessoaisFiltrados.forEach(e=>{const p=e.account_plan_code||'N/A';byPlanoPes[p]=(byPlanoPes[p]||0)+parseFloat(e.amount)});
         const top5p=Object.entries(byPlanoPes).sort((a,b)=>b[1]-a[1]).slice(0,5);
-    let tY=190; doc.fontSize(14).fillColor('#1E293B').text('🏆 Top 5 Planos (Pessoal)',50,tY); tY+=24; doc.fontSize(10);
-        doc.roundedRect(50,tY,490,22,6).fill('#E2E8F0'); doc.fillColor('#1E293B').text('Plano',60,tY+7,{width:120});doc.text('Valor',200,tY+7,{width:100});doc.text('% Total Pes.',320,tY+7,{width:100});doc.text('Share',420,tY+7,{width:100});tY+=30;
-        top5p.forEach(([pl,val],i)=>{if(tY+24>doc.page.height-120){doc.addPage();tY=80;}const pct=(val/totalPessoal)*100;doc.roundedRect(50,tY,490,20,4).fill(i%2?'#F8FAFC':'#FFFFFF');doc.fillColor('#1E293B').fontSize(10).text(pl,60,tY+5,{width:120});doc.text(`R$ ${val.toFixed(2)}`,200,tY+5,{width:100});doc.text(`${pct.toFixed(1)}%`,320,tY+5,{width:100});const barW=Math.min(120,(pct/100)*120);doc.roundedRect(420,tY+7,120,6,3).fill('#E2E8F0');doc.roundedRect(420,tY+7,barW,6,3).fill('#2563EB');tY+=28;});
+    // Top 5 planos (Pessoal) compacto duas colunas
+    let tY=190; doc.fontSize(13).fillColor('#1E293B').text('🏆 Top 5 Planos (Pessoal)',50,tY); tY+=18; doc.fontSize(8);
+        const colWp=240; const startXp=50; const gapXp=20; const rightXp=startXp+colWp+gapXp; const rowBlockHp=30;
+        top5p.forEach(([pl,val],i)=>{const pct=(val/totalPessoal)*100; const col=i%2; const x=col===0?startXp:rightXp; if(col===0 && i>0) tY+=rowBlockHp; if(tY+rowBlockHp>doc.page.height-160){doc.addPage(); tY=100;} doc.roundedRect(x,tY,colWp,rowBlockHp-6,6).fill(i%4<2?'#F8FAFC':'#FFFFFF'); doc.fillColor('#1E293B').fontSize(9).text(pl,x+8,tY+6,{width:colWp-16}); doc.fillColor('#334155').fontSize(8).text(`R$ ${val.toFixed(2)} | ${pct.toFixed(1)}%`,x+8,tY+18,{width:colWp-60}); const barMax=70; const barW=Math.max(4,Math.min(barMax,(pct/100)*barMax)); doc.roundedRect(x+colWp-(barMax+14),tY+18,barMax,6,3).fill('#E2E8F0'); doc.roundedRect(x+colWp-(barMax+14),tY+18,barW,6,3).fill('#2563EB'); });
+        tY+=rowBlockHp+4;
     let detYp=tY+26; if(detYp>doc.page.height-140){doc.addPage();detYp=60;} doc.fontSize(14).fillColor('#1E293B').text('📄 Detalhamento (Pessoal)',50,detYp);detYp+=20; doc.fontSize(7.5);
     const headerP=(y)=>{doc.roundedRect(50,y,490,14,3).fill('#2563EB');doc.fillColor('#FFFFFF').fontSize(7);textCell('Data',56,y+3,{width:46});textCell('Pl',102,y+3,{width:30});textCell('Conta',132,y+3,{width:56});textCell('Descrição',188,y+3,{width:240});textCell('Valor',428,y+3,{width:100,align:'right'});}; headerP(detYp); detYp+=16;
     const rowHeightP=12;
