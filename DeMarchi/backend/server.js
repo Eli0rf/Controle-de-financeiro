@@ -1317,12 +1317,16 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
         }
 
         // Análise dos dados
-        const empresariais = expenses.filter(e => e.is_business_expense);
-        const pessoais = expenses.filter(e => !e.is_business_expense);
+    // Classificação mais robusta: prioridade flags explícitas
+    const empresariais = expenses.filter(e => e.is_business_expense === 1 || e.is_business_expense === true || e.is_personal === 0);
+    const pessoais = expenses.filter(e => (e.is_personal === 1 || e.is_personal === true) || (e.is_business_expense === 0 || e.is_business_expense === false) );
+    // Evitar sobreposição duplicada caso flags inconsistentes
+    const empresarialIds = new Set(empresariais.map(e=>e.id));
+    const pessoaisFiltrados = pessoais.filter(e => !empresarialIds.has(e.id));
         
         const total = expenses.reduce((sum, e) => sum + parseFloat(e.amount), 0);
-        const totalEmpresarial = empresariais.reduce((sum, e) => sum + parseFloat(e.amount), 0);
-        const totalPessoal = total - totalEmpresarial;
+    const totalEmpresarial = empresariais.reduce((sum, e) => sum + parseFloat(e.amount), 0);
+    const totalPessoal = pessoaisFiltrados.reduce((sum, e) => sum + parseFloat(e.amount), 0);
 
         // Agrupamentos para gráficos
         const porPlano = {};
@@ -1643,7 +1647,7 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
             doc.roundedRect(leftX, y, cardWidth, cardHeight, 14).fill('#10B981');
             doc.fillColor('#FFFFFF').fontSize(13).text('GASTOS PESSOAIS 🏠', leftX + 15, y + 15);
             doc.fontSize(20).text(`R$ ${totalPessoal.toFixed(2)}`, leftX + 15, y + 38);
-            doc.fontSize(10).text(`${pessoais.length} transações`, leftX + 15, y + 63);
+            doc.fontSize(10).text(`${pessoaisFiltrados.length} transações`, leftX + 15, y + 63);
             // Empresarial
             doc.roundedRect(rightX, y, cardWidth, cardHeight, 14).fill('#F59E0B');
             doc.fillColor('#FFFFFF').fontSize(13).text('GASTOS EMPRESARIAIS 💼', rightX + 15, y + 15);
@@ -1778,10 +1782,10 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
         doc.fillColor('#FFFFFF').fontSize(24).text('🏠 GASTOS PESSOAIS', 50, 25);
         doc.moveDown(3);
 
-        if (pessoais.length === 0) {
+    if (pessoaisFiltrados.length === 0) {
             doc.fontSize(16).fillColor('#6B7280').text('Nenhum gasto pessoal registrado no período.', { align: 'center' });
         } else {
-            pessoais.forEach((e, index) => {
+            pessoaisFiltrados.forEach((e, index) => {
                 if (doc.y > 720) {
                     doc.addPage();
                     doc.moveDown(1);
@@ -1845,36 +1849,48 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
             doc.y += 50;
         });
 
-        // 🎊 PÁGINA FINAL MOTIVACIONAL
+        // 📊 BI PESSOAL (resumo similar ao empresarial)
         doc.addPage();
-        doc.rect(0, 0, doc.page.width, doc.page.height).fill('#F0FDF4');
-        
-        // Parabéns por controlar as finanças
-        doc.fillColor('#059669').fontSize(72).text('🎉', 250, 150);
-        doc.moveDown(2);
-        doc.fontSize(28).fillColor('#065F46').text('PARABÉNS!', { align: 'center' });
-        doc.moveDown(1);
-        doc.fontSize(16).fillColor('#047857').text('Você está no controle das suas finanças!', { align: 'center' });
-        doc.moveDown(1);
-        doc.fontSize(14).fillColor('#059669').text('Continue assim e alcance seus objetivos! 🚀', { align: 'center' });
-        
-        // Dicas motivacionais
-        doc.moveDown(2);
-        doc.fontSize(12).fillColor('#065F46').text('💡 DICAS PARA O PRÓXIMO MÊS', { align: 'center' });
-        doc.moveDown(0.5);
-        doc.fontSize(10).fillColor('#047857');
+        doc.rect(0,0,doc.page.width,90).fill('#1E3A8A');
+        doc.fillColor('#FFFFFF').fontSize(26).text('🏠 BI GASTOS PESSOAIS',50,30,{width:500,align:'center'});
+        const diasUnicosPes = new Set(pessoaisFiltrados.map(e => new Date(e.transaction_date).toISOString().slice(0,10))).size;
+        const mediaDiariaPes = diasUnicosPes ? totalPessoal/diasUnicosPes : totalPessoal;
+        const maiorPes = pessoaisFiltrados.length ? pessoaisFiltrados.reduce((m,e)=> parseFloat(e.amount)>m?parseFloat(e.amount):m,0):0;
+        const menorPes = pessoaisFiltrados.length ? pessoaisFiltrados.reduce((m,e)=> parseFloat(e.amount)<m?parseFloat(e.amount):m,parseFloat(pessoaisFiltrados[0].amount)):0;
+        const kpiYp = 120;
+        const pCard = (x,t,v,c)=>{doc.roundedRect(x,kpiYp,155,70,12).fill(c);doc.fillColor('#FFFFFF').fontSize(11).text(t,x+12,kpiYp+12,{width:140});doc.fontSize(14).text(v,x+12,kpiYp+38,{width:140});};
+        pCard(55,'Total Pessoal',`R$ ${totalPessoal.toFixed(2)}`,'#2563EB');
+        pCard(220,'Dias c/ Gastos',diasUnicosPes.toString(),'#6366F1');
+        pCard(385,'Média por Dia',`R$ ${mediaDiariaPes.toFixed(2)}`,'#10B981');
+        const byPlanoPes={}; pessoaisFiltrados.forEach(e=>{const p=e.account_plan_code||'N/A';byPlanoPes[p]=(byPlanoPes[p]||0)+parseFloat(e.amount)});
+        const top5p=Object.entries(byPlanoPes).sort((a,b)=>b[1]-a[1]).slice(0,5);
+        let tY=200; doc.fontSize(16).fillColor('#1E293B').text('🏆 Top 5 Planos (Pessoal)',50,tY); tY+=30; doc.fontSize(11);
+        doc.roundedRect(50,tY,490,22,6).fill('#E2E8F0'); doc.fillColor('#1E293B').text('Plano',60,tY+7,{width:120});doc.text('Valor',200,tY+7,{width:100});doc.text('% Total Pes.',320,tY+7,{width:100});doc.text('Share',420,tY+7,{width:100});tY+=30;
+        top5p.forEach(([pl,val],i)=>{if(tY+24>doc.page.height-120){doc.addPage();tY=80;}const pct=(val/totalPessoal)*100;doc.roundedRect(50,tY,490,20,4).fill(i%2?'#F8FAFC':'#FFFFFF');doc.fillColor('#1E293B').fontSize(10).text(pl,60,tY+5,{width:120});doc.text(`R$ ${val.toFixed(2)}`,200,tY+5,{width:100});doc.text(`${pct.toFixed(1)}%`,320,tY+5,{width:100});const barW=Math.min(120,(pct/100)*120);doc.roundedRect(420,tY+7,120,6,3).fill('#E2E8F0');doc.roundedRect(420,tY+7,barW,6,3).fill('#2563EB');tY+=28;});
+        let detYp=tY+30; if(detYp>doc.page.height-160){doc.addPage();detYp=80;} doc.fontSize(16).fillColor('#1E293B').text('📄 Detalhamento (Pessoal)',50,detYp);detYp+=28; doc.fontSize(9);
+        const headerP=(y)=>{doc.roundedRect(50,y,490,20,4).fill('#2563EB');doc.fillColor('#FFFFFF').text('Data',60,y+6,{width:60});doc.text('Plano',120,y+6,{width:50});doc.text('Conta',170,y+6,{width:90});doc.text('Descrição',260,y+6,{width:150});doc.text('Valor',415,y+6,{width:60});}; headerP(detYp); detYp+=26;
+        pessoaisFiltrados.sort((a,b)=> new Date(b.transaction_date)-new Date(a.transaction_date)).forEach(e=>{if(detYp+18>doc.page.height-60){doc.addPage();detYp=60;headerP(detYp);detYp+=26;} const bg=detYp%2===0?'#FFFFFF':'#F1F5F9'; doc.roundedRect(50,detYp,490,18,2).fill(bg); doc.fillColor('#1E293B').text(new Date(e.transaction_date).toLocaleDateString('pt-BR'),60,detYp+5,{width:60}); doc.text(e.account_plan_code||'-',120,detYp+5,{width:50}); doc.text(e.account||'-',170,detYp+5,{width:90}); const desc=(e.description||'').substring(0,30); doc.text(desc,260,detYp+5,{width:150}); doc.text(parseFloat(e.amount).toFixed(2),415,detYp+5,{width:60}); detYp+=22;});
+        if(detYp+60>doc.page.height){doc.addPage();detYp=80;} doc.fontSize(9).fillColor('#475569').text('Nota: KPIs pessoais auxiliam decisões de redução de despesas e metas de economia.',50,detYp+10,{width:490});
+
+        // 🎊 PÁGINA FINAL MOTIVACIONAL (centralizada revisada)
+        doc.addPage();
+        doc.rect(0,0,doc.page.width,doc.page.height).fill('#F0FDF4');
+        const centerX = doc.page.width/2;
+        doc.fillColor('#059669').fontSize(80).text('🎉', centerX-40, 140);
+        doc.fontSize(30).fillColor('#065F46').text('PARABÉNS!', 0, 230, { align: 'center' });
+        doc.fontSize(16).fillColor('#047857').text('Você está no controle das suas finanças!', 0, 270, { align: 'center' });
+        doc.fontSize(14).fillColor('#059669').text('Mantenha a consistência e alcance objetivos maiores! 🚀', 0, 300, { align: 'center' });
+        doc.fontSize(12).fillColor('#065F46').text('💡 Foco no próximo mês', 0, 350, { align: 'center', underline:true });
         const dicas = [
-            '🗓️ Registre pequenos gastos para manter precisão',
-            '📊 Compare este mês com os anteriores',
-            '🎯 Defina uma meta de redução para um plano acima de 80% do teto',
-            '💾 Faça backup dos relatórios importantes',
-            '🔁 Revise gastos recorrentes e cancele os desnecessários'
+            '🗓️ Registre micro despesas diariamente',
+            '📊 Compare variação vs. mês anterior',
+            '🎯 Ataque o plano acima de 80% do teto',
+            '💾 Faça backup dos relatórios',
+            '🔁 Revise e negocie gastos recorrentes'
         ];
-        dicas.forEach(d => doc.text(d, { align: 'center' }));
-        
-        // Assinatura
-        doc.moveDown(2);
-        doc.fontSize(10).fillColor('#6B7280').text('Relatório gerado com ❤️ pelo Sistema de Controle Financeiro • Continue avançando! 🚀', { align: 'center' });
+        let dy = 380; doc.fontSize(10).fillColor('#047857');
+        dicas.forEach(d=> { doc.text(d, 0, dy, { align: 'center' }); dy += 18; });
+        doc.fontSize(10).fillColor('#6B7280').text('Relatório gerado com ❤️ • Sistema de Controle Financeiro', 0, dy+30, { align: 'center' });
 
         doc.end();
         res.setHeader('Content-Type', 'application/pdf');
