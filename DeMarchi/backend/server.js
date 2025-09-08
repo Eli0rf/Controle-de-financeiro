@@ -1929,6 +1929,10 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
             doc.roundedRect(50,rowY,490,26,6).fill('#DCFCE7');
             doc.fillColor('#065F46').fontSize(11).text('TOTAL PESSOAL',60,rowY+8,{width:380});
             doc.text(`R$ ${totalP.toFixed(2)}`,440,rowY+8,{width:80,align:'right'});
+            // Garante que o ponteiro lógico de escrita avance além do bloco recém desenhado.
+            // Sem isso, doc.y ainda refletia posição anterior, permitindo que a próxima seção
+            // com header fixo em y=0 fosse desenhada sobre conteúdo existente.
+            doc.y = rowY + 60;
         }
 
         // 🏦 PÁGINA POR CONTAS (LISTA RESUMIDA)
@@ -1937,20 +1941,12 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
     // 📋 PÁGINA DE TODAS AS TRANSAÇÕES (tabela compacta)
     // Adiciona nova página apenas se espaço remanescente for insuficiente
     // ===== TODAS AS TRANSAÇÕES (tabela compacta sem páginas quase vazias) =====
+    // Força nova página para evitar sobreposição: cabeçalho desta seção é sempre desenhado no topo.
     const sortedAll=[...expenses].sort((a,b)=> new Date(b.transaction_date)-new Date(a.transaction_date));
-        // Helpers reutilizáveis de paginação para prevenir cortes irregulares
         const bottomMargin = 60; // zona de segurança
-        const sectionHeaderHeight = 110; // header + título
         const textCell = (txt,x,y,opts={})=>{ const keepY = doc.y; doc.text(txt,x,y,{...opts,lineBreak:false}); doc.y = keepY; };
-        const ensureSpace = (needed, drawHeaderFn) => {
-            if (doc.y + needed > doc.page.height - bottomMargin) {
-                doc.addPage();
-                if (typeof drawHeaderFn === 'function') drawHeaderFn();
-            }
-        };
-        // Espaço inicial para a seção inteira
-        if (doc.y > doc.page.height - (sectionHeaderHeight + 200)) doc.addPage(); else doc.moveDown(1.2);
-    doc.rect(0,0,doc.page.width,78).fill('#0F766E');
+        doc.addPage();
+        doc.rect(0,0,doc.page.width,78).fill('#0F766E');
     doc.fillColor('#FFFFFF').fontSize(24).text('📋 TODAS AS TRANSAÇÕES',0,26,{width:doc.page.width,align:'center'});
         const drawTransHeader = ()=>{
             const headerY = 110;
@@ -1996,8 +1992,8 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
         // 📊 BI PESSOAL (resumo similar ao empresarial)
     // BI Pessoal: só quebra se faltar espaço
     // ===== BI GASTOS PESSOAIS (sem sobreposição) =====
-    const startBiPessoalThreshold = 480; // se pouco espaço, força nova página
-    if (doc.y > doc.page.height - startBiPessoalThreshold) doc.addPage(); else doc.moveDown(1.5);
+    // Seção seguinte também sempre em nova página para impedir sobreposição visual.
+    doc.addPage();
     doc.rect(0,0,doc.page.width,78).fill('#1E3A8A');
     doc.fillColor('#FFFFFF').fontSize(24).text('🏠 BI GASTOS PESSOAIS',0,26,{width:doc.page.width,align:'center'});
         const diasUnicosPes = new Set(pessoaisFiltrados.map(e => new Date(e.transaction_date).toISOString().slice(0,10))).size;
