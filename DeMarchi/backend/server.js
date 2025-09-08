@@ -1356,12 +1356,12 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
         console.log('✅ Gráficos gerados com sucesso!');
 
         // Gera PDF estilizado
-        const doc = new pdfkit();
+    const doc = new pdfkit();
         doc.registerFont('NotoSans', path.join(__dirname, 'fonts', 'NotoSans-Regular.ttf'));
         // Registro opcional de fontes de emoji (se presentes na pasta fonts)
         const emojiFontCandidates = ['NotoColorEmoji.ttf','NotoEmoji-Regular.ttf','Symbola.ttf','DejaVuSans.ttf'];
         let emojiFontFound = false;
-        for (const fname of emojiFontCandidates) {
+    for (const fname of emojiFontCandidates) {
             const fpath = path.join(__dirname,'fonts',fname);
             if (fs.existsSync(fpath)) {
                 try { doc.registerFont('EmojiCapable', fpath); emojiFontFound = true; break; } catch(_) {}
@@ -1369,21 +1369,50 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
         }
         // Helper simples para texto com possíveis emojis (usa fonte fallback se existir)
         const useEmojiFont = (text) => emojiFontFound && /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u.test(text);
-        function drawText(text, x, y, options = {}) {
-            if (useEmojiFont(text)) {
-                // Render char a char para alternar fonte
-                let cursorX = x;
-                const chars = Array.from(text);
-                chars.forEach(ch => {
-                    const isEmoji = /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u.test(ch);
-                    const w = doc.font(isEmoji ? 'EmojiCapable' : 'NotoSans').fontSize(options.fontSize || doc._fontSize || 12).widthOfString(ch);
-                    doc.text(ch, cursorX, y, { ...options, continued: false });
-                    cursorX += w;
-                });
-            } else {
-                doc.font('NotoSans').text(text, x, y, options);
-            }
+        // === Suporte a Twemoji (imagens) ===
+        const twemojiDir = path.join(__dirname,'twemoji');
+        if (!fs.existsSync(twemojiDir)) { try { fs.mkdirSync(twemojiDir); } catch(_) {} }
+        const originalTextFn = doc.text.bind(doc);
+        const emojiRegex = /[\u{1F300}-\u{1FAFF}\u{1F1E6}-\u{1F1FF}\u{2600}-\u{27BF}]/u; // simplificado
+        function emojiToCodepoints(emoji) {
+            return Array.from(emoji).map(cp => cp.codePointAt(0).toString(16)).join('-');
         }
+        function renderTwemoji(emoji, x, y, size) {
+            const code = emojiToCodepoints(emoji).replace(/-fe0f/,'');
+            const imgPath = path.join(twemojiDir, code + '.png');
+            if (fs.existsSync(imgPath)) {
+                try { doc.image(imgPath, x, y - (size*0.8), { width: size, height: size }); return true; } catch(_) { return false; }
+            }
+            return false;
+        }
+        // Monkey patch doc.text para suportar imagens de emoji se disponíveis; fallback para fonte.
+        doc.text = function(text, x, y, options = {}) {
+            if (typeof text !== 'string') return originalTextFn(text, x, y, options);
+            if (!emojiRegex.test(text)) {
+                return originalTextFn(text, x, y, options);
+            }
+            const fontSize = (options.fontSize) || doc._fontSize || 12;
+            let cursorX = (typeof x === 'number') ? x : (options.x || doc.x);
+            let cursorY = (typeof y === 'number') ? y : (options.y || doc.y);
+            const segments = Array.from(text);
+            segments.forEach(ch => {
+                if (emojiRegex.test(ch)) {
+                    const rendered = renderTwemoji(ch, cursorX, cursorY + fontSize*0.75, fontSize);
+                    if (rendered) {
+                        cursorX += fontSize * 0.9; // avanço
+                    } else {
+                        const w = doc.font(emojiFontFound ? 'EmojiCapable' : 'NotoSans').fontSize(fontSize).widthOfString(ch);
+                        originalTextFn(ch, cursorX, cursorY, { ...options, continued: true });
+                        cursorX += w;
+                    }
+                } else {
+                    const w = doc.font('NotoSans').fontSize(fontSize).widthOfString(ch);
+                    originalTextFn(ch, cursorY === undefined ? cursorX : cursorX, cursorY, { ...options, continued: true });
+                    cursorX += w;
+                }
+            });
+            return this; // chain
+        };
         doc.font('NotoSans');
 
         // 🎨 CAPA SUPER ESTILIZADA
@@ -1702,32 +1731,85 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
         }
 
         // 💼 PÁGINA DE GASTOS EMPRESARIAIS DETALHADOS
+        // === GASTOS EMPRESARIAIS (layout aprimorado tipo BI) ===
         doc.addPage();
-        doc.rect(0, 0, doc.page.width, 80).fill('#EF4444');
-        doc.fillColor('#FFFFFF').fontSize(24).text('💼 GASTOS EMPRESARIAIS', 50, 25);
-        doc.moveDown(3);
+        doc.rect(0, 0, doc.page.width, 90).fill('#334155');
+        doc.fillColor('#FFFFFF').fontSize(26).text('💼 GASTOS EMPRESARIAIS', 50, 30, { width: 500, align: 'center' });
 
         if (empresariais.length === 0) {
+            doc.moveDown(4);
             doc.fontSize(16).fillColor('#6B7280').text('Nenhum gasto empresarial registrado no período.', { align: 'center' });
         } else {
-            empresariais.forEach((e, index) => {
-                if (doc.y > 720) {
-                    doc.addPage();
-                    doc.moveDown(1);
-                }
-
-                doc.roundedRect(50, doc.y, 490, 50, 8).fill('#FEF3C7');
-                doc.fillColor('#92400E').fontSize(11);
-                doc.text(`📅 ${new Date(e.transaction_date).toLocaleDateString('pt-BR')}`, 60, doc.y + 8, { width: 100, align: 'left' });
-                doc.text(`💰 R$ ${parseFloat(e.amount).toFixed(2)}`, 160, doc.y + 8, { width: 100, align: 'left' });
-                doc.text(`🏦 ${e.account}`, 280, doc.y + 8, { width: 200, align: 'left' });
-                doc.text(`📝 ${e.description.substring(0, 40)}`, 60, doc.y + 25, { width: 300, align: 'left' });
-                if (e.has_invoice) {
-                    doc.text(`📄 Nota Fiscal: Sim`, 380, doc.y + 25, { width: 100, align: 'left' });
-                }
-                doc.y += 60;
+            // KPIs rápidos (cards)
+            const diasUnicosEmp = new Set(empresariais.map(e => new Date(e.transaction_date).toISOString().slice(0,10))).size;
+            const mediaDiariaEmp = diasUnicosEmp ? totalEmpresarial / diasUnicosEmp : totalEmpresarial;
+            const maiorEmp = empresariais.reduce((m,e)=> parseFloat(e.amount) > m ? parseFloat(e.amount) : m, 0);
+            const menorEmp = empresariais.reduce((m,e)=> parseFloat(e.amount) < m ? parseFloat(e.amount) : m, parseFloat(empresariais[0].amount));
+            const kpiY = 120;
+            const kCard = (x, titulo, valor, cor) => {
+                doc.roundedRect(x, kpiY, 155, 70, 12).fill(cor);
+                doc.fillColor('#FFFFFF').fontSize(11).text(titulo, x + 12, kpiY + 12, { width: 140 });
+                doc.fontSize(14).text(valor, x + 12, kpiY + 38, { width: 140 });
+            };
+            kCard(55, 'Total Empresarial', `R$ ${totalEmpresarial.toFixed(2)}`, '#0D9488');
+            kCard(220, 'Dias c/ Gastos', diasUnicosEmp.toString(), '#6366F1');
+            kCard(385, 'Média por Dia', `R$ ${mediaDiariaEmp.toFixed(2)}`, '#F59E0B');
+            const kpi2Y = 200;
+            const kCard2 = (x, titulo, valor, cor) => { doc.roundedRect(x, kpi2Y, 230, 60, 10).fill(cor); doc.fillColor('#FFFFFF').fontSize(11).text(titulo, x+12, kpi2Y+10, {width:210}); doc.fontSize(14).text(valor, x+12, kpi2Y+32, {width:210}); };
+            kCard2(55, 'Maior Despesa', `R$ ${maiorEmp.toFixed(2)}`, '#DC2626');
+            kCard2(305, 'Menor Despesa', `R$ ${menorEmp.toFixed(2)}`, '#10B981');
+            // Top 5 planos
+            const byPlanoEmp = {};
+            empresariais.forEach(e=> { const p = e.account_plan_code || 'N/A'; byPlanoEmp[p] = (byPlanoEmp[p]||0) + parseFloat(e.amount); });
+            const top5 = Object.entries(byPlanoEmp).sort((a,b)=>b[1]-a[1]).slice(0,5);
+            let tableY = 280;
+            doc.fontSize(16).fillColor('#1E293B').text('🏆 Top 5 Planos (Empresarial)', 50, tableY); tableY += 30;
+            doc.fontSize(11);
+            doc.roundedRect(50, tableY, 490, 22, 6).fill('#E2E8F0');
+            doc.fillColor('#1E293B').text('Plano', 60, tableY + 7, {width:120});
+            doc.text('Valor', 200, tableY + 7, {width:100});
+            doc.text('% Total Emp.', 320, tableY + 7, {width:100});
+            doc.text('Share', 420, tableY + 7, {width:100});
+            tableY += 30;
+            top5.forEach(([pl, val], i) => {
+                if (tableY + 24 > doc.page.height - 120) { doc.addPage(); tableY = 80; }
+                const pct = (val/totalEmpresarial)*100;
+                doc.roundedRect(50, tableY, 490, 20, 4).fill(i%2? '#F8FAFC':'#FFFFFF');
+                doc.fillColor('#1E293B').fontSize(10).text(pl, 60, tableY + 5, {width:120});
+                doc.text(`R$ ${val.toFixed(2)}`, 200, tableY + 5, {width:100});
+                doc.text(`${pct.toFixed(1)}%`, 320, tableY + 5, {width:100});
+                // Barra share
+                const barW = Math.min(120, (pct/100)*120);
+                doc.roundedRect(420, tableY + 7, 120, 6, 3).fill('#E2E8F0');
+                doc.roundedRect(420, tableY + 7, barW, 6, 3).fill('#6366F1');
+                tableY += 28;
             });
+            // Tabela detalhada
+            let detY = tableY + 30;
+            if (detY > doc.page.height - 160) { doc.addPage(); detY = 80; }
+            doc.fontSize(16).fillColor('#1E293B').text('📄 Detalhamento (Empresarial)', 50, detY); detY += 28;
+            doc.fontSize(9);
+            const header = (y) => { doc.roundedRect(50, y, 490, 20, 4).fill('#0D9488'); doc.fillColor('#FFFFFF').text('Data',60,y+6,{width:60}); doc.text('Plano',120,y+6,{width:50}); doc.text('Conta',170,y+6,{width:90}); doc.text('Descrição',260,y+6,{width:150}); doc.text('Valor',415,y+6,{width:60}); doc.text('NF',470,y+6,{width:40}); };
+            header(detY); detY += 26;
+            empresariais.sort((a,b)=> new Date(b.transaction_date)-new Date(a.transaction_date)).forEach(e=> {
+                if (detY + 18 > doc.page.height - 60) { doc.addPage(); detY = 60; header(detY); detY += 26; }
+                const bg = detY % 2 === 0 ? '#FFFFFF' : '#F1F5F9';
+                doc.roundedRect(50, detY, 490, 18, 2).fill(bg);
+                doc.fillColor('#1E293B').text(new Date(e.transaction_date).toLocaleDateString('pt-BR'),60,detY+5,{width:60});
+                doc.text(e.account_plan_code || '-',120,detY+5,{width:50});
+                doc.text(e.account || '-',170,detY+5,{width:90});
+                const desc = (e.description || '').substring(0,30);
+                doc.text(desc,260,detY+5,{width:150});
+                doc.text(parseFloat(e.amount).toFixed(2),415,detY+5,{width:60});
+                doc.text(e.has_invoice? '✔':'',470,detY+5,{width:40});
+                detY += 22;
+            });
+            // Nota explicativa
+            if (detY + 60 > doc.page.height) { doc.addPage(); detY = 80; }
+            doc.fontSize(9).fillColor('#475569').text('Nota: Para melhor visualização BI, considere integrar estes dados a um dashboard interativo com filtros por período, conta e plano.', 50, detY + 10, { width: 490 });
         }
+
+        // === FIM EMPRESARIAL ===
 
         // 🏠 PÁGINA DE GASTOS PESSOAIS DETALHADOS
         doc.addPage();
