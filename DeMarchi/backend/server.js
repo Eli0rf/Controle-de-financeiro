@@ -1369,49 +1369,10 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
         }
         // Helper simples para texto com possíveis emojis (usa fonte fallback se existir)
         const useEmojiFont = (text) => emojiFontFound && /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u.test(text);
-        // === Suporte a Twemoji (imagens) ===
-        const twemojiDir = path.join(__dirname,'twemoji');
-        if (!fs.existsSync(twemojiDir)) { try { fs.mkdirSync(twemojiDir); } catch(_) {} }
+        // Renderização simples com fallback de fonte para emojis (sem criação de imagens).
         const originalTextFn = doc.text.bind(doc);
-        const emojiRegex = /[\u{1F300}-\u{1FAFF}\u{1F1E6}-\u{1F1FF}\u{2600}-\u{27BF}]/u; // simplificado
-        function emojiToCodepoints(emoji) {
-            return Array.from(emoji).map(cp => cp.codePointAt(0).toString(16)).join('-');
-        }
-        function renderTwemoji(emoji, x, y, size) {
-            const code = emojiToCodepoints(emoji).replace(/-fe0f/,'');
-            const imgPath = path.join(twemojiDir, code + '.png');
-            if (fs.existsSync(imgPath)) {
-                try { doc.image(imgPath, x, y - (size*0.8), { width: size, height: size }); return true; } catch(_) { return false; }
-            }
-            return false;
-        }
-        // Monkey patch doc.text para suportar imagens de emoji se disponíveis; fallback para fonte.
         doc.text = function(text, x, y, options = {}) {
-            if (typeof text !== 'string') return originalTextFn(text, x, y, options);
-            if (!emojiRegex.test(text)) {
-                return originalTextFn(text, x, y, options);
-            }
-            const fontSize = (options.fontSize) || doc._fontSize || 12;
-            let cursorX = (typeof x === 'number') ? x : (options.x || doc.x);
-            let cursorY = (typeof y === 'number') ? y : (options.y || doc.y);
-            const segments = Array.from(text);
-            segments.forEach(ch => {
-                if (emojiRegex.test(ch)) {
-                    const rendered = renderTwemoji(ch, cursorX, cursorY + fontSize*0.75, fontSize);
-                    if (rendered) {
-                        cursorX += fontSize * 0.9; // avanço
-                    } else {
-                        const w = doc.font(emojiFontFound ? 'EmojiCapable' : 'NotoSans').fontSize(fontSize).widthOfString(ch);
-                        originalTextFn(ch, cursorX, cursorY, { ...options, continued: true });
-                        cursorX += w;
-                    }
-                } else {
-                    const w = doc.font('NotoSans').fontSize(fontSize).widthOfString(ch);
-                    originalTextFn(ch, cursorY === undefined ? cursorX : cursorX, cursorY, { ...options, continued: true });
-                    cursorX += w;
-                }
-            });
-            return this; // chain
+            return originalTextFn(text, x, y, options);
         };
         doc.font('NotoSans');
 
