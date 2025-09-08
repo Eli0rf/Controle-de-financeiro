@@ -1397,61 +1397,7 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
     doc.y = contaBoxY + 90;
 
         // Rodapé da capa
-        doc.fillColor('#CBD5E1').fontSize(12).text('Gerado pelo Sistema de Controle Financeiro 🚀', 0, doc.page.height - 60, { align: 'center', width: doc.page.width });
-
-        // 📘 PÁGINA DE RESUMO CONSOLIDADO
-        doc.addPage();
-        doc.rect(0, 0, doc.page.width, 70).fill('#3B82F6');
-        doc.fillColor('#FFFFFF').fontSize(22).text('📘 RESUMO CONSOLIDADO', 0, 25, { align: 'center', width: doc.page.width });
-        doc.moveDown(2);
-        const resumoStartY = doc.y;
-        const boxWidth = (doc.page.width - 140) / 2;
-        const leftX = 60;
-        const rightX = leftX + boxWidth + 20;
-        // Bloco Totais
-        doc.roundedRect(leftX, resumoStartY, boxWidth, 110, 14).fill('#F0F9FF');
-        doc.fillColor('#0C4A6E').fontSize(14).text('Totais Gerais', leftX + 15, resumoStartY + 12);
-        doc.fontSize(11).fillColor('#0369A1').text(`💰 Total: R$ ${total.toFixed(2)}`, leftX + 15, resumoStartY + 38);
-        doc.text(`🏠 Pessoal: R$ ${totalPessoal.toFixed(2)}`, leftX + 15, resumoStartY + 56);
-        doc.text(`💼 Empresarial: R$ ${totalEmpresarial.toFixed(2)}`, leftX + 15, resumoStartY + 74);
-        // Bloco Distribuição
-        doc.roundedRect(rightX, resumoStartY, boxWidth, 110, 14).fill('#F1F5F9');
-        doc.fillColor('#111827').fontSize(14).text('Distribuição (%)', rightX + 15, resumoStartY + 12);
-        const pessoalPerc = total > 0 ? ((totalPessoal/total)*100).toFixed(1) : '0.0';
-        const empPerc = total > 0 ? ((totalEmpresarial/total)*100).toFixed(1) : '0.0';
-        doc.fontSize(11).fillColor('#059669').text(`🏠 Pessoal: ${pessoalPerc}%`, rightX + 15, resumoStartY + 38);
-        doc.fillColor('#D97706').text(`💼 Empresarial: ${empPerc}%`, rightX + 15, resumoStartY + 56);
-        doc.fillColor('#6366F1').text(`📊 Média diária: R$ ${mediaDiaria.toFixed(2)}`, rightX + 15, resumoStartY + 74);
-        // Bloco Maior/Menor
-        const bloco2Y = resumoStartY + 130;
-        doc.roundedRect(leftX, bloco2Y, boxWidth, 110, 14).fill('#FEF3C7');
-        doc.fillColor('#92400E').fontSize(14).text('Extremos', leftX + 15, bloco2Y + 12);
-        if (maiorGasto) {
-            doc.fontSize(11).text(`🔥 Maior: R$ ${parseFloat(maiorGasto.amount).toFixed(2)}`, leftX + 15, bloco2Y + 38);
-        }
-        if (menorGasto && menorGasto !== maiorGasto) {
-            doc.fontSize(11).text(`💚 Menor: R$ ${parseFloat(menorGasto.amount).toFixed(2)}`, leftX + 15, bloco2Y + 56);
-        }
-        doc.fontSize(11).fillColor('#0F172A').text(`💳 Planos ativos: ${Object.keys(porPlano).length}`, leftX + 15, bloco2Y + 74);
-        // Bloco Alertas de Tetos
-        doc.roundedRect(rightX, bloco2Y, boxWidth, 110, 14).fill('#FFF1F2');
-        doc.fillColor('#BE123C').fontSize(14).text('Alertas de Teto', rightX + 15, bloco2Y + 12);
-        const planosCriticos = Object.entries(porPlano)
-              .filter(([p,v]) => tetos[p] && v / tetos[p] >= 0.9)
-              .sort((a,b) => (b[1]/tetos[b[0]]) - (a[1]/tetos[a[0]]))
-              .slice(0,4);
-        if (planosCriticos.length === 0) {
-            doc.fontSize(11).fillColor('#4B5563').text('Nenhum plano acima de 90% 👍', rightX + 15, bloco2Y + 42);
-        } else {
-            let offsetY = bloco2Y + 34;
-            planosCriticos.forEach(([p,v]) => {
-                const perc = ((v / tetos[p]) * 100).toFixed(1);
-                doc.fontSize(11).fillColor('#DC2626').text(`⚠️ Plano ${p}: ${perc}%`, rightX + 15, offsetY);
-                offsetY += 18;
-            });
-        }
-        // Legenda final
-        doc.fontSize(10).fillColor('#475569').text('Resumo consolidado para visão rápida de desempenho financeiro.', 0, bloco2Y + 130, { align: 'center', width: doc.page.width });
+    doc.fillColor('#CBD5E1').fontSize(12).text('Gerado pelo Sistema de Controle Financeiro 🚀', 0, doc.page.height - 60, { align: 'center', width: doc.page.width });
 
         // 📈 PÁGINA DE RESUMO EXECUTIVO
         doc.addPage();
@@ -1506,6 +1452,60 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
         doc.roundedRect(50, doc.y, 490, 40, 8).fill('#DBEAFE');
         doc.fillColor('#1E40AF').fontSize(12).text(`📊 MÉDIA DIÁRIA: R$ ${mediaDiaria.toFixed(2)}`, 60, doc.y + 12, { width: 470, align: 'left' });
         doc.y += 60;
+
+        // 📘 PÁGINA DE RESUMO CONSOLIDADO (reposicionada para evitar variáveis não definidas)
+        doc.addPage();
+        doc.rect(0, 0, doc.page.width, 70).fill('#3B82F6');
+        doc.fillColor('#FFFFFF').fontSize(22).text('📘 RESUMO CONSOLIDADO', 0, 25, { align: 'center', width: doc.page.width });
+        doc.moveDown(2);
+        const resumoStartY = doc.y;
+        const boxWidth = (doc.page.width - 140) / 2;
+        const leftX = 60;
+        const rightX = leftX + boxWidth + 20;
+        // Bloco Totais
+        doc.roundedRect(leftX, resumoStartY, boxWidth, 110, 14).fill('#F0F9FF');
+        doc.fillColor('#0C4A6E').fontSize(14).text('Totais Gerais', leftX + 15, resumoStartY + 12);
+        doc.fontSize(11).fillColor('#0369A1').text(`💰 Total: R$ ${total.toFixed(2)}`, leftX + 15, resumoStartY + 38);
+        doc.text(`🏠 Pessoal: R$ ${totalPessoal.toFixed(2)}`, leftX + 15, resumoStartY + 56);
+        doc.text(`💼 Empresarial: R$ ${totalEmpresarial.toFixed(2)}`, leftX + 15, resumoStartY + 74);
+        // Bloco Distribuição
+        doc.roundedRect(rightX, resumoStartY, boxWidth, 110, 14).fill('#F1F5F9');
+        doc.fillColor('#111827').fontSize(14).text('Distribuição (%)', rightX + 15, resumoStartY + 12);
+        const pessoalPerc = total > 0 ? ((totalPessoal/total)*100).toFixed(1) : '0.0';
+        const empPerc = total > 0 ? ((totalEmpresarial/total)*100).toFixed(1) : '0.0';
+        doc.fontSize(11).fillColor('#059669').text(`🏠 Pessoal: ${pessoalPerc}%`, rightX + 15, resumoStartY + 38);
+        doc.fillColor('#D97706').text(`💼 Empresarial: ${empPerc}%`, rightX + 15, resumoStartY + 56);
+        doc.fillColor('#6366F1').text(`📊 Média diária: R$ ${mediaDiaria.toFixed(2)}`, rightX + 15, resumoStartY + 74);
+        // Bloco Extremos
+        const bloco2Y = resumoStartY + 130;
+        doc.roundedRect(leftX, bloco2Y, boxWidth, 110, 14).fill('#FEF3C7');
+        doc.fillColor('#92400E').fontSize(14).text('Extremos', leftX + 15, bloco2Y + 12);
+        if (maiorGasto) {
+            doc.fontSize(11).text(`🔥 Maior: R$ ${parseFloat(maiorGasto.amount).toFixed(2)}`, leftX + 15, bloco2Y + 38);
+        }
+        if (menorGasto && menorGasto !== maiorGasto) {
+            doc.fontSize(11).text(`💚 Menor: R$ ${parseFloat(menorGasto.amount).toFixed(2)}`, leftX + 15, bloco2Y + 56);
+        }
+        doc.fontSize(11).fillColor('#0F172A').text(`💳 Planos ativos: ${Object.keys(porPlano).length}`, leftX + 15, bloco2Y + 74);
+        // Bloco Alertas de Tetos
+        doc.roundedRect(rightX, bloco2Y, boxWidth, 110, 14).fill('#FFF1F2');
+        doc.fillColor('#BE123C').fontSize(14).text('Alertas de Teto', rightX + 15, bloco2Y + 12);
+        const planosCriticos = Object.entries(porPlano)
+              .filter(([p,v]) => tetos[p] && v / tetos[p] >= 0.9)
+              .sort((a,b) => (b[1]/tetos[b[0]]) - (a[1]/tetos[a[0]]))
+              .slice(0,4);
+        if (planosCriticos.length === 0) {
+            doc.fontSize(11).fillColor('#4B5563').text('Nenhum plano acima de 90% 👍', rightX + 15, bloco2Y + 42);
+        } else {
+            let offsetY = bloco2Y + 34;
+            planosCriticos.forEach(([p,v]) => {
+                const perc = ((v / tetos[p]) * 100).toFixed(1);
+                doc.fontSize(11).fillColor('#DC2626').text(`⚠️ Plano ${p}: ${perc}%`, rightX + 15, offsetY);
+                offsetY += 18;
+            });
+        }
+        // Legenda final
+        doc.fontSize(10).fillColor('#475569').text('Resumo consolidado para visão rápida de desempenho financeiro.', 0, bloco2Y + 130, { align: 'center', width: doc.page.width });
 
         // 📊 PÁGINA DE GRÁFICO - DISTRIBUIÇÃO POR PLANO
         if (chartImages.planChart) {
