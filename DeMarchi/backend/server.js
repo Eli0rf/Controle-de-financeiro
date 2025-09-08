@@ -2049,11 +2049,42 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
         pCard(385,'Média por Dia',`R$ ${mediaDiariaPes.toFixed(2)}`,'#10B981');
         const byPlanoPes={}; pessoaisFiltrados.forEach(e=>{const p=e.account_plan_code||'N/A';byPlanoPes[p]=(byPlanoPes[p]||0)+parseFloat(e.amount)});
         const top5p=Object.entries(byPlanoPes).sort((a,b)=>b[1]-a[1]).slice(0,5);
-    // Top 5 planos (Pessoal) compacto duas colunas
-    let tY=190; doc.fontSize(13).fillColor('#1E293B').text('🏆 Top 5 Planos (Pessoal)',50,tY); tY+=18; doc.fontSize(8);
-        const colWp=240; const startXp=50; const gapXp=20; const rightXp=startXp+colWp+gapXp; const rowBlockHp=30;
-        top5p.forEach(([pl,val],i)=>{const pct=(val/totalPessoal)*100; const col=i%2; const x=col===0?startXp:rightXp; if(col===0 && i>0) tY+=rowBlockHp; if(tY+rowBlockHp>doc.page.height-160){doc.addPage(); tY=100;} doc.roundedRect(x,tY,colWp,rowBlockHp-6,6).fill(i%4<2?'#F8FAFC':'#FFFFFF'); doc.fillColor('#1E293B').fontSize(9).text(pl,x+8,tY+6,{width:colWp-16}); doc.fillColor('#334155').fontSize(8).text(`R$ ${val.toFixed(2)} | ${pct.toFixed(1)}%`,x+8,tY+18,{width:colWp-60}); const barMax=70; const barW=Math.max(4,Math.min(barMax,(pct/100)*barMax)); doc.roundedRect(x+colWp-(barMax+14),tY+18,barMax,6,3).fill('#E2E8F0'); doc.roundedRect(x+colWp-(barMax+14),tY+18,barW,6,3).fill('#2563EB'); });
-        tY+=rowBlockHp+4;
+    // Distribuição completa planos pessoais (compacta 1 página)
+    let tY=190; doc.fontSize(13).fillColor('#1E293B').text('📊 Distribuição por Planos (Pessoal)',50,tY); tY+=16;
+        const planosOrdenadosPes = Object.entries(byPlanoPes).sort((a,b)=>b[1]-a[1]);
+        const maxHeightPes = doc.page.height - 150; let headerHP=14; let rowHP=11; let fontRowP=7; let barHP=5; let barWP=110;
+        if(tY + headerHP + planosOrdenadosPes.length*rowHP > maxHeightPes){ rowHP=9; fontRowP=6; barHP=4; barWP=90; }
+        if(tY + headerHP + planosOrdenadosPes.length*rowHP > maxHeightPes){ rowHP=8; fontRowP=5.5; barHP=4; barWP=80; }
+        doc.fontSize(fontRowP);
+        doc.roundedRect(50,tY,490,headerHP,4).fill('#BFDBFE');
+        doc.fillColor('#0F172A');
+        doc.text('Plano',58,tY+4,{width:80});
+        doc.text('R$',138,tY+4,{width:42,align:'right'});
+        doc.text('%Tot',180,tY+4,{width:38,align:'right'});
+        doc.text('Uso',218,tY+4,{width:150});
+        doc.text('Status',368,tY+4,{width:60});
+        doc.text('Share',428,tY+4,{width:90});
+        tY+=headerHP+2;
+        planosOrdenadosPes.forEach(([pl,val],i)=>{
+            if(tY+rowHP>maxHeightPes){doc.fillColor('#64748B').fontSize(fontRowP).text('...compressão máxima atingida, alguns planos ocultos...',50,tY+2,{width:490,align:'center'}); tY=maxHeightPes+5; return;}
+            const pct = (val/totalPessoal)*100;
+            const bg = i%2===0?'#FFFFFF':'#F1F5F9';
+            doc.roundedRect(50,tY,490,rowHP-1,2).fill(bg);
+            doc.fillColor('#1E293B').fontSize(fontRowP);
+            const label = pl.length>12?pl.slice(0,11)+'…':pl;
+            doc.text(label,58,tY+rowHP/3-1,{width:80});
+            doc.text(val.toFixed(0),138,tY+rowHP/3-1,{width:42,align:'right'});
+            doc.text(pct.toFixed(1),180,tY+rowHP/3-1,{width:38,align:'right'});
+            // Barra proporcional
+            const barX=218; const barY=tY+(rowHP-barHP)/2; const pctClamped=Math.min(100,pct);
+            doc.roundedRect(barX,barY,barWP,barHP,barHP/2).fill('#E2E8F0');
+            doc.roundedRect(barX,barY,(pctClamped/100)*barWP,barHP,barHP/2).fill(pct>40?'#2563EB':pct>20?'#60A5FA':'#93C5FD');
+            // Status relativo (sem teto): baseia-se no share
+            let emoji='✅'; if(pct>40) emoji='🔥'; else if(pct>25) emoji='⚠️';
+            doc.text(emoji,368,tY+rowHP/3-1,{width:60});
+            doc.text(pct.toFixed(1)+'%',428,tY+rowHP/3-1,{width:90});
+            tY+=rowHP;
+        });
     let detYp=tY+26; if(detYp>doc.page.height-140){doc.addPage();detYp=60;} doc.fontSize(14).fillColor('#1E293B').text('📄 Detalhamento (Pessoal)',50,detYp);detYp+=20; doc.fontSize(7.5);
     const headerP=(y)=>{doc.roundedRect(50,y,490,14,3).fill('#2563EB');doc.fillColor('#FFFFFF').fontSize(7);textCell('Data',56,y+3,{width:46});textCell('Pl',102,y+3,{width:30});textCell('Conta',132,y+3,{width:56});textCell('Descrição',188,y+3,{width:240});textCell('Valor',428,y+3,{width:100,align:'right'});}; headerP(detYp); detYp+=16;
     const rowHeightP=12;
