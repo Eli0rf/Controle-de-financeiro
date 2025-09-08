@@ -1351,7 +1351,7 @@ async function generateChartsForPDF(porPlano, porConta, expenses, chartJSNodeCan
 
 app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
     const userId = req.user.id;
-    const { year, month, account, compacto } = req.body; // 'compacto': true força 1 folha consolidada
+    const { year, month, account } = req.body;
 
     if (!year || !month) {
         return res.status(400).json({ message: 'Ano e mês são obrigatórios.' });
@@ -1475,7 +1475,7 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
         console.log('✅ Gráficos gerados com sucesso!');
 
         // Gera PDF estilizado
-    const doc = new pdfkit({autoFirstPage:false});
+    const doc = new pdfkit();
         doc.registerFont('NotoSans', path.join(__dirname, 'fonts', 'NotoSans-Regular.ttf'));
         // Registro opcional de fontes de emoji (se presentes na pasta fonts)
         const emojiFontCandidates = ['NotoColorEmoji.ttf','NotoEmoji-Regular.ttf','Symbola.ttf','DejaVuSans.ttf'];
@@ -1495,69 +1495,7 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
         };
         doc.font('NotoSans');
 
-        // === MODO COMPACTO (folha única) ===
-        if (compacto) {
-            doc.addPage({margin:32,size:'A4',layout:'portrait'});
-            // Header
-            doc.rect(0,0,doc.page.width,70).fill('#0F766E');
-            doc.fillColor('#FFFFFF').fontSize(20).text('📅 Relatório Mensal Consolidado',0,18,{align:'center',width:doc.page.width});
-            doc.fontSize(10).fillColor('#E0F2FE').text(`Período: ${startDate.toLocaleDateString('pt-BR')} a ${endDate.toLocaleDateString('pt-BR')}  •  Conta: ${contaNome}`,0,46,{align:'center',width:doc.page.width});
-            // KPIs
-            const kY=88; const kW= (doc.page.width-64-20)/3; const kCard=(i,t,v,c)=>{const x=32+i*(kW+10);doc.roundedRect(x,kY,kW,54,10).fill(c);doc.fillColor('#FFFFFF').fontSize(10).text(t,x+10,kY+10,{width:kW-20});doc.fontSize(14).text(v,x+10,kY+26,{width:kW-20});};
-            kCard(0,'Total Geral',`R$ ${total.toFixed(2)}`,'#1D4ED8');
-            kCard(1,'Empresarial',`R$ ${totalEmpresarial.toFixed(2)}`,'#DC2626');
-            kCard(2,'Pessoal',`R$ ${totalPessoal.toFixed(2)}`,'#059669');
-            // Distribuição Planos vs Teto
-            const planosOrdenados = Object.entries(porPlano).sort((a,b)=>b[1]-a[1]);
-            const blocY = kY+70; doc.fontSize(12).fillColor('#083344').text('📊 Planos de Conta x Teto',32,blocY);
-            const headerY = blocY+18; doc.fontSize(7);
-            doc.roundedRect(32,headerY, doc.page.width-64,14,4).fill('#CBD5E1');
-            doc.fillColor('#0F172A');
-            doc.text('Plano',38,headerY+4,{width:70});
-            doc.text('Valor',108,headerY+4,{width:46,align:'right'});
-            doc.text('%Tot',154,headerY+4,{width:32,align:'right'});
-            doc.text('Teto',186,headerY+4,{width:46,align:'right'});
-            doc.text('%Teto',232,headerY+4,{width:36,align:'right'});
-            doc.text('Uso',268,headerY+4,{width:150});
-            doc.text('Status',418,headerY+4,{width:44});
-            doc.text('Share',462,headerY+4,{width:50});
-            let rowY = headerY+16; let rowH=10; let fontRow=6;
-            if (rowY + planosOrdenados.length*rowH > 760) { rowH=8; fontRow=5.5; }
-            doc.fontSize(fontRow);
-            const barW=140; const barH=4;
-            planosOrdenados.forEach(([pl,val],i)=>{
-                if(rowY+rowH>760) return; // corta suavemente
-                const id = parseInt(pl); const tetoVal = tetos[id]||0; const pctTeto = tetoVal? (val/tetoVal)*100:0; const pctTot=(val/total)*100;
-                const bg = i%2===0?'#FFFFFF':'#F1F5F9';
-                doc.roundedRect(32,rowY,doc.page.width-64,rowH-1,2).fill(bg);
-                const label = pl.length>9?pl.slice(0,8)+'…':pl;
-                doc.fillColor('#0F172A');
-                doc.text(label,38,rowY+rowH/3-1,{width:70});
-                doc.text(val.toFixed(0),108,rowY+rowH/3-1,{width:46,align:'right'});
-                doc.text(pctTot.toFixed(1),154,rowY+rowH/3-1,{width:32,align:'right'});
-                doc.text(tetoVal? tetoVal.toFixed(0):'-',186,rowY+rowH/3-1,{width:46,align:'right'});
-                doc.text(tetoVal? Math.min(pctTeto,999).toFixed(0):'-',232,rowY+rowH/3-1,{width:36,align:'right'});
-                // Barra
-                const barX=268; const barY=rowY+(rowH-barH)/2; const pctClamp=Math.min(100,pctTeto||pctTot); doc.roundedRect(barX,barY,barW,barH,barH/2).fill('#E2E8F0'); doc.roundedRect(barX,barY,(pctClamp/100)*barW,barH,barH/2).fill(pctTeto>100?'#DC2626':pctTeto>85?'#F59E0B':'#10B981');
-                // Emoji status corrigido (texto simples, sem fallback de imagem):
-                let em='✅'; if(pctTeto>100) em='🔥'; else if(pctTeto>85) em='⚠️';
-                doc.text(em,418,rowY+rowH/3-1,{width:44});
-                doc.text(pctTot.toFixed(1)+'%',462,rowY+rowH/3-1,{width:50});
-                rowY+=rowH;
-            });
-            // Resumo/Notas
-            const notasY = rowY+8; if (notasY < 810) {
-                const hhi = planosOrdenados.reduce((acc,[,v])=>{const s=v/total;return acc+s*s;},0);
-                doc.fontSize(7).fillColor('#475569').text(`HHI: ${(hhi*10000).toFixed(0)} • Planos: ${planosOrdenados.length} • Corte automático após linha visível`,32,notasY,{width:doc.page.width-64});
-            }
-            doc.end();
-            res.setHeader('Content-Type','application/pdf');
-            res.setHeader('Content-Disposition',`attachment; filename=relatorio-mensal-compacto-${year}-${month}.pdf`);
-            doc.pipe(res);
-            return; // encerra modo compacto
-        }
-
-        // 🎨 CAPA SUPER ESTILIZADA (modo completo)
+        // 🎨 CAPA SUPER ESTILIZADA
         doc.rect(0, 0, doc.page.width, doc.page.height)
            .fill('#1E293B'); // Fundo escuro elegante
 
@@ -1900,10 +1838,17 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
             const kCard2 = (x, titulo, valor, cor) => { doc.roundedRect(x, kpi2Y, 230, 60, 10).fill(cor); doc.fillColor('#FFFFFF').fontSize(11).text(titulo, x+12, kpi2Y+10, {width:210}); doc.fontSize(14).text(valor, x+12, kpi2Y+32, {width:210}); };
             kCard2(55, 'Maior Despesa', `R$ ${maiorEmp.toFixed(2)}`, '#DC2626');
             kCard2(305, 'Menor Despesa', `R$ ${menorEmp.toFixed(2)}`, '#10B981');
-            // Distribuição completa por planos (com uso do teto) - cabe em uma página
+            // Página 1: Gráfico de distribuição por planos (se imagem já gerada disponível)
+            if (chartImages && chartImages.planChart) {
+                doc.image(chartImages.planChart, 60, 270, { width: 480 });
+            }
+            // Página 2: Lista completa por planos (uso do teto) compacta
+            doc.addPage();
+            doc.rect(0,0,doc.page.width,80).fill('#0F172A');
+            doc.fillColor('#FFFFFF').fontSize(22).text('📊 Distribuição por Planos (Empresarial)',0,30,{width:doc.page.width,align:'center'});
             const byPlanoEmp = {}; empresariais.forEach(e=>{const p=e.account_plan_code||'N/A'; byPlanoEmp[p]=(byPlanoEmp[p]||0)+parseFloat(e.amount)});
             const planosOrdenadosEmp = Object.entries(byPlanoEmp).sort((a,b)=>b[1]-a[1]);
-            let tableY = 280; doc.fontSize(14).fillColor('#1E293B').text('📊 Distribuição por Planos (Empresarial)',50,tableY); tableY+=18;
+            let tableY = 110; // inicia abaixo do header
             // Ajuste dinâmico de densidade: calcula altura alvo para caber todos os planos
             const maxHeight= doc.page.height - 140; // limite inferior disponível
             let headerH=16; let rowH=13; let fontRow=8; let barHeight=6; let barWidth=140;
