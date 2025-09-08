@@ -1945,6 +1945,8 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
     // Adiciona nova página apenas se espaço remanescente for insuficiente
     // ===== TODAS AS TRANSAÇÕES (tabela compacta sem páginas quase vazias) =====
     const sortedAll=[...expenses].sort((a,b)=> new Date(b.transaction_date)-new Date(a.transaction_date));
+    // Helper para manter doc.y estável ao desenhar células sem empurrar outras
+    const textCell = (txt,x,y,opts={})=>{ const keepY = doc.y; doc.text(txt,x,y,{...opts,lineBreak:false}); doc.y = keepY; };
     const estimateLines = sortedAll.length;
     const linesPerPage = 32; // ~ ajustado para altura 18 + margens
     // Quebra somente se menos de 8 linhas caberiam
@@ -1958,13 +1960,16 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
         const bg=i%2===0?'#FFFFFF':'#F8FAFC';
         doc.roundedRect(40,ty,510,14,2).fill(bg);
         const tipo = e.is_business_expense ? 'E' : 'P';
-        doc.fillColor('#1E293B').text(new Date(e.transaction_date).toLocaleDateString('pt-BR'),48,ty+3,{width:46});
-        doc.text(tipo,94,ty+3,{width:18});
-        doc.text(e.account_plan_code||'-',112,ty+3,{width:40});
-        doc.text(e.account||'-',152,ty+3,{width:80});
-        const desc=(e.description||'').substring(0,55);
-        doc.text(desc,232,ty+3,{width:230});
-        doc.text(parseFloat(e.amount).toFixed(2),462,ty+3,{width:76,align:'right'});
+        const rowDate = new Date(e.transaction_date).toLocaleDateString('pt-BR');
+        const desc=(e.description||'').replace(/\s+/g,' ').slice(0,55);
+        const baseY = ty+3;
+        doc.fillColor('#1E293B');
+        textCell(rowDate,48,baseY,{width:46});
+        textCell(tipo,94,baseY,{width:18});
+        textCell(e.account_plan_code||'-',112,baseY,{width:40});
+        textCell(e.account||'-',152,baseY,{width:80});
+        textCell(desc,232,baseY,{width:230});
+        textCell(parseFloat(e.amount).toFixed(2),462,baseY,{width:76,align:'right'});
         ty+=16;
     });
     if (ty+34>doc.page.height){doc.addPage(); ty=60; drawTransHeader(ty); ty+=20;}
@@ -1994,18 +1999,20 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
         doc.roundedRect(50,tY,490,22,6).fill('#E2E8F0'); doc.fillColor('#1E293B').text('Plano',60,tY+7,{width:120});doc.text('Valor',200,tY+7,{width:100});doc.text('% Total Pes.',320,tY+7,{width:100});doc.text('Share',420,tY+7,{width:100});tY+=30;
         top5p.forEach(([pl,val],i)=>{if(tY+24>doc.page.height-120){doc.addPage();tY=80;}const pct=(val/totalPessoal)*100;doc.roundedRect(50,tY,490,20,4).fill(i%2?'#F8FAFC':'#FFFFFF');doc.fillColor('#1E293B').fontSize(10).text(pl,60,tY+5,{width:120});doc.text(`R$ ${val.toFixed(2)}`,200,tY+5,{width:100});doc.text(`${pct.toFixed(1)}%`,320,tY+5,{width:100});const barW=Math.min(120,(pct/100)*120);doc.roundedRect(420,tY+7,120,6,3).fill('#E2E8F0');doc.roundedRect(420,tY+7,barW,6,3).fill('#2563EB');tY+=28;});
     let detYp=tY+26; if(detYp>doc.page.height-140){doc.addPage();detYp=60;} doc.fontSize(14).fillColor('#1E293B').text('📄 Detalhamento (Pessoal)',50,detYp);detYp+=20; doc.fontSize(7.5);
-    const headerP=(y)=>{doc.roundedRect(50,y,490,14,3).fill('#2563EB');doc.fillColor('#FFFFFF').fontSize(7).text('Data',56,y+3,{width:46});doc.text('Pl',102,y+3,{width:30});doc.text('Conta',132,y+3,{width:56});doc.text('Descrição',188,y+3,{width:240});doc.text('Valor',428,y+3,{width:100,align:'right'});}; headerP(detYp); detYp+=16;
+    const headerP=(y)=>{doc.roundedRect(50,y,490,14,3).fill('#2563EB');doc.fillColor('#FFFFFF').fontSize(7);textCell('Data',56,y+3,{width:46});textCell('Pl',102,y+3,{width:30});textCell('Conta',132,y+3,{width:56});textCell('Descrição',188,y+3,{width:240});textCell('Valor',428,y+3,{width:100,align:'right'});}; headerP(detYp); detYp+=16;
     const rowHeightP=12;
         pessoaisFiltrados.sort((a,b)=> new Date(b.transaction_date)-new Date(a.transaction_date)).forEach(e=>{
             if(detYp+rowHeightP>doc.page.height-55){doc.addPage();detYp=55;headerP(detYp);detYp+=16;}
             const bg = (Math.floor(detYp/rowHeightP)%2===0)?'#FFFFFF':'#F8FAFC';
             doc.roundedRect(50,detYp,490,rowHeightP,1).fill(bg);
-            doc.fillColor('#1E293B').text(new Date(e.transaction_date).toLocaleDateString('pt-BR'),56,detYp+3,{width:48});
-            doc.text(e.account_plan_code||'-',104,detYp+3,{width:40});
-            doc.text(e.account||'-',144,detYp+3,{width:52});
-            const desc=(e.description||'').slice(0,60);
-            doc.text(desc,188,detYp+3,{width:240});
-            doc.text(parseFloat(e.amount).toFixed(2),428,detYp+3,{width:100,align:'right'});
+            const baseY = detYp+3;
+            const desc=(e.description||'').replace(/\s+/g,' ').slice(0,60);
+            doc.fillColor('#1E293B');
+            textCell(new Date(e.transaction_date).toLocaleDateString('pt-BR'),56,baseY,{width:46});
+            textCell(e.account_plan_code||'-',102,baseY,{width:30});
+            textCell(e.account||'-',132,baseY,{width:56});
+            textCell(desc,188,baseY,{width:240});
+            textCell(parseFloat(e.amount).toFixed(2),428,baseY,{width:100,align:'right'});
             detYp+=rowHeightP;
         });
     if(detYp+28>doc.page.height){doc.addPage();detYp=55;}
