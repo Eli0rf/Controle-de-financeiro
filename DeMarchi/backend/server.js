@@ -182,14 +182,14 @@ app.post('/api/expenses', authenticateToken, upload.single('invoice'), async (re
             total_installments // Número total de parcelas
         } = req.body;
 
-        const is_business_expense = req.body.is_business_expense === 'true';
-        const has_invoice = req.body.has_invoice === 'true';
-        const userId = req.user.id;
-        const invoicePath = req.file ? req.file.path : null;
-
-        // REGRA AUTOMÁTICA: Se não tem plano de conta, é automaticamente empresarial
-        const finalIsBusiness = !account_plan_code || is_business_expense;
-        const finalAccountPlanCode = finalIsBusiness ? null : (account_plan_code || null);
+            // Barra de progresso visual - linha 3
+            const maxValue = Math.max(...Object.values(porPlano));
+            const barWidth = maxValue > 0 ? (valor / maxValue) * 180 : 0;
+            doc.roundedRect(90, cardY + 65, 180, 6, 3).fill('#FFFFFF40');
+            if (barWidth > 0) {
+                doc.roundedRect(90, cardY + 65, barWidth, 6, 3).fill('#FFFFFF');
+            }
+            doc.y += 95; // Espaçamento entre cards
 
         console.log('📝 Dados de criação de despesa:', {
             account_plan_code,
@@ -1497,36 +1497,36 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
                     const color = colors[index % colors.length];
                     
                     // Card principal com sombra (tamanho reduzido)
-                    doc.roundedRect(52, doc.y + 2, 490, 80, 12).fill('#00000010'); // Sombra
-                    doc.roundedRect(50, doc.y, 490, 80, 12).fill(color);
-                    
+                    doc.roundedRect(52, doc.y + 2, 490, 80, 12).fill('#00000020'); // Sombra mais escura
+                    // Escolher cor de fundo clara para melhor contraste
+                    const bgColor = ['#F3F4F6', '#E0E7FF', '#F0FDF4', '#FEF3C7', '#DBEAFE', '#FFF7ED', '#F1F5F9'][index % 7];
+                    doc.roundedRect(50, doc.y, 490, 80, 12).fill(bgColor);
+                    // Destaque para recorrente
+                    const isRecorrente = expenses.some(e => e.account_plan_code == plano && e.is_recurring_expense);
                     // Posições relativas para evitar cortes
                     const cardY = doc.y;
-                    
                     // Ícone e título do plano - linha 1
-                    doc.fillColor('#FFFFFF').fontSize(16).text(`💳`, 65, cardY + 15);
-                    doc.fontSize(18).text(`PLANO ${plano}`, 90, cardY + 15, { width: 200, align: 'left' });
-                    
+                    doc.fillColor('#1E293B').fontSize(16).text(isRecorrente ? '🔁' : '💳', 65, cardY + 15);
+                    doc.fontSize(18).fillColor('#1E293B').text(`PLANO ${plano}`, 90, cardY + 15, { width: 200, align: 'left' });
                     // Valor em destaque - linha 1, alinhado à direita
-                    doc.fontSize(22).text(`R$ ${valor.toFixed(2)}`, 300, cardY + 12, { width: 170, align: 'right' });
-                    
+                    doc.fontSize(22).fillColor('#059669').text(`R$ ${valor.toFixed(2)}`, 300, cardY + 12, { width: 170, align: 'right' });
                     // Informações secundárias - linha 2
                     const percentual = ((valor/total)*100).toFixed(1);
                     const transacoesPlano = expenses.filter(e => e.installment_plan == plano).length;
-                    
-                    doc.fontSize(12).text(`📊 ${percentual}% do total`, 90, cardY + 45, { width: 180, align: 'left' });
-                    doc.fontSize(12).text(`📝 ${transacoesPlano} transação${transacoesPlano !== 1 ? 's' : ''}`, 280, cardY + 45, { width: 180, align: 'left' });
-                    
+                    doc.fontSize(12).fillColor('#6366F1').text(`📊 ${percentual}% do total`, 90, cardY + 45, { width: 180, align: 'left' });
+                    doc.fontSize(12).fillColor('#F59E0B').text(`📝 ${transacoesPlano} transação${transacoesPlano !== 1 ? 's' : ''}`, 280, cardY + 45, { width: 180, align: 'left' });
                     // Barra de progresso visual - linha 3
                     const maxValue = Math.max(...Object.values(porPlano));
                     const barWidth = maxValue > 0 ? (valor / maxValue) * 180 : 0;
-                    doc.roundedRect(90, cardY + 65, 180, 6, 3).fill('#FFFFFF40');
+                    doc.roundedRect(90, cardY + 65, 180, 6, 3).fill('#CBD5E1');
                     if (barWidth > 0) {
-                        doc.roundedRect(90, cardY + 65, barWidth, 6, 3).fill('#FFFFFF');
+                        doc.roundedRect(90, cardY + 65, barWidth, 6, 3).fill('#6366F1');
                     }
-                    
+                    // Legenda recorrente
+                    if (isRecorrente) {
+                        doc.fontSize(10).fillColor('#F59E0B').text('Recorrente', 90, cardY + 65, { width: 80, align: 'left' });
+                    }
                     doc.y += 95; // Espaçamento entre cards
-                });
                 });
             }
         }
