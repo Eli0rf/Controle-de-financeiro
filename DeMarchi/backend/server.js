@@ -1817,52 +1817,21 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
         }
 
         // 🏦 PÁGINA POR CONTAS (LISTA RESUMIDA)
-        doc.addPage();
-        doc.rect(0, 0, doc.page.width, 80).fill('#8B5CF6');
-        doc.fillColor('#FFFFFF').fontSize(24).text('🏦 RESUMO POR CONTAS', 50, 25);
-        doc.moveDown(3);
+    // (Removida página antiga de resumo por contas para evitar página solta redundante)
 
-        let contaY = doc.y;
-        Object.entries(porConta).forEach(([conta, valor], index) => {
-            const colors = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899'];
-            const color = colors[index % colors.length];
-            
-            doc.roundedRect(50, contaY, 490, 50, 8).fill(color);
-            doc.fillColor('#FFFFFF').fontSize(14).text(conta, 70, contaY + 10, { width: 250, align: 'left' });
-            doc.fontSize(16).text(`R$ ${valor.toFixed(2)}`, 350, contaY + 10, { width: 120, align: 'left' });
-            doc.fontSize(10).text(`${((valor/total)*100).toFixed(1)}% do total`, 70, contaY + 30, { width: 200, align: 'left' });
-            
-            contaY += 60;
-            if (contaY > 700) {
-                doc.addPage();
-                contaY = 50;
-            }
-        });
-
-        // 📋 PÁGINA DE TODAS AS TRANSAÇÕES
-        doc.addPage();
-        doc.rect(0, 0, doc.page.width, 80).fill('#059669');
-        doc.fillColor('#FFFFFF').fontSize(24).text('📋 TODAS AS TRANSAÇÕES', 50, 25);
-        doc.moveDown(3);
-
-        expenses.forEach((e, index) => {
-            if (doc.y > 720) {
-                doc.addPage();
-                doc.moveDown(1);
-            }
-
-            const bgColor = e.is_business_expense ? '#FEF3C7' : '#DBEAFE';
-            const textColor = e.is_business_expense ? '#92400E' : '#1E40AF';
-            const emoji = e.is_business_expense ? '💼' : '🏠';
-
-            doc.roundedRect(50, doc.y, 490, 45, 5).fill(bgColor);
-            doc.fillColor(textColor).fontSize(10);
-            doc.text(`${emoji} ${new Date(e.transaction_date).toLocaleDateString('pt-BR')}`, 60, doc.y + 8, { width: 100, align: 'left' });
-            doc.text(`💰 R$ ${parseFloat(e.amount).toFixed(2)}`, 180, doc.y + 8, { width: 100, align: 'left' });
-            doc.text(`🏦 ${e.account}`, 300, doc.y + 8, { width: 180, align: 'left' });
-            doc.text(`📝 ${e.description.substring(0, 50)}`, 60, doc.y + 25, { width: 420, align: 'left' });
-            doc.y += 50;
-        });
+    // 📋 PÁGINA DE TODAS AS TRANSAÇÕES (tabela compacta)
+    doc.addPage();
+    doc.rect(0,0,doc.page.width,90).fill('#0F766E');
+    doc.fillColor('#FFFFFF').fontSize(26).text('📋 TODAS AS TRANSAÇÕES',50,30,{width:500,align:'center'});
+    const drawTransHeader = (y)=>{doc.roundedRect(40,y,510,22,6).fill('#14B8A6');doc.fillColor('#FFFFFF').fontSize(10);doc.text('Data',50,y+7,{width:50});doc.text('Tipo',100,y+7,{width:40});doc.text('Plano',140,y+7,{width:50});doc.text('Conta',190,y+7,{width:90});doc.text('Descrição',280,y+7,{width:190});doc.text('Valor',470,y+7,{width:70,align:'right'});};
+    let ty=130; drawTransHeader(ty); ty+=28; doc.fontSize(9);
+    const sortedAll=[...expenses].sort((a,b)=> new Date(b.transaction_date)-new Date(a.transaction_date));
+    sortedAll.forEach((e,i)=>{ if(ty+18>doc.page.height-60){doc.addPage(); ty=60; drawTransHeader(ty); ty+=28;} const bg=i%2===0?'#F8FAFC':'#FFFFFF'; doc.roundedRect(40,ty,510,18,3).fill(bg); const tipo = e.is_business_expense ? 'Emp' : 'Pes'; doc.fillColor(e.is_business_expense ? '#92400E':'#1E3A8A'); doc.text(new Date(e.transaction_date).toLocaleDateString('pt-BR'),50,ty+5,{width:50}); doc.text(tipo,100,ty+5,{width:40}); doc.text(e.account_plan_code||'-',140,ty+5,{width:50}); doc.text(e.account||'-',190,ty+5,{width:90}); const desc=(e.description||'').substring(0,40); doc.text(desc,280,ty+5,{width:190}); doc.text(parseFloat(e.amount).toFixed(2),470,ty+5,{width:70,align:'right'}); ty+=22; });
+    // Totais finais
+    if (ty+40>doc.page.height){doc.addPage(); ty=60;}
+    doc.roundedRect(40,ty,510,24,6).fill('#ECFDF5');
+    doc.fillColor('#065F46').fontSize(10).text('TOTAL GERAL',50,ty+7,{width:410});
+    doc.text(`R$ ${total.toFixed(2)}`,470,ty+7,{width:70,align:'right'});
 
         // 📊 BI PESSOAL (resumo similar ao empresarial)
         doc.addPage();
