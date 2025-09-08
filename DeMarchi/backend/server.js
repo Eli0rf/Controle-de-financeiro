@@ -1938,37 +1938,60 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
     // Adiciona nova página apenas se espaço remanescente for insuficiente
     // ===== TODAS AS TRANSAÇÕES (tabela compacta sem páginas quase vazias) =====
     const sortedAll=[...expenses].sort((a,b)=> new Date(b.transaction_date)-new Date(a.transaction_date));
-    // Helper para manter doc.y estável ao desenhar células sem empurrar outras
-    const textCell = (txt,x,y,opts={})=>{ const keepY = doc.y; doc.text(txt,x,y,{...opts,lineBreak:false}); doc.y = keepY; };
-    const estimateLines = sortedAll.length;
-    const linesPerPage = 32; // ~ ajustado para altura 18 + margens
-    // Quebra somente se menos de 8 linhas caberiam
-    if (doc.y > doc.page.height - 250) doc.addPage(); else doc.moveDown(1.5);
+        // Helpers reutilizáveis de paginação para prevenir cortes irregulares
+        const bottomMargin = 60; // zona de segurança
+        const sectionHeaderHeight = 110; // header + título
+        const textCell = (txt,x,y,opts={})=>{ const keepY = doc.y; doc.text(txt,x,y,{...opts,lineBreak:false}); doc.y = keepY; };
+        const ensureSpace = (needed, drawHeaderFn) => {
+            if (doc.y + needed > doc.page.height - bottomMargin) {
+                doc.addPage();
+                if (typeof drawHeaderFn === 'function') drawHeaderFn();
+            }
+        };
+        // Espaço inicial para a seção inteira
+        if (doc.y > doc.page.height - (sectionHeaderHeight + 200)) doc.addPage(); else doc.moveDown(1.2);
     doc.rect(0,0,doc.page.width,78).fill('#0F766E');
     doc.fillColor('#FFFFFF').fontSize(24).text('📋 TODAS AS TRANSAÇÕES',0,26,{width:doc.page.width,align:'center'});
-    const drawTransHeader = (y)=>{doc.roundedRect(40,y,510,18,4).fill('#14B8A6');doc.fillColor('#FFFFFF').fontSize(8);doc.text('Data',48,y+5,{width:46});doc.text('T',94,y+5,{width:18});doc.text('Plano',112,y+5,{width:40});doc.text('Conta',152,y+5,{width:80});doc.text('Descrição',232,y+5,{width:230});doc.text('Valor',462,y+5,{width:76,align:'right'});};
-    let ty=110; drawTransHeader(ty); ty+=20; doc.fontSize(8);
-    sortedAll.forEach((e,i)=>{
-        if(ty+16>doc.page.height-60){doc.addPage(); ty=60; drawTransHeader(ty); ty+=20;}
-        const bg=i%2===0?'#FFFFFF':'#F8FAFC';
-        doc.roundedRect(40,ty,510,14,2).fill(bg);
-        const tipo = e.is_business_expense ? 'E' : 'P';
-        const rowDate = new Date(e.transaction_date).toLocaleDateString('pt-BR');
-        const desc=(e.description||'').replace(/\s+/g,' ').slice(0,55);
-        const baseY = ty+3;
-        doc.fillColor('#1E293B');
-        textCell(rowDate,48,baseY,{width:46});
-        textCell(tipo,94,baseY,{width:18});
-        textCell(e.account_plan_code||'-',112,baseY,{width:40});
-        textCell(e.account||'-',152,baseY,{width:80});
-        textCell(desc,232,baseY,{width:230});
-        textCell(parseFloat(e.amount).toFixed(2),462,baseY,{width:76,align:'right'});
-        ty+=16;
-    });
-    if (ty+34>doc.page.height){doc.addPage(); ty=60; drawTransHeader(ty); ty+=20;}
-    doc.roundedRect(40,ty,510,18,4).fill('#ECFDF5');
-    doc.fillColor('#047857').fontSize(9).text('TOTAL GERAL',48,ty+4,{width:430});
-    doc.text(`R$ ${total.toFixed(2)}`,462,ty+4,{width:76,align:'right'});
+        const drawTransHeader = ()=>{
+            const headerY = 110;
+            doc.fontSize(8); // reset
+            doc.roundedRect(40,headerY,510,18,4).fill('#14B8A6');
+            doc.fillColor('#FFFFFF').fontSize(8);
+            doc.text('Data',48,headerY+5,{width:46});
+            doc.text('T',94,headerY+5,{width:18});
+            doc.text('Plano',112,headerY+5,{width:40});
+            doc.text('Conta',152,headerY+5,{width:80});
+            doc.text('Descrição',232,headerY+5,{width:230});
+            doc.text('Valor',462,headerY+5,{width:76,align:'right'});
+            return headerY + 20;
+        };
+        let ty = drawTransHeader();
+        doc.fontSize(8);
+        const rowHeight = 16;
+        sortedAll.forEach((e,i)=>{
+            if (ty + rowHeight > doc.page.height - bottomMargin) {
+                doc.addPage();
+                ty = drawTransHeader();
+            }
+            const bg = i % 2 === 0 ? '#FFFFFF' : '#F8FAFC';
+            doc.roundedRect(40,ty,510,rowHeight-2,2).fill(bg);
+            const baseY = ty + 3;
+            const tipo = e.is_business_expense ? 'E':'P';
+            const rowDate = new Date(e.transaction_date).toLocaleDateString('pt-BR');
+            const desc = (e.description||'').replace(/\s+/g,' ').slice(0,55);
+            doc.fillColor('#1E293B');
+            textCell(rowDate,48,baseY,{width:46});
+            textCell(tipo,94,baseY,{width:18});
+            textCell(e.account_plan_code||'-',112,baseY,{width:40});
+            textCell(e.account||'-',152,baseY,{width:80});
+            textCell(desc,232,baseY,{width:230});
+            textCell(parseFloat(e.amount).toFixed(2),462,baseY,{width:76,align:'right'});
+            ty += rowHeight;
+        });
+        if (ty + 26 > doc.page.height - bottomMargin) { doc.addPage(); ty = drawTransHeader(); }
+        doc.roundedRect(40,ty,510,18,4).fill('#ECFDF5');
+        doc.fillColor('#047857').fontSize(9).text('TOTAL GERAL',48,ty+4,{width:430});
+        doc.text(`R$ ${total.toFixed(2)}`,462,ty+4,{width:76,align:'right'});
 
         // 📊 BI PESSOAL (resumo similar ao empresarial)
     // BI Pessoal: só quebra se faltar espaço
