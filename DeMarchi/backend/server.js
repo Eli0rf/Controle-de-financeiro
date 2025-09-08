@@ -1973,10 +1973,23 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
         let tY=200; doc.fontSize(16).fillColor('#1E293B').text('🏆 Top 5 Planos (Pessoal)',50,tY); tY+=30; doc.fontSize(11);
         doc.roundedRect(50,tY,490,22,6).fill('#E2E8F0'); doc.fillColor('#1E293B').text('Plano',60,tY+7,{width:120});doc.text('Valor',200,tY+7,{width:100});doc.text('% Total Pes.',320,tY+7,{width:100});doc.text('Share',420,tY+7,{width:100});tY+=30;
         top5p.forEach(([pl,val],i)=>{if(tY+24>doc.page.height-120){doc.addPage();tY=80;}const pct=(val/totalPessoal)*100;doc.roundedRect(50,tY,490,20,4).fill(i%2?'#F8FAFC':'#FFFFFF');doc.fillColor('#1E293B').fontSize(10).text(pl,60,tY+5,{width:120});doc.text(`R$ ${val.toFixed(2)}`,200,tY+5,{width:100});doc.text(`${pct.toFixed(1)}%`,320,tY+5,{width:100});const barW=Math.min(120,(pct/100)*120);doc.roundedRect(420,tY+7,120,6,3).fill('#E2E8F0');doc.roundedRect(420,tY+7,barW,6,3).fill('#2563EB');tY+=28;});
-        let detYp=tY+30; if(detYp>doc.page.height-160){doc.addPage();detYp=80;} doc.fontSize(16).fillColor('#1E293B').text('📄 Detalhamento (Pessoal)',50,detYp);detYp+=28; doc.fontSize(9);
-        const headerP=(y)=>{doc.roundedRect(50,y,490,20,4).fill('#2563EB');doc.fillColor('#FFFFFF').text('Data',60,y+6,{width:60});doc.text('Plano',120,y+6,{width:50});doc.text('Conta',170,y+6,{width:90});doc.text('Descrição',260,y+6,{width:150});doc.text('Valor',415,y+6,{width:60});}; headerP(detYp); detYp+=26;
-        pessoaisFiltrados.sort((a,b)=> new Date(b.transaction_date)-new Date(a.transaction_date)).forEach(e=>{if(detYp+18>doc.page.height-60){doc.addPage();detYp=60;headerP(detYp);detYp+=26;} const bg=detYp%2===0?'#FFFFFF':'#F1F5F9'; doc.roundedRect(50,detYp,490,18,2).fill(bg); doc.fillColor('#1E293B').text(new Date(e.transaction_date).toLocaleDateString('pt-BR'),60,detYp+5,{width:60}); doc.text(e.account_plan_code||'-',120,detYp+5,{width:50}); doc.text(e.account||'-',170,detYp+5,{width:90}); const desc=(e.description||'').substring(0,30); doc.text(desc,260,detYp+5,{width:150}); doc.text(parseFloat(e.amount).toFixed(2),415,detYp+5,{width:60}); detYp+=22;});
-        if(detYp+60>doc.page.height){doc.addPage();detYp=80;} doc.fontSize(9).fillColor('#475569').text('Nota: KPIs pessoais auxiliam decisões de redução de despesas e metas de economia.',50,detYp+10,{width:490});
+        let detYp=tY+30; if(detYp>doc.page.height-160){doc.addPage();detYp=80;} doc.fontSize(16).fillColor('#1E293B').text('📄 Detalhamento (Pessoal)',50,detYp);detYp+=24; doc.fontSize(8);
+        const headerP=(y)=>{doc.roundedRect(50,y,490,16,3).fill('#2563EB');doc.fillColor('#FFFFFF').text('Data',56,y+4,{width:48});doc.text('Plano',104,y+4,{width:40});doc.text('Conta',144,y+4,{width:52});doc.text('Descrição',196,y+4,{width:220});doc.text('Valor',416,y+4,{width:60,align:'right'});}; headerP(detYp); detYp+=18;
+        const rowHeightP=14;
+        pessoaisFiltrados.sort((a,b)=> new Date(b.transaction_date)-new Date(a.transaction_date)).forEach(e=>{
+            if(detYp+rowHeightP>doc.page.height-50){doc.addPage();detYp=50;headerP(detYp);detYp+=18;}
+            const bg = (Math.floor(detYp/rowHeightP)%2===0)?'#FFFFFF':'#F8FAFC';
+            doc.roundedRect(50,detYp,490,rowHeightP,1).fill(bg);
+            doc.fillColor('#1E293B').text(new Date(e.transaction_date).toLocaleDateString('pt-BR'),56,detYp+3,{width:48});
+            doc.text(e.account_plan_code||'-',104,detYp+3,{width:40});
+            doc.text(e.account||'-',144,detYp+3,{width:52});
+            const desc=(e.description||'').slice(0,42);
+            doc.text(desc,196,detYp+3,{width:220});
+            doc.text(parseFloat(e.amount).toFixed(2),416,detYp+3,{width:60,align:'right'});
+            detYp+=rowHeightP;
+        });
+        if(detYp+40>doc.page.height){doc.addPage();detYp=60;}
+        doc.fontSize(8).fillColor('#475569').text('Nota: tabela compactada – valores em BRL.',50,detYp+6,{width:490});
 
     // ===== PÁGINA COMPARATIVO MÊS A MÊS POR PLANO =====
     doc.addPage();
@@ -1996,44 +2009,54 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
 
     // ===== PÁGINA EFICIÊNCIA & OUTLIERS =====
     doc.addPage();
-    doc.rect(0,0,doc.page.width,80).fill('#0F766E');
-    doc.fillColor('#FFFFFF').fontSize(24).text('⚙️ Eficiência & Outliers (Empresarial)',50,25,{width:500,align:'center'});
-    // Eficiência
+    doc.rect(0,0,doc.page.width,85).fill('#0F766E');
+    doc.fillColor('#FFFFFF').fontSize(22).text('⚙️ Eficiência & Outliers (Empresarial)',0,30,{width:doc.page.width,align:'center'});
+    // Eficiência cards
     const businessDaysInMonth = Array.from({length: endDate.getDate()},(_,i)=> new Date(year, month-1, i+1)).filter(d=> d.getDay()!=0 && d.getDay()!=6).length;
     const custoMedioDiaUtil = businessDaysInMonth? totalEmpresarial / businessDaysInMonth : totalEmpresarial;
     const ticketMedioEmp = empresariais.length ? totalEmpresarial / empresariais.length : 0;
-    doc.fontSize(12).fillColor('#FFFFFF').text(`Dias Úteis: ${businessDaysInMonth}  •  Custo Médio por Dia Útil: R$ ${custoMedioDiaUtil.toFixed(2)}  •  Ticket Médio: R$ ${ticketMedioEmp.toFixed(2)}`,60,80,{width:470,align:'left'});
-    // Outliers (acima de média + 1 desvio padrão)
+    const baseY=110;
+    const effCard=(x,t,v,c)=>{doc.roundedRect(x,baseY,170,70,10).fill(c);doc.fillColor('#FFFFFF').fontSize(11).text(t,x+12,baseY+12,{width:150});doc.fontSize(14).text(v,x+12,baseY+36,{width:150});};
+    effCard(55,'Dias Úteis',businessDaysInMonth.toString(),'#0284C7');
+    effCard(235,'Custo Médio Dia Útil',`R$ ${custoMedioDiaUtil.toFixed(2)}`,'#7C3AED');
+    effCard(415,'Ticket Médio',`R$ ${ticketMedioEmp.toFixed(2)}`,'#F59E0B');
+    // Outliers
     const empValores = empresariais.map(e=>parseFloat(e.amount));
     const mediaEmp = empValores.length ? empValores.reduce((a,b)=>a+b,0)/empValores.length : 0;
     const stdEmp = empValores.length ? Math.sqrt(empValores.reduce((s,v)=> s + Math.pow(v-mediaEmp,2),0)/empValores.length) : 0;
     const limiteOutlier = mediaEmp + stdEmp;
-    const outliers = empresariais.filter(e=> parseFloat(e.amount) > limiteOutlier).sort((a,b)=> parseFloat(b.amount)-parseFloat(a.amount)).slice(0,3);
-    let oy = 130; doc.fontSize(14).fillColor('#FFFFFF').text('Top 3 Outliers (> média + 1 desvio)',60,oy); oy+=30; doc.fontSize(10);
-    if(outliers.length===0){ doc.text('Nenhum outlier detectado.',60,oy); oy+=20; } else { outliers.forEach(o=>{ doc.text(`• ${new Date(o.transaction_date).toLocaleDateString('pt-BR')} | Plano ${o.account_plan_code||'-'} | R$ ${parseFloat(o.amount).toFixed(2)} | ${o.account}`,60,oy,{width:470}); oy+=16;}); }
-    doc.fontSize(9).fillColor('#D1FAE5').text(`Média: R$ ${mediaEmp.toFixed(2)}  •  Desvio Padrão: R$ ${stdEmp.toFixed(2)}  •  Limite: R$ ${limiteOutlier.toFixed(2)}`,60,oy+10,{width:470});
+    const outliers = empresariais.filter(e=> parseFloat(e.amount) > limiteOutlier).sort((a,b)=> parseFloat(b.amount)-parseFloat(a.amount)).slice(0,5);
+    let oy = baseY + 100; doc.fontSize(14).fillColor('#0F766E').roundedRect(50,oy-10,490,26,8).fill('#CCFBF1'); doc.fillColor('#134E4A').text('Outliers (> média + 1 desvio)',60,oy-2); oy+=28; doc.fontSize(9).fillColor('#1E293B');
+    if(outliers.length===0){ doc.text('Nenhum outlier detectado.',60,oy); oy+=16; } else { outliers.forEach(o=>{ if(oy+14>doc.page.height-50){doc.addPage();oy=60;} doc.text(`${new Date(o.transaction_date).toLocaleDateString('pt-BR')} • Plano ${o.account_plan_code||'-'} • R$ ${parseFloat(o.amount).toFixed(2)} • ${o.account}`,60,oy,{width:470}); oy+=14;}); }
+    doc.fontSize(8).fillColor('#475569').text(`Média R$ ${mediaEmp.toFixed(2)} | Desvio ${stdEmp.toFixed(2)} | Limite R$ ${limiteOutlier.toFixed(2)}`,60,oy+6,{width:470});
 
     // ===== PÁGINA PROJEÇÃO & CONCENTRAÇÃO =====
     doc.addPage();
-    doc.rect(0,0,doc.page.width,80).fill('#9333EA');
-    doc.fillColor('#FFFFFF').fontSize(24).text('🔮 Projeção & Concentração',50,25,{width:500,align:'center'});
+    doc.rect(0,0,doc.page.width,90).fill('#6D28D9');
+    doc.fillColor('#FFFFFF').fontSize(24).text('🔮 Projeção & Concentração',0,32,{width:doc.page.width,align:'center'});
     const daysInMonth = endDate.getDate();
     const diasComGasto = Object.keys(porDia).length;
     const mediaDiariaGeral = diasComGasto ? total / diasComGasto : total;
     const hoje = new Date();
     const isMesAtual = (hoje.getFullYear()===year && (hoje.getMonth()+1)===month);
-    const diaHoje = isMesAtual ? hoje.getDate() : daysInMonth; // se não é mês atual, usar mês fechado
     const projecao = isMesAtual ? (mediaDiariaGeral * daysInMonth) : total;
     const crescimentoProj = total ? ((projecao - total)/ total)*100 : 0;
-    doc.fontSize(12).fillColor('#F5F3FF').text(`Dias no mês: ${daysInMonth} • Dias com gasto: ${diasComGasto} • Média diária observada: R$ ${mediaDiariaGeral.toFixed(2)}`,60,80,{width:470});
-    doc.fontSize(12).text(`Projeção de Encerramento: R$ ${projecao.toFixed(2)} (${crescimentoProj>=0?'+':''}${crescimentoProj.toFixed(1)}% vs gasto atual)`,60,100,{width:470});
-    if(!isMesAtual) doc.fontSize(9).fillColor('#DDD6FE').text('Mês encerrado: projeção = total realizado.',60,118,{width:470});
-    // Concentração (Herfindahl dos 5 maiores planos)
-    const shares = Object.values(currByPlan).sort((a,b)=>b-a).slice(0,5).map(v=> v/totalAtual);
-    const hhi = shares.reduce((s,sh)=> s + Math.pow(sh,2),0); // 0-1
-    let cx = 60; let cy2 = 160; doc.fontSize(14).fillColor('#FFFFFF').text('Índice de Concentração (HHI Top 5)',cx,cy2); cy2+=30; doc.fontSize(11).text(`HHI: ${(hhi*10000).toFixed(0)} (escala 0-10000)  •  Interpretação: ${hhi<0.15?'Baixa':'Alta'}`,cx,cy2); cy2+=25;
-    shares.forEach((s,i)=>{ const barW = s*300; doc.roundedRect(cx,cy2,320,12,6).fill('#F3E8FF'); doc.roundedRect(cx,cy2,barW,12,6).fill('#C084FC'); doc.fillColor('#4C1D95').fontSize(9).text(`#${i+1} ${(s*100).toFixed(1)}%`,cx+5,cy2+2); cy2+=22; });
-    doc.fontSize(9).fillColor('#E9D5FF').text('HHI < 1500 baixa concentração; 1500-2500 moderada; >2500 alta (escala convertida).',cx,cy2+5,{width:470});
+    // Cards
+    const projY=110; const card=(x,t,v,c)=>{doc.roundedRect(x,projY,180,80,14).fill(c);doc.fillColor('#FFFFFF').fontSize(11).text(t,x+14,projY+14,{width:150});doc.fontSize(18).text(v,x+14,projY+38,{width:150});};
+    card(55,'Média Diária Observada',`R$ ${mediaDiariaGeral.toFixed(2)}`,'#7C3AED');
+    card(245,'Projeção Encerramento',`R$ ${projecao.toFixed(2)}`,'#9333EA');
+    card(435,'Crescimento vs Atual',`${crescimentoProj>=0?'+':''}${crescimentoProj.toFixed(1)}%`,'#A855F7');
+    if(!isMesAtual) doc.fontSize(8).fillColor('#DDD6FE').text('Mês encerrado: projeção = total realizado.',55,projY+90,{width:500});
+    // Concentração
+    const topPlans = Object.entries(currByPlan).sort((a,b)=> b[1]-a[1]).slice(0,5);
+    const totalAtualLocal = Object.values(currByPlan).reduce((a,b)=>a+b,0)||1;
+    const shares = topPlans.map(([p,v])=>({ plano:p, share:v/totalAtualLocal }));
+    const hhi = shares.reduce((s,sh)=> s + Math.pow(sh.share,2),0);
+    let cy2 = projY + 130;
+    doc.fontSize(14).fillColor('#FFFFFF').text('Concentração Top 5 (HHI)',55,cy2); cy2+=28;
+    doc.fontSize(10).fillColor('#EDE9FE').text(`HHI ${(hhi*10000).toFixed(0)} • ${(hhi<0.15?'Baixa':'Alta')} concentração`,55,cy2,{width:300}); cy2+=20;
+    shares.forEach((o,i)=>{ const barW = o.share*300; if(cy2+18>doc.page.height-60){doc.addPage();cy2=60;} doc.roundedRect(55,cy2,320,14,6).fill('#DDD6FE'); doc.roundedRect(55,cy2,barW,14,6).fill('#C4B5FD'); doc.fillColor('#4C1D95').fontSize(9).text(`${o.plano} ${(o.share*100).toFixed(1)}%`,60,cy2+3); cy2+=22; });
+    doc.fontSize(8).fillColor('#E9D5FF').text('Escala HHI 0-10000. <1500 baixa, 1500-2500 moderada, >2500 alta.',55,cy2+4,{width:480});
 
         // 🎊 PÁGINA FINAL MOTIVACIONAL (centralizada revisada)
         doc.addPage();
