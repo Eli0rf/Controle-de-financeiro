@@ -1369,33 +1369,89 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
         doc.rect(0, 150, doc.page.width, 100).fill('#6366F1');
         doc.rect(0, 200, doc.page.width, 50).fill('#8B5CF6');
 
-        // Título principal com emoji grande
-        doc.fillColor('#FFFFFF').fontSize(60).text('📊', 250, 80);
-        doc.moveDown(1);
-        doc.fontSize(28).fillColor('#FFFFFF').text('RELATÓRIO FINANCEIRO', { align: 'center' });
-        doc.moveDown(0.5);
-        doc.fontSize(24).fillColor('#E0E7FF').text('✨ MENSAL PREMIUM ✨', { align: 'center' });
+    // Título principal com emoji grande (centralizado absoluto)
+    doc.fillColor('#FFFFFF').fontSize(60).text('📊', 0, 80, { align: 'center', width: doc.page.width });
+    doc.fontSize(30).fillColor('#FFFFFF').text('RELATÓRIO FINANCEIRO', 0, 155, { align: 'center', width: doc.page.width });
+    doc.fontSize(22).fillColor('#E0E7FF').text('✨ MENSAL PREMIUM ✨', 0, 190, { align: 'center', width: doc.page.width });
         
         // Período em destaque
-        doc.moveDown(1.5);
-        doc.roundedRect(100, doc.y, 400, 60, 15).fill('#FFFFFF');
-        doc.fillColor('#1E293B').fontSize(18).text(`🗓️ ${startDate.toLocaleDateString('pt-BR')} até ${endDate.toLocaleDateString('pt-BR')}`, 120, doc.y + 20);
-        doc.moveDown(3);
+    doc.moveDown(2.2);
+    const periodoBoxY = doc.y;
+    doc.roundedRect(70, periodoBoxY, doc.page.width - 140, 60, 18).fill('#FFFFFF');
+    doc.fillColor('#1E293B').fontSize(18).text(`🗓️ Período: ${startDate.toLocaleDateString('pt-BR')} → ${endDate.toLocaleDateString('pt-BR')}`, 0, periodoBoxY + 20, { align: 'center', width: doc.page.width });
+    doc.moveDown(3.2);
 
         // Total em destaque gigante
-        doc.roundedRect(50, doc.y, 500, 120, 20).fill('#10B981');
-        doc.fillColor('#FFFFFF').fontSize(48).text('💰', 100, doc.y + 25);
-        doc.fontSize(24).text(`R$ ${total.toFixed(2)}`, 200, doc.y - 15);
-        doc.fontSize(14).text('TOTAL GASTO NO PERÍODO', 200, doc.y + 10);
-        doc.moveDown(5);
+    const totalBoxY = doc.y;
+    doc.roundedRect(40, totalBoxY, doc.page.width - 80, 130, 24).fill('#10B981');
+    doc.fillColor('#FFFFFF').fontSize(56).text('💰', 70, totalBoxY + 32);
+    doc.fontSize(28).text(`R$ ${total.toFixed(2)}`, 150, totalBoxY + 25, { width: 300, align: 'left' });
+    doc.fontSize(14).text('TOTAL GASTO NO PERÍODO', 150, totalBoxY + 60, { width: 300, align: 'left' });
+    doc.fontSize(12).fillColor('#E6FFFA').text(`Pessoal: R$ ${totalPessoal.toFixed(2)}  |  Empresarial: R$ ${totalEmpresarial.toFixed(2)}`, 150, totalBoxY + 82, { width: 350, align: 'left' });
+    doc.y = totalBoxY + 150;
 
         // Conta em foco
-        doc.roundedRect(150, doc.y, 300, 50, 10).fill('#F59E0B');
-        doc.fillColor('#FFFFFF').fontSize(16).text(`🏦 ${contaNome}`, { align: 'center', y: doc.y + 15 });
-        doc.moveDown(3);
+    const contaBoxY = doc.y;
+    doc.roundedRect(140, contaBoxY, doc.page.width - 280, 55, 14).fill('#F59E0B');
+    doc.fillColor('#FFFFFF').fontSize(18).text(`🏦 Conta: ${contaNome}`, 0, contaBoxY + 18, { align: 'center', width: doc.page.width });
+    doc.y = contaBoxY + 90;
 
         // Rodapé da capa
-        doc.fillColor('#CBD5E1').fontSize(12).text('Gerado pelo Sistema de Controle Financeiro 🚀', { align: 'center', y: doc.page.height - 50 });
+        doc.fillColor('#CBD5E1').fontSize(12).text('Gerado pelo Sistema de Controle Financeiro 🚀', 0, doc.page.height - 60, { align: 'center', width: doc.page.width });
+
+        // 📘 PÁGINA DE RESUMO CONSOLIDADO
+        doc.addPage();
+        doc.rect(0, 0, doc.page.width, 70).fill('#3B82F6');
+        doc.fillColor('#FFFFFF').fontSize(22).text('📘 RESUMO CONSOLIDADO', 0, 25, { align: 'center', width: doc.page.width });
+        doc.moveDown(2);
+        const resumoStartY = doc.y;
+        const boxWidth = (doc.page.width - 140) / 2;
+        const leftX = 60;
+        const rightX = leftX + boxWidth + 20;
+        // Bloco Totais
+        doc.roundedRect(leftX, resumoStartY, boxWidth, 110, 14).fill('#F0F9FF');
+        doc.fillColor('#0C4A6E').fontSize(14).text('Totais Gerais', leftX + 15, resumoStartY + 12);
+        doc.fontSize(11).fillColor('#0369A1').text(`💰 Total: R$ ${total.toFixed(2)}`, leftX + 15, resumoStartY + 38);
+        doc.text(`🏠 Pessoal: R$ ${totalPessoal.toFixed(2)}`, leftX + 15, resumoStartY + 56);
+        doc.text(`💼 Empresarial: R$ ${totalEmpresarial.toFixed(2)}`, leftX + 15, resumoStartY + 74);
+        // Bloco Distribuição
+        doc.roundedRect(rightX, resumoStartY, boxWidth, 110, 14).fill('#F1F5F9');
+        doc.fillColor('#111827').fontSize(14).text('Distribuição (%)', rightX + 15, resumoStartY + 12);
+        const pessoalPerc = total > 0 ? ((totalPessoal/total)*100).toFixed(1) : '0.0';
+        const empPerc = total > 0 ? ((totalEmpresarial/total)*100).toFixed(1) : '0.0';
+        doc.fontSize(11).fillColor('#059669').text(`🏠 Pessoal: ${pessoalPerc}%`, rightX + 15, resumoStartY + 38);
+        doc.fillColor('#D97706').text(`💼 Empresarial: ${empPerc}%`, rightX + 15, resumoStartY + 56);
+        doc.fillColor('#6366F1').text(`📊 Média diária: R$ ${mediaDiaria.toFixed(2)}`, rightX + 15, resumoStartY + 74);
+        // Bloco Maior/Menor
+        const bloco2Y = resumoStartY + 130;
+        doc.roundedRect(leftX, bloco2Y, boxWidth, 110, 14).fill('#FEF3C7');
+        doc.fillColor('#92400E').fontSize(14).text('Extremos', leftX + 15, bloco2Y + 12);
+        if (maiorGasto) {
+            doc.fontSize(11).text(`🔥 Maior: R$ ${parseFloat(maiorGasto.amount).toFixed(2)}`, leftX + 15, bloco2Y + 38);
+        }
+        if (menorGasto && menorGasto !== maiorGasto) {
+            doc.fontSize(11).text(`💚 Menor: R$ ${parseFloat(menorGasto.amount).toFixed(2)}`, leftX + 15, bloco2Y + 56);
+        }
+        doc.fontSize(11).fillColor('#0F172A').text(`💳 Planos ativos: ${Object.keys(porPlano).length}`, leftX + 15, bloco2Y + 74);
+        // Bloco Alertas de Tetos
+        doc.roundedRect(rightX, bloco2Y, boxWidth, 110, 14).fill('#FFF1F2');
+        doc.fillColor('#BE123C').fontSize(14).text('Alertas de Teto', rightX + 15, bloco2Y + 12);
+        const planosCriticos = Object.entries(porPlano)
+              .filter(([p,v]) => tetos[p] && v / tetos[p] >= 0.9)
+              .sort((a,b) => (b[1]/tetos[b[0]]) - (a[1]/tetos[a[0]]))
+              .slice(0,4);
+        if (planosCriticos.length === 0) {
+            doc.fontSize(11).fillColor('#4B5563').text('Nenhum plano acima de 90% 👍', rightX + 15, bloco2Y + 42);
+        } else {
+            let offsetY = bloco2Y + 34;
+            planosCriticos.forEach(([p,v]) => {
+                const perc = ((v / tetos[p]) * 100).toFixed(1);
+                doc.fontSize(11).fillColor('#DC2626').text(`⚠️ Plano ${p}: ${perc}%`, rightX + 15, offsetY);
+                offsetY += 18;
+            });
+        }
+        // Legenda final
+        doc.fontSize(10).fillColor('#475569').text('Resumo consolidado para visão rápida de desempenho financeiro.', 0, bloco2Y + 130, { align: 'center', width: doc.page.width });
 
         // 📈 PÁGINA DE RESUMO EXECUTIVO
         doc.addPage();
@@ -1515,6 +1571,18 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
                     const transacoesPlano = expenses.filter(e => e.installment_plan == plano).length;
                     doc.fontSize(12).fillColor('#6366F1').text(`📊 ${percentual}% do total`, 90, cardY + 45, { width: 180, align: 'left' });
                     doc.fontSize(12).fillColor('#F59E0B').text(`📝 ${transacoesPlano} transação${transacoesPlano !== 1 ? 's' : ''}`, 280, cardY + 45, { width: 180, align: 'left' });
+                    // Uso versus teto
+                    if (tetos && tetos[plano] !== undefined && tetos[plano] > 0) {
+                        const teto = tetos[plano];
+                        const usoPercent = (valor / teto) * 100;
+                        let statusColor = '#10B981';
+                        let statusEmoji = '✅';
+                        if (usoPercent >= 100) { statusColor = '#DC2626'; statusEmoji = '🔥'; }
+                        else if (usoPercent >= 90) { statusColor = '#F97316'; statusEmoji = '⚠️'; }
+                        else if (usoPercent >= 75) { statusColor = '#F59E0B'; statusEmoji = '🟡'; }
+                        doc.fontSize(10).fillColor(statusColor)
+                           .text(`${statusEmoji} ${usoPercent.toFixed(1)}% do teto (R$ ${teto.toFixed(2)})`, 300, cardY + 45, { width: 180, align: 'right' });
+                    }
                     // Barra de progresso visual - linha 3
                     const maxValue = Math.max(...Object.values(porPlano));
                     const barWidth = maxValue > 0 ? (valor / maxValue) * 180 : 0;
@@ -1782,16 +1850,21 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
         
         // Dicas motivacionais
         doc.moveDown(2);
-        doc.fontSize(12).fillColor('#065F46').text('💡 DICAS PARA O PRÓXIMO MÉS:', { align: 'center' });
+        doc.fontSize(12).fillColor('#065F46').text('💡 DICAS PARA O PRÓXIMO MÊS', { align: 'center' });
         doc.moveDown(0.5);
         doc.fontSize(10).fillColor('#047857');
-        doc.text('• Monitore gastos diariamente', { align: 'center' });
-        doc.text('• Estabeleça metas de economia', { align: 'center' });
-        doc.text('• Revise este relatório regularmente', { align: 'center' });
+        const dicas = [
+            '🗓️ Registre pequenos gastos para manter precisão',
+            '📊 Compare este mês com os anteriores',
+            '🎯 Defina uma meta de redução para um plano acima de 80% do teto',
+            '💾 Faça backup dos relatórios importantes',
+            '🔁 Revise gastos recorrentes e cancele os desnecessários'
+        ];
+        dicas.forEach(d => doc.text(d, { align: 'center' }));
         
         // Assinatura
-        doc.moveDown(3);
-        doc.fontSize(10).fillColor('#6B7280').text('Relatório gerado com ❤️ pelo Sistema de Controle Financeiro', { align: 'center' });
+        doc.moveDown(2);
+        doc.fontSize(10).fillColor('#6B7280').text('Relatório gerado com ❤️ pelo Sistema de Controle Financeiro • Continue avançando! 🚀', { align: 'center' });
 
         doc.end();
         res.setHeader('Content-Type', 'application/pdf');
