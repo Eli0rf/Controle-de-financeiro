@@ -303,80 +303,53 @@ app.post('/api/login', async (req, res) => {
 // --- 8. ROTAS PROTEGIDAS ---
 app.post('/api/expenses', authenticateToken, upload.single('invoice'), async (req, res) => {
     try {
-        const {
-            transaction_date,
-            amount, // Valor da parcela
-            description,
-            account,
-            account_plan_code,
-            total_installments // Número total de parcelas
-        } = req.body;
+        // Campos enviados pelo formulário
+        const { transaction_date, amount, description, account, account_plan_code, total_installments } = req.body;
+        const userId = req.user.id;
+        const has_invoice = req.body.has_invoice === 'true' || req.body.has_invoice === true;
+        const invoicePath = req.file ? req.file.path : null;
+        // Regra: se não informar plano de contas, classifica como empresarial automaticamente
+        const explicitBusiness = req.body.is_business_expense === 'true' || req.body.is_business_expense === true;
+        const finalIsBusiness = explicitBusiness || !account_plan_code ? 1 : 0;
+        const finalAccountPlanCode = finalIsBusiness ? null : (account_plan_code || null);
 
-            // Barra de progresso visual - linha 3
-            const maxValue = Math.max(...Object.values(porPlano));
-            const barWidth = maxValue > 0 ? (valor / maxValue) * 180 : 0;
-            doc.roundedRect(90, cardY + 65, 180, 6, 3).fill('#FFFFFF40');
-            if (barWidth > 0) {
-                doc.roundedRect(90, cardY + 65, barWidth, 6, 3).fill('#FFFFFF');
-            }
-            doc.y += 95; // Espaçamento entre cards
-
-        console.log('📝 Dados de criação de despesa:', {
-            account_plan_code,
-            is_business_expense,
-            finalIsBusiness,
-            finalAccountPlanCode,
-            rule_applied: !account_plan_code ? 'AUTO_BUSINESS_NO_PLAN' : 'USER_CHOICE'
-        });
-
-        // Validação dos campos obrigatórios
-        if (!transaction_date || !amount || !description || !account || !total_installments) {
+        // Validação básica
+        if (!transaction_date || !amount || !description || !account) {
             return res.status(400).json({ message: 'Campos obrigatórios em falta.' });
         }
-
+        const numberOfInstallments = parseInt(total_installments || '1', 10);
         const installmentAmount = parseFloat(amount);
-        const numberOfInstallments = parseInt(total_installments, 10);
-
-        if (isNaN(installmentAmount) || isNaN(numberOfInstallments)) {
-            return res.status(400).json({ message: 'Valor e número de parcelas devem ser números válidos.' });
+        if (isNaN(installmentAmount) || isNaN(numberOfInstallments) || numberOfInstallments < 1) {
+            return res.status(400).json({ message: 'Valor ou parcelas inválidos.' });
         }
 
         const calculatedTotalAmount = installmentAmount * numberOfInstallments;
-
         for (let i = 0; i < numberOfInstallments; i++) {
             const installmentDate = new Date(transaction_date);
             installmentDate.setMonth(installmentDate.getMonth() + i);
-
-            const installmentDescription = numberOfInstallments > 1
-                ? `${description} (Parcela ${i + 1}/${numberOfInstallments})`
-                : description;
-
-            const sql = `
-                INSERT INTO expenses (
-                    user_id, transaction_date, amount, description, account,
-                    is_business_expense, account_plan_code, has_invoice, invoice_path,
-                    total_purchase_amount, installment_number, total_installments
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
-
-            const params = [
-                userId,
-                installmentDate.toISOString().slice(0, 10),
-                installmentAmount.toFixed(2),
-                installmentDescription,
-                account,
-                finalIsBusiness,
-                finalAccountPlanCode,
-                (finalIsBusiness && i === 0 && has_invoice) ? 1 : null,
-                (finalIsBusiness && i === 0 && has_invoice) ? invoicePath : null,
-                calculatedTotalAmount.toFixed(2),
-                i + 1,
-                numberOfInstallments
-            ];
-
-            await pool.query(sql, params);
+            const installmentDescription = numberOfInstallments > 1 ? `${description} (Parcela ${i + 1}/${numberOfInstallments})` : description;
+            await pool.query(
+                `INSERT INTO expenses (user_id, transaction_date, amount, description, account, is_business_expense, account_plan_code, has_invoice, invoice_path, total_purchase_amount, installment_number, total_installments)
+                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+                [
+                    userId,
+                    installmentDate.toISOString().slice(0,10),
+                    installmentAmount.toFixed(2),
+                    installmentDescription,
+                    account,
+                    finalIsBusiness,
+                    finalAccountPlanCode,
+                    (i === 0 && has_invoice) ? 1 : 0,
+                    (i === 0 && has_invoice) ? invoicePath : null,
+                    calculatedTotalAmount.toFixed(2),
+                    i + 1,
+                    numberOfInstallments
+                ]
+            );
         }
 
-        res.status(201).json({ message: 'Gasto(s) parcelado(s) adicionado(s) com sucesso!' });
+        console.log('📝 Despesa criada', { userId, parcelas: numberOfInstallments, finalIsBusiness, finalAccountPlanCode });
+        res.status(201).json({ message: numberOfInstallments > 1 ? 'Gastos parcelados adicionados com sucesso!' : 'Gasto adicionado com sucesso!' });
     } catch (error) {
         console.error('ERRO AO ADICIONAR GASTO:', error);
         res.status(500).json({ message: 'Ocorreu um erro no servidor ao adicionar o gasto.' });
@@ -2041,7 +2014,8 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
     // ===== PÁGINA COMPARATIVO MÊS A MÊS POR PLANO =====
     if (doc.y > doc.page.height - 500) doc.addPage(); else doc.moveDown(2);
     doc.rect(0,0,doc.page.width,80).fill('#1E40AF');
-    doc.fillColor('#FFFFFF').fontSize(24).text('📊 Comparativo Mês a Mês por Plano',50,25,{width:500,align:'center'});
+    try { await drawEmoji(doc,'📊',50,20,30); } catch {}
+    doc.fillColor('#FFFFFF').fontSize(24).text(' Comparativo Mês a Mês por Plano',85,25,{width:465,align:'left'});
     doc.fontSize(10).fillColor('#E0E7FF').text(`Mês Atual: ${month}/${year}  •  Mês Anterior: ${prevMonth}/${prevYear}`,50,70,{width:500,align:'center'});
     const compHeaderY = 110;
     const drawCompHeader = (y)=>{doc.roundedRect(50,y,490,22,6).fill('#3B82F6'); doc.fillColor('#FFFFFF').fontSize(10).text('Plano',60,y+7,{width:80}); doc.text('Atual',140,y+7,{width:80}); doc.text('Anterior',210,y+7,{width:80}); doc.text('Δ Valor',280,y+7,{width:90}); doc.text('Δ %',370,y+7,{width:70}); doc.text('Share Atual',440,y+7,{width:90});};
@@ -2057,7 +2031,8 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
     // ===== PÁGINA EFICIÊNCIA & OUTLIERS =====
     if (doc.y > doc.page.height - 480) doc.addPage(); else doc.moveDown(2);
     doc.rect(0,0,doc.page.width,85).fill('#0F766E');
-    doc.fillColor('#FFFFFF').fontSize(22).text('⚙️ Eficiência & Outliers (Empresarial)',0,30,{width:doc.page.width,align:'center'});
+    try { await drawEmoji(doc,'⚙️',(doc.page.width/2)-165,26,28); } catch {}
+    doc.fillColor('#FFFFFF').fontSize(22).text(' Eficiência & Outliers (Empresarial)',0,30,{width:doc.page.width,align:'center'});
     // Eficiência cards
     const businessDaysInMonth = Array.from({length: endDate.getDate()},(_,i)=> new Date(year, month-1, i+1)).filter(d=> d.getDay()!=0 && d.getDay()!=6).length;
     const custoMedioDiaUtil = businessDaysInMonth? totalEmpresarial / businessDaysInMonth : totalEmpresarial;
@@ -2115,7 +2090,7 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
         doc.addPage();
         doc.rect(0,0,doc.page.width,doc.page.height).fill('#F0FDF4');
         const centerX = doc.page.width/2;
-    try { await drawEmoji(doc,'🎉', centerX-40, 140, 80); } catch { doc.fillColor('#059669').fontSize(80).text('🎉', centerX-40, 140); }
+    try { await drawEmoji(doc,'🎉', centerX-55, 130, 110); } catch { doc.fillColor('#059669').fontSize(80).text('🎉', centerX-40, 140); }
         doc.fontSize(30).fillColor('#065F46').text('PARABÉNS!', 0, 230, { align: 'center' });
         doc.fontSize(16).fillColor('#047857').text('Você está no controle das suas finanças!', 0, 270, { align: 'center' });
         try {
@@ -2124,16 +2099,20 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
         } catch {
             doc.fontSize(14).fillColor('#059669').text('Mantenha a consistência e alcance objetivos maiores! 🚀', 0, 300, { align: 'center' });
         }
-        doc.fontSize(12).fillColor('#065F46').text('💡 Foco no próximo mês', 0, 350, { align: 'center', underline:true });
+    try { await drawEmoji(doc,'💡', (centerX-100), 348, 20); } catch {}
+    doc.fontSize(12).fillColor('#065F46').text('  Foco no próximo mês', 0, 350, { align: 'center', underline:true });
         const dicas = [
-            '🗓️ Registre micro despesas diariamente',
-            '📊 Compare variação vs. mês anterior',
-            '🎯 Ataque o plano acima de 80% do teto',
-            '💾 Faça backup dos relatórios',
-            '🔁 Revise e negocie gastos recorrentes'
+            {e:'🗓️',t:'Registre micro despesas diariamente'},
+            {e:'📊',t:'Compare variação vs. mês anterior'},
+            {e:'🎯',t:'Ataque o plano acima de 80% do teto'},
+            {e:'💾',t:'Faça backup dos relatórios'},
+            {e:'🔁',t:'Revise e negocie gastos recorrentes'}
         ];
         let dy = 380; doc.fontSize(10).fillColor('#047857');
-        dicas.forEach(d=> { doc.text(d, 0, dy, { align: 'center' }); dy += 18; });
+        for(const item of dicas){
+            try { await drawEmoji(doc,item.e, centerX-160, dy-4, 16); } catch { doc.text(item.e, 0, dy, {align:'center'}); }
+            doc.text(item.t,0,dy,{align:'center'}); dy+=18;
+        }
         doc.fontSize(10).fillColor('#6B7280').text('Relatório gerado com ❤️ • Sistema de Controle Financeiro', 0, dy+30, { align: 'center' });
 
         doc.end();
@@ -2889,6 +2868,37 @@ app.get('/api/business/trends', authenticateToken, async (req, res) => {
     } catch (error) {
         console.error('Erro ao buscar tendências empresariais:', error);
         res.status(500).json({ message: 'Erro ao buscar tendências empresariais.' });
+    }
+});
+
+// Endpoint para comparação trimestral (últimos 3 meses) e projeção simples próximos 3 meses
+app.get('/api/business/quarterly-comparison', authenticateToken, async (req, res) => {
+    try {
+        const userId = req.user.id;
+        // Últimos 6 meses para base (3 passados + mês atual para tendência)
+        const [rows] = await pool.query(`
+            SELECT YEAR(transaction_date) AS year, MONTH(transaction_date) AS month, SUM(amount) AS total
+            FROM expenses
+            WHERE user_id = ? AND is_business_expense = 1
+              AND transaction_date >= DATE_SUB(CURDATE(), INTERVAL 6 MONTH)
+            GROUP BY YEAR(transaction_date), MONTH(transaction_date)
+            ORDER BY year, month
+        `, [userId]);
+        const ordered = rows.map(r=>({year:r.year, month:r.month, total: parseFloat(r.total)}));
+        const last3 = ordered.slice(-3);
+        const avg = last3.length ? last3.reduce((a,b)=>a+b.total,0)/last3.length : 0;
+        // Parcelas futuras reaproveitando lógica de predictions
+        const [installments] = await pool.query(`
+            SELECT SUM(amount * (total_installments - COALESCE(installment_number,1))) AS future_total
+            FROM expenses
+            WHERE user_id=? AND is_business_expense=1 AND total_installments>1 AND COALESCE(installment_number,1) < total_installments
+        `,[userId]);
+        const futureInstallments = parseFloat(installments[0]?.future_total)||0;
+        const projectionNext3 = Array.from({length:3},()=> Math.max(0, avg + (futureInstallments/3)));
+        res.json({ last3, average:last3.length?avg:0, futureInstallments, projectionNext3 });
+    } catch (e){
+        console.error('Erro quarterly-comparison:', e);
+        res.status(500).json({ message:'Erro ao calcular comparação trimestral.' });
     }
 });
 

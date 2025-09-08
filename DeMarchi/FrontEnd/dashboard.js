@@ -140,6 +140,8 @@ document.addEventListener('DOMContentLoaded', function() {
         businessEvolutionChart: null,
         businessAccountChart: null,
         businessCategoryChart: null,
+    quarterlyComparison: null,
+    expenseProjection: null,
         
         // Gráficos de IR
         irChart1: null,
@@ -217,6 +219,59 @@ document.addEventListener('DOMContentLoaded', function() {
             const icon = getPaymentTypeIcon(account);
             return `${icon} ${label}`;
         });
+    }
+
+    // ===== QUARTERLY & PROJECTION (INTEGRAÇÃO NOVO ENDPOINT) =====
+    async function loadQuarterlyAndProjection() {
+        const qcEl = document.getElementById('quarterly-comparison-chart');
+        const projEl = document.getElementById('expense-projection-chart');
+        if(!qcEl && !projEl) return; // nada para fazer
+        try {
+            const resp = await authenticatedFetch(`${API_BASE_URL}/api/business/quarterly-comparison`);
+            if(!resp.ok) throw new Error('Falha quarterly API');
+            const payload = await resp.json();
+            const last3 = payload.last3 || [];
+            const labels = last3.map(r=> ('0'+r.month).slice(-2)+ '/' + r.year);
+            const totals = last3.map(r=> r.total);
+            if(qcEl){
+                if(chartRegistry.quarterlyComparison) chartRegistry.quarterlyComparison.destroy();
+                chartRegistry.quarterlyComparison = new Chart(qcEl.getContext('2d'), {
+                    type:'bar',
+                    data:{ labels, datasets:[{ label:'Gastos Empresariais (R$)', data: totals, backgroundColor:['#3b82f6','#6366f1','#8b5cf6'], borderRadius:6 }]},
+                    options:{ plugins:{ title:{display:true,text:'Últimos 3 Meses (Empresarial)'}, legend:{display:false}}, scales:{ y:{ beginAtZero:true }}}
+                });
+            }
+            if(projEl){
+                if(chartRegistry.expenseProjection) chartRegistry.expenseProjection.destroy();
+                const projVals = payload.projectionNext3 || [];
+                chartRegistry.expenseProjection = new Chart(projEl.getContext('2d'), {
+                    type:'line',
+                    data:{ labels:['+1 mês','+2 meses','+3 meses'], datasets:[{label:'Projeção (R$)', data: projVals, borderColor:'#10b981', backgroundColor:'rgba(16,185,129,0.25)', fill:true, tension:0.3 }]},
+                    options:{ plugins:{ title:{display:true,text:'Projeção Próximos 3 Meses'}, legend:{display:false}}, scales:{ y:{ beginAtZero:true }}}
+                });
+                updateFinancialStatusAI(totals, payload.futureInstallments || 0, projVals);
+            }
+        } catch(e){ console.error('Erro quarterly/projection front:', e); }
+    }
+
+    function updateFinancialStatusAI(lastTotals, futureInstallments, projectionVals){
+        const statusEl = document.getElementById('financial-status');
+        const riskEl = document.getElementById('risk-indicators');
+        if(!statusEl || !riskEl) return;
+        statusEl.innerHTML = ''; riskEl.innerHTML='';
+        const avg = lastTotals.length? lastTotals.reduce((a,b)=>a+b,0)/lastTotals.length:0;
+        const trend = lastTotals.length>=2? (lastTotals[lastTotals.length-1]-lastTotals[0])/(Math.abs(lastTotals[0])||1):0;
+        let statusMsg, color;
+        if(trend>0.2) { statusMsg='Crescimento acelerado de gastos empresariais'; color='text-red-600'; }
+        else if(trend<-0.1){ statusMsg='Redução consistente de gastos'; color='text-green-600'; }
+        else { statusMsg='Faixa estável de gastos'; color='text-blue-600'; }
+        statusEl.innerHTML = `<div class="border rounded p-3 bg-gray-50"><p class="font-semibold ${color}">${statusMsg}</p><p class="text-sm text-gray-600">Média 3m: ${formatCurrency(avg)} • Último: ${formatCurrency(lastTotals[lastTotals.length-1]||0)}</p></div>`;
+        const risks=[];
+        const futureLoad = avg? futureInstallments/avg : 0;
+        if(futureLoad>1.2) risks.push({t:'Carga de Parcelados Elevada',lvl:'Alto',d:`Parcelados futuros equivalem a ${(futureLoad*100).toFixed(0)}% da média trimestral.`});
+        if(trend>0.3) risks.push({t:'Aceleração Forte',lvl:'Alto',d:'Aumento superior a 30% no período observado.'});
+        if(!risks.length) risks.push({t:'Sem riscos relevantes',lvl:'Baixo',d:'Estrutura saudável.'});
+        riskEl.innerHTML = risks.map(r=>`<div class="p-2 mb-2 rounded border ${r.lvl==='Alto'?'bg-red-50 border-red-300':'bg-green-50 border-green-300'}"><p class="font-medium">${r.t} - ${r.lvl}</p><p class="text-xs text-gray-600">${r.d}</p></div>`).join('');
     }
 
     // Função para verificar se o usuário está autenticado
@@ -8825,6 +8880,8 @@ document.addEventListener('DOMContentLoaded', function() {
         fetchAllData();
         toggleExpenseFields();
         initializeTabs(); // Adicionar inicialização das tabs
+    // Carregar gráficos trimestrais e projeções empresariais se elementos existirem
+    setTimeout(()=>{ try { loadQuarterlyAndProjection(); } catch(e){ console.warn('Quarterly load falhou:', e);} }, 1200);
     }
 
     // ========== INICIALIZAÇÃO AUTOMÁTICA ==========
