@@ -98,12 +98,31 @@ app.post('/test-cors', (req, res) => {
         timestamp: new Date().toISOString()
     });
 });
+// Cria/atualiza view de snapshots para BI externo
+async function ensureKpiView(){
+    try {
+        await pool.query(`CREATE OR REPLACE VIEW monthly_kpi_view AS 
+            SELECT ms.user_id, u.username, ms.year, ms.month, ms.total, ms.total_business, ms.total_personal,
+                         ms.projection, ms.hhi, ms.created_at, ms.updated_at
+            FROM monthly_snapshots ms
+            JOIN users u ON u.id = ms.user_id`);
+        console.log('✅ View monthly_kpi_view pronta');
+    } catch(e){ console.error('Erro criando view monthly_kpi_view', e.message); }
+}
+ensureKpiView();
+// Inicializa scheduler de KPIs após dependências carregadas
+setTimeout(()=>{
+    try { initKpiScheduler({ pool, computeMonthlyKPIs, saveMonthlySnapshot }); } catch(e){ console.error('Falha init scheduler', e); }
+}, 2000);
 // ====== API KPIs Mensais (JSON) ======
 const { computeMonthlyKPIs, saveMonthlySnapshot } = require('./reporting/monthlyKpis');
 const { getRedis } = require('./utils/redisClient');
-app.get('/api/kpis/monthly', async (req, res) => {
+const { authenticateToken } = require('./middleware/authMiddleware');
+const { detectAnomalies } = require('./analytics/anomalyDetector');
+const { initKpiScheduler } = require('./schedulers/kpiScheduler');
+app.get('/api/kpis/monthly', authenticateToken, async (req, res) => {
     try {
-        const userId = parseInt(req.query.userId || req.user?.id || 1); // ajustar para auth real
+    const userId = parseInt(req.user?.id || req.query.userId || 1);
         const year = parseInt(req.query.year) || new Date().getFullYear();
         const month = parseInt(req.query.month) || (new Date().getMonth() + 1);
         const account = req.query.account || 'ALL';
@@ -125,6 +144,69 @@ app.get('/api/kpis/monthly', async (req, res) => {
     }
 });
 
+// Listar snapshots salvos (paginado simples)
+app.get('/api/kpis/snapshots', authenticateToken, async (req,res)=>{
+    try {
+        const userId = parseInt(req.user?.id || 0);
+        const year = parseInt(req.query.year) || new Date().getFullYear();
+        const [rows] = await pool.query(`SELECT year, month, total, total_business, total_personal, projection, hhi, created_at FROM monthly_snapshots WHERE user_id=? AND year=? ORDER BY year DESC, month DESC`, [userId, year]);
+        res.json({ year, snapshots: rows });
+    } catch(e){
+        console.error('Erro listar snapshots', e); res.status(500).json({ error:'Erro ao listar snapshots'});
+    }
+});
+
+// Esquema para integração Metabase/Superset
+app.get('/api/kpis/schema', authenticateToken, async (req,res)=>{
+    res.json({
+        views: [
+            {
+                name: 'monthly_kpi_view',
+                description: 'KPIs mensais agregados por usuário',
+                columns: [
+                    { name:'user_id', type:'INT' },
+                        { name:'username', type:'VARCHAR' },
+                        { name:'year', type:'INT' },
+                        { name:'month', type:'INT' },
+                        { name:'total', type:'DECIMAL' },
+                        { name:'total_business', type:'DECIMAL' },
+                        { name:'total_personal', type:'DECIMAL' },
+                        { name:'projection', type:'DECIMAL' },
+                        { name:'hhi', type:'DECIMAL' },
+                        { name:'created_at', type:'TIMESTAMP' },
+                        { name:'updated_at', type:'TIMESTAMP' }
+                ]
+            }
+        ],
+        notes: 'Conecte sua ferramenta BI ao MySQL e consulte SELECT * FROM monthly_kpi_view. Para granularidade diária usar tabela expenses.'
+    });
+});
+
+// Endpoint manual para forçar snapshot do mês atual (pode ser usado em cron externo)
+app.post('/api/kpis/snapshot/refresh', authenticateToken, async (req,res)=>{
+    try {
+        const userId = parseInt(req.user?.id || 0);
+        const now = new Date();
+        const year = parseInt(req.body.year) || now.getFullYear();
+        const month = parseInt(req.body.month) || (now.getMonth()+1);
+        const kpis = await computeMonthlyKPIs({ pool, userId, year, month, account:'ALL' });
+        if (kpis.expenses && kpis.expenses.length===0) return res.status(400).json({ message:'Sem dados para snapshot' });
+        await saveMonthlySnapshot(pool, userId, year, month, kpis);
+        res.json({ message:'Snapshot atualizado', year, month });
+    } catch(e){ console.error('Erro snapshot refresh', e); res.status(500).json({ error:'Erro ao gerar snapshot'}); }
+});
+
+// Rota de anomalias com z-score (últimos 6 meses)
+app.get('/api/kpis/anomaly', authenticateToken, async (req,res)=>{
+    try {
+        const userId = parseInt(req.user?.id || 0);
+        const year = parseInt(req.query.year) || new Date().getFullYear();
+        const month = parseInt(req.query.month) || (new Date().getMonth()+1);
+        const result = await detectAnomalies({ pool, userId, year, month });
+        res.json(result);
+    } catch(e){ console.error('Erro anomaly', e); res.status(500).json({ error:'Erro ao detectar anomalias'}); }
+});
+
 
 // --- 5. CONFIGURAÇÃO DO MULTER (UPLOAD DE FICHEIROS) ---
 const storage = multer.diskStorage({
@@ -140,29 +222,7 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage: storage });
 
-// --- 6. MIDDLEWARE DE AUTENTICAÇÃO ---
-const authenticateToken = (req, res, next) => {
-    const authHeader = req.headers['authorization'];
-    const token = authHeader && authHeader.split(' ')[1];
-    
-    console.log('Auth middleware - Headers:', req.headers);
-    console.log('Auth middleware - Token:', token ? 'Token presente' : 'Token ausente');
-    
-    if (token == null) {
-        console.log('Auth middleware - Token nulo, retornando 401');
-        return res.status(401).json({ message: 'Acesso não autorizado.' });
-    }
-
-    jwt.verify(token, process.env.JWT_SECRET || 'seu_segredo_super_secreto', (err, user) => {
-        if (err) {
-            console.log('Auth middleware - Erro na verificação do token:', err.message);
-            return res.status(403).json({ message: 'Token inválido ou expirado.' });
-        }
-        console.log('Auth middleware - Token válido para usuário:', user.username);
-        req.user = user;
-        next();
-    });
-};
+// (auth middleware agora em middleware/authMiddleware.js)
 
 // --- 7. ROTAS PÚBLICAS (AUTENTICAÇÃO) ---
 app.post('/api/register', async (req, res) => {
