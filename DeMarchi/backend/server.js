@@ -1942,13 +1942,15 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
     // (Removida página antiga de resumo por contas para evitar página solta redundante)
 
     // 📋 PÁGINA DE TODAS AS TRANSAÇÕES (tabela compacta)
-    doc.addPage();
+    // Adiciona nova página apenas se espaço remanescente for insuficiente
+    const needHeightTrans = 420; // altura média para header + ~15 linhas
+    if (doc.y > doc.page.height - needHeightTrans) doc.addPage(); else doc.moveDown(2);
     doc.rect(0,0,doc.page.width,90).fill('#0F766E');
     doc.fillColor('#FFFFFF').fontSize(26).text('📋 TODAS AS TRANSAÇÕES',50,30,{width:500,align:'center'});
     const drawTransHeader = (y)=>{doc.roundedRect(40,y,510,22,6).fill('#14B8A6');doc.fillColor('#FFFFFF').fontSize(10);doc.text('Data',50,y+7,{width:50});doc.text('Tipo',100,y+7,{width:40});doc.text('Plano',140,y+7,{width:50});doc.text('Conta',190,y+7,{width:90});doc.text('Descrição',280,y+7,{width:190});doc.text('Valor',470,y+7,{width:70,align:'right'});};
     let ty=130; drawTransHeader(ty); ty+=28; doc.fontSize(9);
     const sortedAll=[...expenses].sort((a,b)=> new Date(b.transaction_date)-new Date(a.transaction_date));
-    sortedAll.forEach((e,i)=>{ if(ty+18>doc.page.height-60){doc.addPage(); ty=60; drawTransHeader(ty); ty+=28;} const bg=i%2===0?'#F8FAFC':'#FFFFFF'; doc.roundedRect(40,ty,510,18,3).fill(bg); const tipo = e.is_business_expense ? 'Emp' : 'Pes'; doc.fillColor(e.is_business_expense ? '#92400E':'#1E3A8A'); doc.text(new Date(e.transaction_date).toLocaleDateString('pt-BR'),50,ty+5,{width:50}); doc.text(tipo,100,ty+5,{width:40}); doc.text(e.account_plan_code||'-',140,ty+5,{width:50}); doc.text(e.account||'-',190,ty+5,{width:90}); const desc=(e.description||'').substring(0,40); doc.text(desc,280,ty+5,{width:190}); doc.text(parseFloat(e.amount).toFixed(2),470,ty+5,{width:70,align:'right'}); ty+=22; });
+    sortedAll.forEach((e,i)=>{ if(ty+22>doc.page.height-70){doc.addPage(); ty=60; drawTransHeader(ty); ty+=28;} const bg=i%2===0?'#F8FAFC':'#FFFFFF'; doc.roundedRect(40,ty,510,18,3).fill(bg); const tipo = e.is_business_expense ? 'Emp' : 'Pes'; doc.fillColor(e.is_business_expense ? '#92400E':'#1E3A8A'); doc.text(new Date(e.transaction_date).toLocaleDateString('pt-BR'),50,ty+5,{width:50}); doc.text(tipo,100,ty+5,{width:40}); doc.text(e.account_plan_code||'-',140,ty+5,{width:50}); doc.text(e.account||'-',190,ty+5,{width:90}); const desc=(e.description||'').substring(0,40); doc.text(desc,280,ty+5,{width:190}); doc.text(parseFloat(e.amount).toFixed(2),470,ty+5,{width:70,align:'right'}); ty+=22; });
     // Totais finais
     if (ty+40>doc.page.height){doc.addPage(); ty=60;}
     doc.roundedRect(40,ty,510,24,6).fill('#ECFDF5');
@@ -1956,7 +1958,8 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
     doc.text(`R$ ${total.toFixed(2)}`,470,ty+7,{width:70,align:'right'});
 
         // 📊 BI PESSOAL (resumo similar ao empresarial)
-        doc.addPage();
+    // BI Pessoal: só quebra se faltar espaço
+    if (doc.y > doc.page.height - 520) doc.addPage(); else doc.moveDown(2);
         doc.rect(0,0,doc.page.width,90).fill('#1E3A8A');
         doc.fillColor('#FFFFFF').fontSize(26).text('🏠 BI GASTOS PESSOAIS',50,30,{width:500,align:'center'});
         const diasUnicosPes = new Set(pessoaisFiltrados.map(e => new Date(e.transaction_date).toISOString().slice(0,10))).size;
@@ -1992,7 +1995,7 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
         doc.fontSize(8).fillColor('#475569').text('Nota: tabela compactada – valores em BRL.',50,detYp+6,{width:490});
 
     // ===== PÁGINA COMPARATIVO MÊS A MÊS POR PLANO =====
-    doc.addPage();
+    if (doc.y > doc.page.height - 500) doc.addPage(); else doc.moveDown(2);
     doc.rect(0,0,doc.page.width,80).fill('#1E40AF');
     doc.fillColor('#FFFFFF').fontSize(24).text('📊 Comparativo Mês a Mês por Plano',50,25,{width:500,align:'center'});
     doc.fontSize(10).fillColor('#E0E7FF').text(`Mês Atual: ${month}/${year}  •  Mês Anterior: ${prevMonth}/${prevYear}`,50,70,{width:500,align:'center'});
@@ -2008,7 +2011,7 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
     doc.fontSize(9).fillColor('#475569').text('Δ % calculado sobre o mês anterior. Quando anterior=0 e atual>0, assume 100%.',50,cy+10,{width:490});
 
     // ===== PÁGINA EFICIÊNCIA & OUTLIERS =====
-    doc.addPage();
+    if (doc.y > doc.page.height - 480) doc.addPage(); else doc.moveDown(2);
     doc.rect(0,0,doc.page.width,85).fill('#0F766E');
     doc.fillColor('#FFFFFF').fontSize(22).text('⚙️ Eficiência & Outliers (Empresarial)',0,30,{width:doc.page.width,align:'center'});
     // Eficiência cards
@@ -2031,7 +2034,7 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
     doc.fontSize(8).fillColor('#475569').text(`Média R$ ${mediaEmp.toFixed(2)} | Desvio ${stdEmp.toFixed(2)} | Limite R$ ${limiteOutlier.toFixed(2)}`,60,oy+6,{width:470});
 
     // ===== PÁGINA PROJEÇÃO & CONCENTRAÇÃO =====
-    doc.addPage();
+    if (doc.y > doc.page.height - 480) doc.addPage(); else doc.moveDown(2);
     doc.rect(0,0,doc.page.width,90).fill('#6D28D9');
     doc.fillColor('#FFFFFF').fontSize(24).text('🔮 Projeção & Concentração',0,32,{width:doc.page.width,align:'center'});
     const daysInMonth = endDate.getDate();
