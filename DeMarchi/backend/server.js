@@ -8,6 +8,27 @@ const jwt = require('jsonwebtoken');
 const multer = require('multer');
 const { ChartJSNodeCanvas } = require('chartjs-node-canvas');
 const pdfkit = require('pdfkit');
+// Emoji suporte via twemoji (converte para imagem PNG)
+let twemoji; try { twemoji = require('twemoji'); } catch(e) { twemoji = null; }
+const https = require('https');
+const { createWriteStream, existsSync, mkdirSync } = require('fs');
+const path = require('path');
+// Função cache simples para baixar emoji como PNG (32x32) e desenhar no PDF
+async function drawEmoji(doc, emoji, x, y, size=18){
+    if(!twemoji){ doc.fontSize(size).text(emoji,x,y); return; }
+    const code = twemoji.convert.toCodePoint(emoji);
+    const cacheDir = path.join(__dirname,'emoji-cache');
+    if(!existsSync(cacheDir)) mkdirSync(cacheDir);
+    const filePath = path.join(cacheDir, code + '.png');
+    const url = `https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/${code}.png`;
+    const ensureFile = ()=> new Promise((resolve)=>{
+        if(existsSync(filePath)) return resolve();
+        const file = createWriteStream(filePath);
+        https.get(url,res=>{res.pipe(file); file.on('finish',()=>file.close(()=>resolve()));}).on('error',()=>{try{file.close();}catch{} resolve();});
+    });
+    await ensureFile();
+    try { doc.image(filePath, x, y, { width:size, height:size }); } catch { doc.fontSize(size).text(emoji,x,y); }
+}
 const fs = require('fs');
 const path = require('path');
 require('dotenv').config();
@@ -2061,7 +2082,10 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
     // Força sempre nova página para evitar sobreposição quando a seção anterior (Outliers) cresce.
     doc.addPage();
     doc.rect(0,0,doc.page.width,90).fill('#6D28D9');
-    doc.fillColor('#FFFFFF').fontSize(24).text('🔮 Projeção & Concentração',0,32,{width:doc.page.width,align:'center'});
+    // Título com emoji desenhado para garantir consistência cross-plataforma
+    const titleText = ' Projeção & Concentração';
+    try { await drawEmoji(doc,'🔮', (doc.page.width/2)-140, 28, 28); } catch {}
+    doc.fillColor('#FFFFFF').fontSize(24).text(titleText,0,32,{width:doc.page.width,align:'center'});
     // Emojis: pdfkit usa fonte atual. A fonte NotoSans-Regular.ttf já cobre vários emojis básicos monocromáticos.
     // Para suporte mais amplo, poderia-se carregar NotoColorEmoji ou Twemoji convertida em fonte e registrar via doc.registerFont('emoji','caminho.ttf') e alternar doc.font('emoji') temporariamente.
     const daysInMonth = endDate.getDate();
@@ -2092,10 +2116,15 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
         doc.addPage();
         doc.rect(0,0,doc.page.width,doc.page.height).fill('#F0FDF4');
         const centerX = doc.page.width/2;
-        doc.fillColor('#059669').fontSize(80).text('🎉', centerX-40, 140);
+    try { await drawEmoji(doc,'🎉', centerX-40, 140, 80); } catch { doc.fillColor('#059669').fontSize(80).text('🎉', centerX-40, 140); }
         doc.fontSize(30).fillColor('#065F46').text('PARABÉNS!', 0, 230, { align: 'center' });
         doc.fontSize(16).fillColor('#047857').text('Você está no controle das suas finanças!', 0, 270, { align: 'center' });
-        doc.fontSize(14).fillColor('#059669').text('Mantenha a consistência e alcance objetivos maiores! 🚀', 0, 300, { align: 'center' });
+        try {
+            doc.fontSize(14).fillColor('#059669').text('Mantenha a consistência e alcance objetivos maiores!  ', 0, 300, { align: 'center' });
+            await drawEmoji(doc,'🚀', centerX+200, 296, 24);
+        } catch {
+            doc.fontSize(14).fillColor('#059669').text('Mantenha a consistência e alcance objetivos maiores! 🚀', 0, 300, { align: 'center' });
+        }
         doc.fontSize(12).fillColor('#065F46').text('💡 Foco no próximo mês', 0, 350, { align: 'center', underline:true });
         const dicas = [
             '🗓️ Registre micro despesas diariamente',
