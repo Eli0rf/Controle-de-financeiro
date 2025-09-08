@@ -1842,40 +1842,59 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
             const byPlanoEmp = {}; empresariais.forEach(e=>{const p=e.account_plan_code||'N/A'; byPlanoEmp[p]=(byPlanoEmp[p]||0)+parseFloat(e.amount)});
             const planosOrdenadosEmp = Object.entries(byPlanoEmp).sort((a,b)=>b[1]-a[1]);
             let tableY = 280; doc.fontSize(14).fillColor('#1E293B').text('📊 Distribuição por Planos (Empresarial)',50,tableY); tableY+=18;
+            // Ajuste dinâmico de densidade: calcula altura alvo para caber todos os planos
+            const maxHeight= doc.page.height - 140; // limite inferior disponível
+            let headerH=16; let rowH=13; let fontRow=8; let barHeight=6; let barWidth=140;
+            const totalLinhas = planosOrdenadosEmp.length;
+            if (tableY + headerH + totalLinhas*rowH > maxHeight) {
+                // Primeira compressão
+                rowH = 11; fontRow=7; barHeight=5; barWidth=120;
+            }
+            if (tableY + headerH + totalLinhas*rowH > maxHeight) {
+                // Segunda compressão - modo ultra compacto
+                rowH = 9; fontRow=6; barHeight=4; barWidth=100;
+            }
             // Cabeçalho
-            doc.fontSize(8);
-            const headerH=16; const rowH=13; const maxHeight= doc.page.height - 140; // limite visual
+            doc.fontSize(fontRow);
             doc.roundedRect(50,tableY,490,headerH,4).fill('#CBD5E1');
             doc.fillColor('#0F172A');
-            doc.text('Plano',58,tableY+4,{width:90});
-            doc.text('Valor',148,tableY+4,{width:70,align:'right'});
-            doc.text('% Total',218,tableY+4,{width:50,align:'right'});
-            doc.text('Teto',268,tableY+4,{width:70,align:'right'});
-            doc.text('% do Teto',338,tableY+4,{width:60,align:'right'});
-            doc.text('Uso',398,tableY+4,{width:142});
+            const headYOffset = headerH - (headerH-8);
+            doc.text('Plano',58,tableY+4,{width:70});
+            doc.text('R$',128,tableY+4,{width:38,align:'right'});
+            doc.text('%Tot',166,tableY+4,{width:32,align:'right'});
+            doc.text('Teto',198,tableY+4,{width:50,align:'right'});
+            doc.text('%Teto',248,tableY+4,{width:42,align:'right'});
+            doc.text('Uso',290,tableY+4,{width:110});
+            doc.text('Status',400,tableY+4,{width:50});
+            doc.text('Share',450,tableY+4,{width:80});
             tableY+=headerH+2;
-            const barWidth=140;
             planosOrdenadosEmp.forEach(([pl,val],i)=>{
-                if(tableY+rowH>maxHeight){ // corta se ultrapassar limite e adiciona nota
-                    doc.fillColor('#64748B').fontSize(7).text('...demais planos omitidos para caber em uma página...',50,tableY+4,{width:490,align:'center'});
-                    tableY = maxHeight+10; // força sair
-                    return;
+                if(tableY+rowH>maxHeight){
+                    // Se mesmo após compressão não couber, substitui últimas linhas por nota
+                    doc.fillColor('#64748B').fontSize(fontRow).text('...compressão máxima atingida, alguns planos ocultos...',50,tableY+2,{width:490,align:'center'});
+                    tableY = maxHeight+5; return;
                 }
                 const pctTotal = (val/totalEmpresarial)*100;
                 const id = parseInt(pl); const teto = tetos[id] || 0; const pctTeto = teto>0 ? (val/teto)*100 : 0;
-                const bg = i % 2 === 0 ? '#FFFFFF':'#F8FAFC';
+                const bg = i % 2 === 0 ? '#FFFFFF':'#F1F5F9';
                 doc.roundedRect(50,tableY,490,rowH-1,2).fill(bg);
-                doc.fillColor('#334155');
-                doc.text(pl,58,tableY+3,{width:90});
-                doc.text(`R$ ${val.toFixed(2)}`,148,tableY+3,{width:70,align:'right'});
-                doc.text(`${pctTotal.toFixed(1)}%`,218,tableY+3,{width:50,align:'right'});
-                doc.text(teto>0?`R$ ${teto.toFixed(0)}`:'-',268,tableY+3,{width:70,align:'right'});
-                const pctTetoFmt = teto>0?`${Math.min(pctTeto,999).toFixed(0)}%`:'-';
-                doc.text(pctTetoFmt,338,tableY+3,{width:60,align:'right'});
-                // Barra de uso do teto
-                const barX = 398; const barY = tableY+3; const pctClamped = Math.min(100, pctTeto);
-                doc.roundedRect(barX,barY,barWidth,6,3).fill('#E2E8F0');
-                doc.roundedRect(barX,barY,(pctClamped/100)*barWidth,6,3).fill(pctTeto>100?'#DC2626':pctTeto>85?'#F59E0B':'#10B981');
+                doc.fillColor('#1E293B').fontSize(fontRow);
+                const labelPlano = pl.toString().length>10 ? pl.toString().slice(0,9)+'…' : pl;
+                doc.text(labelPlano,58,tableY+rowH/3-1,{width:70});
+                doc.text(val.toFixed(0),128,tableY+rowH/3-1,{width:38,align:'right'});
+                doc.text(pctTotal.toFixed(1),166,tableY+rowH/3-1,{width:32,align:'right'});
+                doc.text(teto>0?teto.toFixed(0):'-',198,tableY+rowH/3-1,{width:50,align:'right'});
+                doc.text(teto>0?Math.min((val/teto)*100,999).toFixed(0):'-',248,tableY+rowH/3-1,{width:42,align:'right'});
+                // Barra
+                const barX=290; const barY=tableY+ (rowH-barHeight)/2; const pctClamped=Math.min(100,(val/(tetos[id]||val))*100);
+                doc.roundedRect(barX,barY,barWidth,barHeight,barHeight/2).fill('#E2E8F0');
+                doc.roundedRect(barX,barY,(pctClamped/100)*barWidth,barHeight,barHeight/2).fill(pctClamped>100?'#DC2626':pctClamped>85?'#F59E0B':'#10B981');
+                // Status Emoji
+                let statusEmoji='✅';
+                if(pctTeto>100) statusEmoji='🔥'; else if(pctTeto>85) statusEmoji='⚠️';
+                doc.text(statusEmoji,400,tableY+rowH/3-1,{width:50});
+                // Share textual breve
+                doc.text(pctTotal.toFixed(1)+'%',450,tableY+rowH/3-1,{width:80});
                 tableY+=rowH;
             });
             // Mini BI (resumo de concentração) — logo abaixo se couber
