@@ -2045,7 +2045,7 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
     const projecao = isMesAtual ? (mediaDiariaGeral * daysInMonth) : total;
     const crescimentoProj = total ? ((projecao - total)/ total)*100 : 0;
     // Cards
-    const projY=110; const card=(x,t,v,c)=>{doc.roundedRect(x,projY,180,80,14).fill(c);doc.fillColor('#FFFFFF').fontSize(11).text(t,x+14,projY+14,{width:150});doc.fontSize(18).text(v,x+14,projY+38,{width:150});};
+    const projY=110; const card=(x,t,v,c)=>{doc.roundedRect(x,projY,180,80,14).fill(c);doc.fillColor('#F1F5F9').fontSize(10).text(t,x+14,projY+12,{width:150});doc.fontSize(20).fillColor('#FFFFFF').text(v,x+14,projY+34,{width:150});};
     card(55,'Média Diária Observada',`R$ ${mediaDiariaGeral.toFixed(2)}`,'#7C3AED');
     card(245,'Projeção Encerramento',`R$ ${projecao.toFixed(2)}`,'#9333EA');
     card(435,'Crescimento vs Atual',`${crescimentoProj>=0?'+':''}${crescimentoProj.toFixed(1)}%`,'#A855F7');
@@ -2056,10 +2056,10 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
     const shares = topPlans.map(([p,v])=>({ plano:p, share:v/totalAtualLocal }));
     const hhi = shares.reduce((s,sh)=> s + Math.pow(sh.share,2),0);
     let cy2 = projY + 130;
-    doc.fontSize(14).fillColor('#FFFFFF').text('Concentração Top 5 (HHI)',55,cy2); cy2+=28;
-    doc.fontSize(10).fillColor('#EDE9FE').text(`HHI ${(hhi*10000).toFixed(0)} • ${(hhi<0.15?'Baixa':'Alta')} concentração`,55,cy2,{width:300}); cy2+=20;
-    shares.forEach((o,i)=>{ const barW = o.share*300; if(cy2+18>doc.page.height-60){doc.addPage();cy2=60;} doc.roundedRect(55,cy2,320,14,6).fill('#DDD6FE'); doc.roundedRect(55,cy2,barW,14,6).fill('#C4B5FD'); doc.fillColor('#4C1D95').fontSize(9).text(`${o.plano} ${(o.share*100).toFixed(1)}%`,60,cy2+3); cy2+=22; });
-    doc.fontSize(8).fillColor('#E9D5FF').text('Escala HHI 0-10000. <1500 baixa, 1500-2500 moderada, >2500 alta.',55,cy2+4,{width:480});
+    doc.fontSize(14).fillColor('#FDF4FF').text('Concentração Top 5 (HHI)',55,cy2); cy2+=26;
+    doc.fontSize(10).fillColor('#E9D5FF').text(`HHI ${(hhi*10000).toFixed(0)} • ${(hhi<0.15?'Baixa':'Alta')} concentração`,55,cy2,{width:320}); cy2+=18;
+    shares.forEach((o,i)=>{ const barW = o.share*300; if(cy2+18>doc.page.height-60){doc.addPage();cy2=60; doc.fontSize(14).fillColor('#6D28D9').text('Concentração (cont.)',55,cy2); cy2+=24;} doc.roundedRect(55,cy2,320,14,6).fill('#4C1D95'); doc.roundedRect(55,cy2,barW,14,6).fill('#C084FC'); doc.fillColor('#FFFFFF').fontSize(9).text(`${o.plano} ${(o.share*100).toFixed(1)}%`,60,cy2+3); cy2+=20; });
+    doc.fontSize(8).fillColor('#DDD6FE').text('Escala HHI 0-10000. <1500 baixa, 1500-2500 moderada, >2500 alta.',55,cy2+2,{width:480});
 
         // 🎊 PÁGINA FINAL MOTIVACIONAL (centralizada revisada)
         doc.addPage();
