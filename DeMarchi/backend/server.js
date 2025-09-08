@@ -1776,29 +1776,44 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
 
         // === FIM EMPRESARIAL ===
 
-        // 🏠 PÁGINA DE GASTOS PESSOAIS DETALHADOS
+        // 🏠 PÁGINA DE GASTOS PESSOAIS DETALHADOS (layout harmonizado tipo tabela)
         doc.addPage();
-        doc.rect(0, 0, doc.page.width, 80).fill('#059669');
-        doc.fillColor('#FFFFFF').fontSize(24).text('🏠 GASTOS PESSOAIS', 50, 25);
-        doc.moveDown(3);
-
-    if (pessoaisFiltrados.length === 0) {
-            doc.fontSize(16).fillColor('#6B7280').text('Nenhum gasto pessoal registrado no período.', { align: 'center' });
+        doc.rect(0,0,doc.page.width,90).fill('#065F46');
+        doc.fillColor('#FFFFFF').fontSize(26).text('🏠 GASTOS PESSOAIS DETALHADOS',50,30,{width:500,align:'center'});
+        if (pessoaisFiltrados.length === 0) {
+            doc.fontSize(16).fillColor('#6B7280').text('Nenhum gasto pessoal registrado no período.',0,150,{align:'center'});
         } else {
-            pessoaisFiltrados.forEach((e, index) => {
-                if (doc.y > 720) {
-                    doc.addPage();
-                    doc.moveDown(1);
-                }
-
-                doc.roundedRect(50, doc.y, 490, 50, 8).fill('#DBEAFE');
-                doc.fillColor('#1E40AF').fontSize(11);
-                doc.text(`📅 ${new Date(e.transaction_date).toLocaleDateString('pt-BR')}`, 60, doc.y + 8, { width: 100, align: 'left' });
-                doc.text(`💰 R$ ${parseFloat(e.amount).toFixed(2)}`, 160, doc.y + 8, { width: 100, align: 'left' });
-                doc.text(`🏦 ${e.account}`, 280, doc.y + 8, { width: 200, align: 'left' });
-                doc.text(`📝 ${e.description.substring(0, 40)}`, 60, doc.y + 25, { width: 420, align: 'left' });
-                doc.y += 60;
+            const headerY = 130;
+            const drawHeader = (y) => {
+                doc.roundedRect(50,y,490,22,6).fill('#10B981');
+                doc.fillColor('#FFFFFF').fontSize(10);
+                doc.text('Data',60,y+7,{width:55});
+                doc.text('Plano',115,y+7,{width:50});
+                doc.text('Conta',165,y+7,{width:90});
+                doc.text('Descrição',255,y+7,{width:180});
+                doc.text('Valor',440,y+7,{width:80,align:'right'});
+            };
+            drawHeader(headerY);
+            let rowY = headerY + 28;
+            const sorted = [...pessoaisFiltrados].sort((a,b)=> new Date(b.transaction_date)-new Date(a.transaction_date));
+            sorted.forEach((e,i)=>{
+                if (rowY + 20 > doc.page.height - 60) { doc.addPage(); rowY = 60; drawHeader(rowY); rowY += 28; }
+                const bg = i % 2 === 0 ? '#F1F5F9' : '#FFFFFF';
+                doc.roundedRect(50,rowY,490,18,3).fill(bg);
+                doc.fillColor('#1E293B').fontSize(9);
+                doc.text(new Date(e.transaction_date).toLocaleDateString('pt-BR'),60,rowY+5,{width:55});
+                doc.text(e.account_plan_code || '-',115,rowY+5,{width:50});
+                doc.text(e.account || '-',165,rowY+5,{width:90});
+                const desc = (e.description || '').substring(0,40);
+                doc.text(desc,255,rowY+5,{width:180});
+                doc.text(parseFloat(e.amount).toFixed(2),440,rowY+5,{width:80,align:'right'});
+                rowY += 22;
             });
+            if (rowY + 40 > doc.page.height) { doc.addPage(); rowY = 80; }
+            const totalP = sorted.reduce((s,e)=> s + parseFloat(e.amount),0);
+            doc.roundedRect(50,rowY,490,26,6).fill('#DCFCE7');
+            doc.fillColor('#065F46').fontSize(11).text('TOTAL PESSOAL',60,rowY+8,{width:380});
+            doc.text(`R$ ${totalP.toFixed(2)}`,440,rowY+8,{width:80,align:'right'});
         }
 
         // 🏦 PÁGINA POR CONTAS (LISTA RESUMIDA)
