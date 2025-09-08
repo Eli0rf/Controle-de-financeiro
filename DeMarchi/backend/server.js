@@ -114,6 +114,13 @@ ensureKpiView();
 setTimeout(()=>{
     try { initKpiScheduler({ pool, computeMonthlyKPIs, saveMonthlySnapshot }); } catch(e){ console.error('Falha init scheduler', e); }
 }, 2000);
+
+// Global error handler (last middleware)
+app.use((err, req, res, next) => {
+    console.error('🔥 Erro não tratado:', err.stack || err);
+    if (res.headersSent) return next(err);
+    res.status(500).json({ error: 'INTERNAL_ERROR', message: err.message });
+});
 // ====== API KPIs Mensais (JSON) ======
 const { computeMonthlyKPIs, saveMonthlySnapshot } = require('./reporting/monthlyKpis');
 const { getRedis } = require('./utils/redisClient');
@@ -149,6 +156,23 @@ app.get('/api/kpis/snapshots', authenticateToken, async (req,res)=>{
     try {
         const userId = parseInt(req.user?.id || 0);
         const year = parseInt(req.query.year) || new Date().getFullYear();
+        // Garante existência da tabela (primeiro uso em ambiente limpo)
+        await pool.query(`CREATE TABLE IF NOT EXISTS monthly_snapshots (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            user_id INT NOT NULL,
+            year INT NOT NULL,
+            month INT NOT NULL,
+            total DECIMAL(12,2) NOT NULL,
+            total_business DECIMAL(12,2) NOT NULL,
+            total_personal DECIMAL(12,2) NOT NULL,
+            by_plan JSON,
+            by_account JSON,
+            projection DECIMAL(12,2) DEFAULT 0,
+            hhi DECIMAL(10,5) DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            UNIQUE KEY uniq_user_month (user_id, year, month)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;`);
         const [rows] = await pool.query(`SELECT year, month, total, total_business, total_personal, projection, hhi, created_at FROM monthly_snapshots WHERE user_id=? AND year=? ORDER BY year DESC, month DESC`, [userId, year]);
         res.json({ year, snapshots: rows });
     } catch(e){
@@ -1415,22 +1439,8 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
     const totalPessoal = pessoaisFiltrados.reduce((sum, e) => sum + parseFloat(e.amount), 0);
 
         // ===== Dados do mês anterior para comparativo =====
-        const prevMonth = month === 1 ? 12 : month - 1;
-        const prevYear = month === 1 ? year - 1 : year;
-        const prevStart = new Date(prevYear, prevMonth - 1, 1);
-        const prevEnd = new Date(prevYear, prevMonth, 0);
-        let prevSql = `SELECT id, amount, account_plan_code, is_business_expense, transaction_date FROM expenses WHERE user_id = ? AND transaction_date >= ? AND transaction_date <= ?`;
-        const [prevExpenses] = await pool.query(prevSql, [userId, prevStart.toISOString().slice(0,10), prevEnd.toISOString().slice(0,10)]);
-        const prevByPlan = {};
-        prevExpenses.forEach(e => {
-            const plano = e.account_plan_code || 'Sem Plano';
-            prevByPlan[plano] = (prevByPlan[plano] || 0) + parseFloat(e.amount);
-        });
-        const currByPlan = {}; // copia de porPlano mas garantindo independência
-        Object.entries(porPlano).forEach(([p,v])=> currByPlan[p]=v);
-
-        // Agrupamentos para gráficos
-        const porPlano = {};
+    // Agrupamentos para gráficos (definir antes de usar comparativos)
+    const porPlano = {};
         const porConta = {};
         const porDia = {};
         
@@ -1444,7 +1454,18 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
             porDia[dia] = (porDia[dia] || 0) + parseFloat(e.amount);
         });
 
-        // Maior gasto e menor gasto
+    // Após popular porPlano podemos calcular comparativo mês anterior
+    const prevMonth = month === 1 ? 12 : month - 1;
+    const prevYear = month === 1 ? year - 1 : year;
+    const prevStart = new Date(prevYear, prevMonth - 1, 1);
+    const prevEnd = new Date(prevYear, prevMonth, 0);
+    let prevSql = `SELECT id, amount, account_plan_code, is_business_expense, transaction_date FROM expenses WHERE user_id = ? AND transaction_date >= ? AND transaction_date <= ?`;
+    const [prevExpenses] = await pool.query(prevSql, [userId, prevStart.toISOString().slice(0,10), prevEnd.toISOString().slice(0,10)]);
+    const prevByPlan = {};
+    prevExpenses.forEach(e => { const plano = e.account_plan_code || 'Sem Plano'; prevByPlan[plano] = (prevByPlan[plano] || 0) + parseFloat(e.amount); });
+    const currByPlan = {}; Object.entries(porPlano).forEach(([p,v])=> currByPlan[p]=v);
+
+    // Maior gasto e menor gasto
         const maiores = expenses.sort((a, b) => parseFloat(b.amount) - parseFloat(a.amount));
         const maiorGasto = maiores[0];
         const menorGasto = maiores[maiores.length - 1];
