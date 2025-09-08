@@ -1328,6 +1328,21 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
     const totalEmpresarial = empresariais.reduce((sum, e) => sum + parseFloat(e.amount), 0);
     const totalPessoal = pessoaisFiltrados.reduce((sum, e) => sum + parseFloat(e.amount), 0);
 
+        // ===== Dados do mês anterior para comparativo =====
+        const prevMonth = month === 1 ? 12 : month - 1;
+        const prevYear = month === 1 ? year - 1 : year;
+        const prevStart = new Date(prevYear, prevMonth - 1, 1);
+        const prevEnd = new Date(prevYear, prevMonth, 0);
+        let prevSql = `SELECT id, amount, account_plan_code, is_business_expense, transaction_date FROM expenses WHERE user_id = ? AND transaction_date >= ? AND transaction_date <= ?`;
+        const [prevExpenses] = await pool.query(prevSql, [userId, prevStart.toISOString().slice(0,10), prevEnd.toISOString().slice(0,10)]);
+        const prevByPlan = {};
+        prevExpenses.forEach(e => {
+            const plano = e.account_plan_code || 'Sem Plano';
+            prevByPlan[plano] = (prevByPlan[plano] || 0) + parseFloat(e.amount);
+        });
+        const currByPlan = {}; // copia de porPlano mas garantindo independência
+        Object.entries(porPlano).forEach(([p,v])=> currByPlan[p]=v);
+
         // Agrupamentos para gráficos
         const porPlano = {};
         const porConta = {};
@@ -1855,6 +1870,63 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
         const headerP=(y)=>{doc.roundedRect(50,y,490,20,4).fill('#2563EB');doc.fillColor('#FFFFFF').text('Data',60,y+6,{width:60});doc.text('Plano',120,y+6,{width:50});doc.text('Conta',170,y+6,{width:90});doc.text('Descrição',260,y+6,{width:150});doc.text('Valor',415,y+6,{width:60});}; headerP(detYp); detYp+=26;
         pessoaisFiltrados.sort((a,b)=> new Date(b.transaction_date)-new Date(a.transaction_date)).forEach(e=>{if(detYp+18>doc.page.height-60){doc.addPage();detYp=60;headerP(detYp);detYp+=26;} const bg=detYp%2===0?'#FFFFFF':'#F1F5F9'; doc.roundedRect(50,detYp,490,18,2).fill(bg); doc.fillColor('#1E293B').text(new Date(e.transaction_date).toLocaleDateString('pt-BR'),60,detYp+5,{width:60}); doc.text(e.account_plan_code||'-',120,detYp+5,{width:50}); doc.text(e.account||'-',170,detYp+5,{width:90}); const desc=(e.description||'').substring(0,30); doc.text(desc,260,detYp+5,{width:150}); doc.text(parseFloat(e.amount).toFixed(2),415,detYp+5,{width:60}); detYp+=22;});
         if(detYp+60>doc.page.height){doc.addPage();detYp=80;} doc.fontSize(9).fillColor('#475569').text('Nota: KPIs pessoais auxiliam decisões de redução de despesas e metas de economia.',50,detYp+10,{width:490});
+
+    // ===== PÁGINA COMPARATIVO MÊS A MÊS POR PLANO =====
+    doc.addPage();
+    doc.rect(0,0,doc.page.width,80).fill('#1E40AF');
+    doc.fillColor('#FFFFFF').fontSize(24).text('📊 Comparativo Mês a Mês por Plano',50,25,{width:500,align:'center'});
+    doc.fontSize(10).fillColor('#E0E7FF').text(`Mês Atual: ${month}/${year}  •  Mês Anterior: ${prevMonth}/${prevYear}`,50,70,{width:500,align:'center'});
+    const compHeaderY = 110;
+    const drawCompHeader = (y)=>{doc.roundedRect(50,y,490,22,6).fill('#3B82F6'); doc.fillColor('#FFFFFF').fontSize(10).text('Plano',60,y+7,{width:80}); doc.text('Atual',140,y+7,{width:80}); doc.text('Anterior',210,y+7,{width:80}); doc.text('Δ Valor',280,y+7,{width:90}); doc.text('Δ %',370,y+7,{width:70}); doc.text('Share Atual',440,y+7,{width:90});};
+    drawCompHeader(compHeaderY); let cy=compHeaderY+28;
+    const totalAtual = Object.values(currByPlan).reduce((a,b)=>a+b,0)||1;
+    const planosUnion = Array.from(new Set([...Object.keys(currByPlan),...Object.keys(prevByPlan)])).sort((a,b)=> parseInt(a)-parseInt(b));
+    const linhasComp = planosUnion.map(pl=>{const a=currByPlan[pl]||0; const b=prevByPlan[pl]||0; const delta=a-b; const deltaPct = b===0 ? (a>0?100:0) : (delta/b*100); return {pl,a,b,delta,deltaPct,share:a/totalAtual};});
+    linhasComp.sort((x,y)=>Math.abs(y.delta)-Math.abs(x.delta));
+    linhasComp.slice(0,25).forEach((r,i)=>{ if(cy+20>doc.page.height-60){doc.addPage(); cy=60; drawCompHeader(cy); cy+=28;} const bg=i%2===0?'#F1F5F9':'#FFFFFF'; doc.roundedRect(50,cy,490,18,3).fill(bg); doc.fillColor('#1E293B').fontSize(9); doc.text(r.pl,60,cy+5,{width:80}); doc.text(`R$ ${r.a.toFixed(2)}`,140,cy+5,{width:70}); doc.text(`R$ ${r.b.toFixed(2)}`,210,cy+5,{width:70}); const sign = r.delta>=0?'+':''; doc.text(`${sign}R$ ${r.delta.toFixed(2)}`,280,cy+5,{width:80}); const pctSign = r.deltaPct>=0?'+':''; doc.text(`${pctSign}${r.deltaPct.toFixed(1)}%`,370,cy+5,{width:70}); doc.text(`${(r.share*100).toFixed(1)}%`,440,cy+5,{width:90}); cy+=22; });
+    if(cy+40>doc.page.height){doc.addPage(); cy=60;}
+    doc.fontSize(9).fillColor('#475569').text('Δ % calculado sobre o mês anterior. Quando anterior=0 e atual>0, assume 100%.',50,cy+10,{width:490});
+
+    // ===== PÁGINA EFICIÊNCIA & OUTLIERS =====
+    doc.addPage();
+    doc.rect(0,0,doc.page.width,80).fill('#0F766E');
+    doc.fillColor('#FFFFFF').fontSize(24).text('⚙️ Eficiência & Outliers (Empresarial)',50,25,{width:500,align:'center'});
+    // Eficiência
+    const businessDaysInMonth = Array.from({length: endDate.getDate()},(_,i)=> new Date(year, month-1, i+1)).filter(d=> d.getDay()!=0 && d.getDay()!=6).length;
+    const custoMedioDiaUtil = businessDaysInMonth? totalEmpresarial / businessDaysInMonth : totalEmpresarial;
+    const ticketMedioEmp = empresariais.length ? totalEmpresarial / empresariais.length : 0;
+    doc.fontSize(12).fillColor('#FFFFFF').text(`Dias Úteis: ${businessDaysInMonth}  •  Custo Médio por Dia Útil: R$ ${custoMedioDiaUtil.toFixed(2)}  •  Ticket Médio: R$ ${ticketMedioEmp.toFixed(2)}`,60,80,{width:470,align:'left'});
+    // Outliers (acima de média + 1 desvio padrão)
+    const empValores = empresariais.map(e=>parseFloat(e.amount));
+    const mediaEmp = empValores.length ? empValores.reduce((a,b)=>a+b,0)/empValores.length : 0;
+    const stdEmp = empValores.length ? Math.sqrt(empValores.reduce((s,v)=> s + Math.pow(v-mediaEmp,2),0)/empValores.length) : 0;
+    const limiteOutlier = mediaEmp + stdEmp;
+    const outliers = empresariais.filter(e=> parseFloat(e.amount) > limiteOutlier).sort((a,b)=> parseFloat(b.amount)-parseFloat(a.amount)).slice(0,3);
+    let oy = 130; doc.fontSize(14).fillColor('#FFFFFF').text('Top 3 Outliers (> média + 1 desvio)',60,oy); oy+=30; doc.fontSize(10);
+    if(outliers.length===0){ doc.text('Nenhum outlier detectado.',60,oy); oy+=20; } else { outliers.forEach(o=>{ doc.text(`• ${new Date(o.transaction_date).toLocaleDateString('pt-BR')} | Plano ${o.account_plan_code||'-'} | R$ ${parseFloat(o.amount).toFixed(2)} | ${o.account}`,60,oy,{width:470}); oy+=16;}); }
+    doc.fontSize(9).fillColor('#D1FAE5').text(`Média: R$ ${mediaEmp.toFixed(2)}  •  Desvio Padrão: R$ ${stdEmp.toFixed(2)}  •  Limite: R$ ${limiteOutlier.toFixed(2)}`,60,oy+10,{width:470});
+
+    // ===== PÁGINA PROJEÇÃO & CONCENTRAÇÃO =====
+    doc.addPage();
+    doc.rect(0,0,doc.page.width,80).fill('#9333EA');
+    doc.fillColor('#FFFFFF').fontSize(24).text('🔮 Projeção & Concentração',50,25,{width:500,align:'center'});
+    const daysInMonth = endDate.getDate();
+    const diasComGasto = Object.keys(porDia).length;
+    const mediaDiariaGeral = diasComGasto ? total / diasComGasto : total;
+    const hoje = new Date();
+    const isMesAtual = (hoje.getFullYear()===year && (hoje.getMonth()+1)===month);
+    const diaHoje = isMesAtual ? hoje.getDate() : daysInMonth; // se não é mês atual, usar mês fechado
+    const projecao = isMesAtual ? (mediaDiariaGeral * daysInMonth) : total;
+    const crescimentoProj = total ? ((projecao - total)/ total)*100 : 0;
+    doc.fontSize(12).fillColor('#F5F3FF').text(`Dias no mês: ${daysInMonth} • Dias com gasto: ${diasComGasto} • Média diária observada: R$ ${mediaDiariaGeral.toFixed(2)}`,60,80,{width:470});
+    doc.fontSize(12).text(`Projeção de Encerramento: R$ ${projecao.toFixed(2)} (${crescimentoProj>=0?'+':''}${crescimentoProj.toFixed(1)}% vs gasto atual)`,60,100,{width:470});
+    if(!isMesAtual) doc.fontSize(9).fillColor('#DDD6FE').text('Mês encerrado: projeção = total realizado.',60,118,{width:470});
+    // Concentração (Herfindahl dos 5 maiores planos)
+    const shares = Object.values(currByPlan).sort((a,b)=>b-a).slice(0,5).map(v=> v/totalAtual);
+    const hhi = shares.reduce((s,sh)=> s + Math.pow(sh,2),0); // 0-1
+    let cx = 60; let cy2 = 160; doc.fontSize(14).fillColor('#FFFFFF').text('Índice de Concentração (HHI Top 5)',cx,cy2); cy2+=30; doc.fontSize(11).text(`HHI: ${(hhi*10000).toFixed(0)} (escala 0-10000)  •  Interpretação: ${hhi<0.15?'Baixa':'Alta'}`,cx,cy2); cy2+=25;
+    shares.forEach((s,i)=>{ const barW = s*300; doc.roundedRect(cx,cy2,320,12,6).fill('#F3E8FF'); doc.roundedRect(cx,cy2,barW,12,6).fill('#C084FC'); doc.fillColor('#4C1D95').fontSize(9).text(`#${i+1} ${(s*100).toFixed(1)}%`,cx+5,cy2+2); cy2+=22; });
+    doc.fontSize(9).fillColor('#E9D5FF').text('HHI < 1500 baixa concentração; 1500-2500 moderada; >2500 alta (escala convertida).',cx,cy2+5,{width:470});
 
         // 🎊 PÁGINA FINAL MOTIVACIONAL (centralizada revisada)
         doc.addPage();
