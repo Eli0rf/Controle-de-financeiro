@@ -98,6 +98,32 @@ app.post('/test-cors', (req, res) => {
         timestamp: new Date().toISOString()
     });
 });
+// ====== API KPIs Mensais (JSON) ======
+const { computeMonthlyKPIs, saveMonthlySnapshot } = require('./reporting/monthlyKpis');
+const { getRedis } = require('./utils/redisClient');
+app.get('/api/kpis/monthly', async (req, res) => {
+    try {
+        const userId = parseInt(req.query.userId || req.user?.id || 1); // ajustar para auth real
+        const year = parseInt(req.query.year) || new Date().getFullYear();
+        const month = parseInt(req.query.month) || (new Date().getMonth() + 1);
+        const account = req.query.account || 'ALL';
+        const cacheKey = `kpi:${userId}:${year}:${month}:${account}`;
+        const redis = getRedis();
+        if (redis) {
+            const cached = await redis.get(cacheKey);
+            if (cached) return res.json({ cached: true, ...JSON.parse(cached) });
+        }
+        const kpis = await computeMonthlyKPIs({ pool, userId, year, month, account });
+        if (kpis.expenses && kpis.expenses.length === 0) return res.json(kpis);
+        // Salva snapshot (não bloqueante)
+        saveMonthlySnapshot(pool, userId, year, month, kpis).catch(()=>{});
+        if (redis) redis.set(cacheKey, JSON.stringify(kpis), 'EX', 300); // 5min
+        res.json(kpis);
+    } catch (e) {
+        console.error('Erro KPIs mensais:', e);
+        res.status(500).json({ error: 'Erro ao calcular KPIs mensais' });
+    }
+});
 
 
 // --- 5. CONFIGURAÇÃO DO MULTER (UPLOAD DE FICHEIROS) ---
