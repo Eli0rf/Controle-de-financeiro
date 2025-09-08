@@ -30,7 +30,6 @@ async function drawEmoji(doc, emoji, x, y, size=18){
     try { doc.image(filePath, x, y, { width:size, height:size }); } catch { doc.fontSize(size).text(emoji,x,y); }
 }
 const fs = require('fs');
-const path = require('path');
 require('dotenv').config();
 
 // --- 2. CONFIGURAÇÕES PRINCIPAIS ---
