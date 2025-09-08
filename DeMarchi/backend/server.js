@@ -1358,6 +1358,32 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
         // Gera PDF estilizado
         const doc = new pdfkit();
         doc.registerFont('NotoSans', path.join(__dirname, 'fonts', 'NotoSans-Regular.ttf'));
+        // Registro opcional de fontes de emoji (se presentes na pasta fonts)
+        const emojiFontCandidates = ['NotoColorEmoji.ttf','NotoEmoji-Regular.ttf','Symbola.ttf','DejaVuSans.ttf'];
+        let emojiFontFound = false;
+        for (const fname of emojiFontCandidates) {
+            const fpath = path.join(__dirname,'fonts',fname);
+            if (fs.existsSync(fpath)) {
+                try { doc.registerFont('EmojiCapable', fpath); emojiFontFound = true; break; } catch(_) {}
+            }
+        }
+        // Helper simples para texto com possíveis emojis (usa fonte fallback se existir)
+        const useEmojiFont = (text) => emojiFontFound && /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u.test(text);
+        function drawText(text, x, y, options = {}) {
+            if (useEmojiFont(text)) {
+                // Render char a char para alternar fonte
+                let cursorX = x;
+                const chars = Array.from(text);
+                chars.forEach(ch => {
+                    const isEmoji = /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u.test(ch);
+                    const w = doc.font(isEmoji ? 'EmojiCapable' : 'NotoSans').fontSize(options.fontSize || doc._fontSize || 12).widthOfString(ch);
+                    doc.text(ch, cursorX, y, { ...options, continued: false });
+                    cursorX += w;
+                });
+            } else {
+                doc.font('NotoSans').text(text, x, y, options);
+            }
+        }
         doc.font('NotoSans');
 
         // 🎨 CAPA SUPER ESTILIZADA
@@ -1552,146 +1578,87 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
                     const colors = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#14B8A6'];
                     const color = colors[index % colors.length];
                     
-                    // Card principal com sombra (tamanho reduzido)
-                    doc.roundedRect(52, doc.y + 2, 490, 80, 12).fill('#00000020'); // Sombra mais escura
-                    // Escolher cor de fundo clara para melhor contraste
-                    const bgColor = ['#F3F4F6', '#E0E7FF', '#F0FDF4', '#FEF3C7', '#DBEAFE', '#FFF7ED', '#F1F5F9'][index % 7];
-                    doc.roundedRect(50, doc.y, 490, 80, 12).fill(bgColor);
-                    // Destaque para recorrente
-                    const isRecorrente = expenses.some(e => e.account_plan_code == plano && e.is_recurring_expense);
-                    // Posições relativas para evitar cortes
+                    // ----- CARD PLANO (layout revisado) -----
+                    const cardHeight = 100;
+                    doc.roundedRect(52, doc.y + 2, 490, cardHeight, 14).fill('#00000025'); // sombra
+                    const bgColor = ['#F8FAFC', '#EEF2FF', '#F0FDF4', '#FEF9C3', '#EFF6FF', '#FFF7ED', '#F1F5F9'][index % 7];
+                    doc.roundedRect(50, doc.y, 490, cardHeight, 14).fill(bgColor);
                     const cardY = doc.y;
-                    // Ícone e título do plano - linha 1
-                    doc.fillColor('#1E293B').fontSize(16).text(isRecorrente ? '🔁' : '💳', 65, cardY + 15);
-                    doc.fontSize(18).fillColor('#1E293B').text(`PLANO ${plano}`, 90, cardY + 15, { width: 200, align: 'left' });
-                    // Valor em destaque - linha 1, alinhado à direita
-                    doc.fontSize(22).fillColor('#059669').text(`R$ ${valor.toFixed(2)}`, 300, cardY + 12, { width: 170, align: 'right' });
-                    // Informações secundárias - linha 2
+                    const isRecorrente = expenses.some(e => e.account_plan_code == plano && e.is_recurring_expense);
+                    // Linha 1
+                    doc.font('NotoSans').fillColor('#1E293B').fontSize(18).text(`PLANO ${plano}`, 95, cardY + 18, { width: 240 });
+                    doc.fontSize(16).fillColor('#1E293B').text(isRecorrente ? '🔁' : '💳', 65, cardY + 20);
+                    doc.fontSize(24).fillColor('#059669').text(`R$ ${valor.toFixed(2)}`, 300, cardY + 15, { width: 200, align: 'right' });
+                    // Linha 2 combinada
                     const percentual = ((valor/total)*100).toFixed(1);
                     const transacoesPlano = expenses.filter(e => e.installment_plan == plano).length;
-                    doc.fontSize(12).fillColor('#6366F1').text(`📊 ${percentual}% do total`, 90, cardY + 45, { width: 180, align: 'left' });
-                    doc.fontSize(12).fillColor('#F59E0B').text(`📝 ${transacoesPlano} transação${transacoesPlano !== 1 ? 's' : ''}`, 280, cardY + 45, { width: 180, align: 'left' });
-                    // Uso versus teto
+                    doc.fontSize(11).fillColor('#334155').text(`📊 ${percentual}%  •  📝 ${transacoesPlano} transação${transacoesPlano !== 1 ? 's' : ''}`, 95, cardY + 50, { width: 300 });
+                    // Uso vs teto (linha 2 direita)
                     if (tetos && tetos[plano] !== undefined && tetos[plano] > 0) {
                         const teto = tetos[plano];
                         const usoPercent = (valor / teto) * 100;
-                        let statusColor = '#10B981';
-                        let statusEmoji = '✅';
+                        let statusColor = '#10B981'; let statusEmoji = '✅';
                         if (usoPercent >= 100) { statusColor = '#DC2626'; statusEmoji = '🔥'; }
                         else if (usoPercent >= 90) { statusColor = '#F97316'; statusEmoji = '⚠️'; }
                         else if (usoPercent >= 75) { statusColor = '#F59E0B'; statusEmoji = '🟡'; }
-                        doc.fontSize(10).fillColor(statusColor)
-                           .text(`${statusEmoji} ${usoPercent.toFixed(1)}% do teto (R$ ${teto.toFixed(2)})`, 300, cardY + 45, { width: 180, align: 'right' });
+                        doc.fontSize(10).fillColor(statusColor).text(`${statusEmoji} ${usoPercent.toFixed(1)}% do teto`, 320, cardY + 52, { width: 170, align: 'right' });
                     }
-                    // Barra de progresso visual - linha 3
+                    // Barra (linha 3)
                     const maxValue = Math.max(...Object.values(porPlano));
-                    const barWidth = maxValue > 0 ? (valor / maxValue) * 180 : 0;
-                    doc.roundedRect(90, cardY + 65, 180, 6, 3).fill('#CBD5E1');
-                    if (barWidth > 0) {
-                        doc.roundedRect(90, cardY + 65, barWidth, 6, 3).fill('#6366F1');
-                    }
-                    // Legenda recorrente
-                    if (isRecorrente) {
-                        doc.fontSize(10).fillColor('#F59E0B').text('Recorrente', 90, cardY + 65, { width: 80, align: 'left' });
-                    }
-                    doc.y += 95; // Espaçamento entre cards
+                    const barWidth = maxValue > 0 ? (valor / maxValue) * 260 : 0;
+                    doc.roundedRect(95, cardY + 70, 260, 8, 4).fill('#E2E8F0');
+                    if (barWidth > 0) doc.roundedRect(95, cardY + 70, barWidth, 8, 4).fill('#6366F1');
+                    if (isRecorrente) doc.fontSize(10).fillColor('#F59E0B').text('Recorrente', 365, cardY + 70, { width: 130, align: 'right' });
+                    doc.y += cardHeight + 15;
                 });
             }
         }
 
-        // 🏦 PÁGINA DE GRÁFICO - DISTRIBUIÇÃO POR CONTA
+        // 🏦 PÁGINA DE GRÁFICO - DISTRIBUIÇÃO POR CONTA (reposicionada / harmonizada)
         if (chartImages.accountChart) {
             doc.addPage();
-            doc.rect(0, 0, doc.page.width, 80).fill('#8B5CF6');
-            doc.fillColor('#FFFFFF').fontSize(24).text('🏦 DISTRIBUIÇÃO POR CONTA', 50, 25);
-            doc.moveDown(3);
-
-            // Centralizar e ajustar gráfico
-            const chartWidth = 480;
-            const chartHeight = 300;
-            const chartX = (doc.page.width - chartWidth) / 2;
-            
-            doc.image(chartImages.accountChart, chartX, doc.y, { 
-                width: chartWidth, 
-                height: chartHeight
-            });
-            doc.y += chartHeight + 40;
-
-            // Dados detalhados por conta
-            if (doc.y > 600) {
-                doc.addPage();
-                doc.moveDown(2);
-            }
-            doc.fontSize(18).fillColor('#1E293B').text('💳 DETALHAMENTO POR CONTA', { underline: true });
-            doc.moveDown(1);
-            
-            Object.entries(porConta).forEach(([conta, valor], index) => {
-                if (doc.y > 680) {
-                    doc.addPage();
-                    doc.moveDown(2);
-                }
-                const colors = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899'];
+            doc.rect(0, 0, doc.page.width, 90).fill('#1D4ED8');
+            doc.fontSize(26).fillColor('#FFFFFF').text('🏦 DISTRIBUIÇÃO POR CONTA', 50, 30, { width: 500, align: 'center' });
+            const chartWidth = 420; const chartHeight = 260; const chartX = (doc.page.width - chartWidth)/2; const startY = 120;
+            doc.image(chartImages.accountChart, chartX, startY, { width: chartWidth, height: chartHeight });
+            let y = startY + chartHeight + 30;
+            doc.fontSize(18).fillColor('#1E293B').text('💳 DETALHAMENTO POR CONTA', 50, y, { width: 500, align: 'left' });
+            y += 40;
+            const entriesConta = Object.entries(porConta).sort((a,b)=> b[1]-a[1]);
+            const colors = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899'];
+            entriesConta.forEach(([conta, valor], index) => {
+                if (y + 70 > doc.page.height - 60) { doc.addPage(); y = 80; doc.fontSize(18).fillColor('#1E293B').text('💳 DETALHAMENTO POR CONTA (cont.)', 50, y); y += 40; }
                 const color = colors[index % colors.length];
-                
-                // Card maior e mais bem formatado
-                doc.roundedRect(50, doc.y, 490, 60, 12).fill(color);
-                
-                // Nome da conta
-                doc.fillColor('#FFFFFF').fontSize(16).text(`🏦 ${conta}`, 70, doc.y + 12, { width: 270, align: 'left' });
-                
-                // Valor em destaque
-                doc.fontSize(22).text(`R$ ${valor.toFixed(2)}`, 350, doc.y + 8, { width: 130, align: 'right' });
-                
-                // Percentual
-                doc.fontSize(12).text(`${((valor/total)*100).toFixed(1)}% do total`, 70, doc.y + 35, { width: 200, align: 'left' });
-                
-                // Número de transações para esta conta
-                const transacoesConta = expenses.filter(e => e.account === conta).length;
-                doc.fontSize(10).text(`${transacoesConta} transações`, 350, doc.y + 35, { width: 130, align: 'right' });
-                
-                doc.y += 75;
+                doc.roundedRect(60, y, 480, 62, 14).fill(color);
+                doc.fillColor('#FFFFFF').fontSize(16).text(`🏦 ${conta}`, 80, y + 14, { width: 250 });
+                doc.fontSize(22).text(`R$ ${valor.toFixed(2)}`, 300, y + 10, { width: 220, align: 'right' });
+                doc.fontSize(11).text(`${((valor/total)*100).toFixed(1)}%  •  ${expenses.filter(e=>e.account===conta).length} transações`, 80, y + 40, { width: 380 });
+                y += 80;
             });
         }
 
-        // 💼 PÁGINA DE GRÁFICO - PESSOAL VS EMPRESARIAL
+        // 💼 PÁGINA DE GRÁFICO - PESSOAL VS EMPRESARIAL (reposicionada)
         if (chartImages.comparisonChart) {
             doc.addPage();
-            doc.rect(0, 0, doc.page.width, 80).fill('#10B981');
-            doc.fillColor('#FFFFFF').fontSize(24).text('💼 PESSOAL VS EMPRESARIAL', 50, 25);
-            doc.moveDown(3);
-
-            // Centralizar e ajustar gráfico
-            const chartWidth = 400;
-            const chartHeight = 280;
-            const chartX = (doc.page.width - chartWidth) / 2;
-            
-            doc.image(chartImages.comparisonChart, chartX, doc.y, { 
-                width: chartWidth, 
-                height: chartHeight
-            });
-            doc.y += chartHeight + 40;
-
-            // Análise comparativa
-            if (doc.y > 600) {
-                doc.addPage();
-                doc.moveDown(1);
-            }
-            doc.fontSize(16).fillColor('#1E293B').text('📈 ANÁLISE COMPARATIVA', { underline: true });
-            doc.moveDown(0.5);
-
-            // Card Pessoal
-            doc.roundedRect(50, doc.y, 220, 80, 10).fill('#10B981');
-            doc.fillColor('#FFFFFF').fontSize(12).text('GASTOS PESSOAIS 🏠', 60, doc.y + 15, { width: 200, align: 'left' });
-            doc.fontSize(16).text(`R$ ${totalPessoal.toFixed(2)}`, 60, doc.y + 35, { width: 200, align: 'left' });
-            doc.fontSize(10).text(`${pessoais.length} transações`, 60, doc.y + 55, { width: 200, align: 'left' });
-
-            // Card Empresarial
-            doc.roundedRect(290, doc.y, 220, 80, 10).fill('#F59E0B');
-            doc.fillColor('#FFFFFF').fontSize(12).text('GASTOS EMPRESARIAIS 💼', 300, doc.y + 15, { width: 200, align: 'left' });
-            doc.fontSize(16).text(`R$ ${totalEmpresarial.toFixed(2)}`, 300, doc.y + 35, { width: 200, align: 'left' });
-            doc.fontSize(10).text(`${empresariais.length} transações`, 300, doc.y + 55, { width: 200, align: 'left' });
-
-            doc.y += 100;
+            doc.rect(0, 0, doc.page.width, 90).fill('#0D9488');
+            doc.fillColor('#FFFFFF').fontSize(26).text('💼 PESSOAL VS EMPRESARIAL', 50, 30, { width: 500, align: 'center' });
+            const chartWidth = 380; const chartHeight = 260; const chartX = (doc.page.width - chartWidth)/2; const startY = 120;
+            doc.image(chartImages.comparisonChart, chartX, startY, { width: chartWidth, height: chartHeight });
+            let y = startY + chartHeight + 30;
+            doc.fontSize(18).fillColor('#1E293B').text('📈 ANÁLISE COMPARATIVA', 50, y, { width: 500, align: 'left' });
+            y += 30;
+            // Cards lado a lado
+            const cardHeight = 90; const cardWidth = 230; const leftX = 70; const rightX = 320;
+            // Pessoal
+            doc.roundedRect(leftX, y, cardWidth, cardHeight, 14).fill('#10B981');
+            doc.fillColor('#FFFFFF').fontSize(13).text('GASTOS PESSOAIS 🏠', leftX + 15, y + 15);
+            doc.fontSize(20).text(`R$ ${totalPessoal.toFixed(2)}`, leftX + 15, y + 38);
+            doc.fontSize(10).text(`${pessoais.length} transações`, leftX + 15, y + 63);
+            // Empresarial
+            doc.roundedRect(rightX, y, cardWidth, cardHeight, 14).fill('#F59E0B');
+            doc.fillColor('#FFFFFF').fontSize(13).text('GASTOS EMPRESARIAIS 💼', rightX + 15, y + 15);
+            doc.fontSize(20).text(`R$ ${totalEmpresarial.toFixed(2)}`, rightX + 15, y + 38);
+            doc.fontSize(10).text(`${empresariais.length} transações`, rightX + 15, y + 63);
         }
 
         // 📅 PÁGINA DE GRÁFICO - EVOLUÇÃO DIÁRIA
