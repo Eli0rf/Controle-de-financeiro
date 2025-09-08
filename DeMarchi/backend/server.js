@@ -2058,9 +2058,12 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
     doc.fontSize(8).fillColor('#475569').text(`Média R$ ${mediaEmp.toFixed(2)} | Desvio ${stdEmp.toFixed(2)} | Limite R$ ${limiteOutlier.toFixed(2)}`,60,oy+6,{width:470});
 
     // ===== PÁGINA PROJEÇÃO & CONCENTRAÇÃO =====
-    if (doc.y > doc.page.height - 480) doc.addPage(); else doc.moveDown(2);
+    // Força sempre nova página para evitar sobreposição quando a seção anterior (Outliers) cresce.
+    doc.addPage();
     doc.rect(0,0,doc.page.width,90).fill('#6D28D9');
     doc.fillColor('#FFFFFF').fontSize(24).text('🔮 Projeção & Concentração',0,32,{width:doc.page.width,align:'center'});
+    // Emojis: pdfkit usa fonte atual. A fonte NotoSans-Regular.ttf já cobre vários emojis básicos monocromáticos.
+    // Para suporte mais amplo, poderia-se carregar NotoColorEmoji ou Twemoji convertida em fonte e registrar via doc.registerFont('emoji','caminho.ttf') e alternar doc.font('emoji') temporariamente.
     const daysInMonth = endDate.getDate();
     const diasComGasto = Object.keys(porDia).length;
     const mediaDiariaGeral = diasComGasto ? total / diasComGasto : total;
