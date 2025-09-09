@@ -1916,22 +1916,25 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
             // Tabela detalhada
             let detY = tableY + 30;
             if (detY > doc.page.height - 160) { doc.addPage(); detY = 80; }
-            doc.fontSize(16).fillColor('#1E293B').text('📄 Detalhamento (Empresarial)', 50, detY); detY += 28;
-            doc.fontSize(9);
-            const header = (y) => { doc.roundedRect(50, y, 490, 20, 4).fill('#0D9488'); doc.fillColor('#FFFFFF').text('Data',60,y+6,{width:60}); doc.text('Plano',120,y+6,{width:50}); doc.text('Conta',170,y+6,{width:90}); doc.text('Descrição',260,y+6,{width:150}); doc.text('Valor',415,y+6,{width:60}); doc.text('NF',470,y+6,{width:40}); };
-            header(detY); detY += 26;
+            doc.fontSize(13).fillColor('#1E293B').text('📄 Detalhamento (Empresarial)', 50, detY); detY += 20;
+            // Tabela empresarial ultra compacta
+            let rowHDet=12; let fontDet=7; const header = (y) => { doc.roundedRect(50, y, 490, 14, 3).fill('#0D9488'); doc.fillColor('#FFFFFF').fontSize(7).text('Data',56,y+3,{width:40}); doc.text('Pl',96,y+3,{width:20}); doc.text('Ct',116,y+3,{width:26}); doc.text('Desc',142,y+3,{width:240}); doc.text('R$',382,y+3,{width:50,align:'right'}); doc.text('NF',432,y+3,{width:30}); };
+            header(detY); detY += 16;
+            const descLimit = 42;
             empresariais.sort((a,b)=> new Date(b.transaction_date)-new Date(a.transaction_date)).forEach(e=> {
-                if (detY + 18 > doc.page.height - 60) { doc.addPage(); detY = 60; header(detY); detY += 26; }
-                const bg = detY % 2 === 0 ? '#FFFFFF' : '#F1F5F9';
-                doc.roundedRect(50, detY, 490, 18, 2).fill(bg);
-                doc.fillColor('#1E293B').text(new Date(e.transaction_date).toLocaleDateString('pt-BR'),60,detY+5,{width:60});
-                doc.text(e.account_plan_code || '-',120,detY+5,{width:50});
-                doc.text(e.account || '-',170,detY+5,{width:90});
-                const desc = (e.description || '').substring(0,30);
-                doc.text(desc,260,detY+5,{width:150});
-                doc.text(parseFloat(e.amount).toFixed(2),415,detY+5,{width:60});
-                doc.text(e.has_invoice? '✔':'',470,detY+5,{width:40});
-                detY += 22;
+                if (detY + rowHDet > doc.page.height - 55) { doc.addPage(); detY = 55; header(detY); detY += 16; }
+                const bg = (Math.floor(detY/rowHDet)%2===0)?'#FFFFFF':'#F1F5F9';
+                doc.roundedRect(50, detY, 490, rowHDet-1, 2).fill(bg);
+                doc.fillColor('#1E293B').fontSize(fontDet);
+                doc.text(new Date(e.transaction_date).toLocaleDateString('pt-BR'),56,detY+3,{width:40});
+                doc.text(e.account_plan_code||'-',96,detY+3,{width:20});
+                const conta=(e.account||'-').slice(0,6);
+                doc.text(conta,116,detY+3,{width:26});
+                const desc=(e.description||'').replace(/\s+/g,' ').slice(0,descLimit);
+                doc.text(desc,142,detY+3,{width:240});
+                doc.text(parseFloat(e.amount).toFixed(2),382,detY+3,{width:50,align:'right'});
+                doc.text(e.has_invoice?'✔':'',432,detY+3,{width:30});
+                detY += rowHDet;
             });
             // Nota explicativa
             if (detY + 60 > doc.page.height) { doc.addPage(); detY = 80; }
@@ -2092,21 +2095,22 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
             doc.text(pct.toFixed(1)+'%',428,tY+rowHP/3-1,{width:90});
             tY+=rowHP;
         });
-    let detYp=tY+26; if(detYp>doc.page.height-140){doc.addPage();detYp=60;} doc.fontSize(14).fillColor('#1E293B').text('📄 Detalhamento (Pessoal)',50,detYp);detYp+=20; doc.fontSize(7.5);
-    const headerP=(y)=>{doc.roundedRect(50,y,490,14,3).fill('#2563EB');doc.fillColor('#FFFFFF').fontSize(7);textCell('Data',56,y+3,{width:46});textCell('Pl',102,y+3,{width:30});textCell('Conta',132,y+3,{width:56});textCell('Descrição',188,y+3,{width:240});textCell('Valor',428,y+3,{width:100,align:'right'});}; headerP(detYp); detYp+=16;
-    const rowHeightP=12;
+    let detYp=tY+22; if(detYp>doc.page.height-130){doc.addPage();detYp=55;} doc.fontSize(13).fillColor('#1E293B').text('📄 Detalhamento (Pessoal)',50,detYp);detYp+=18; doc.fontSize(7);
+    const headerP=(y)=>{doc.roundedRect(50,y,490,13,3).fill('#2563EB');doc.fillColor('#FFFFFF').fontSize(6.5);textCell('Data',56,y+3,{width:42});textCell('Pl',98,y+3,{width:18});textCell('Ct',116,y+3,{width:26});textCell('Desc',142,y+3,{width:250});textCell('R$',392,y+3,{width:60,align:'right'});}; headerP(detYp); detYp+=15;
+    let rowHeightP=10;
         pessoaisFiltrados.sort((a,b)=> new Date(b.transaction_date)-new Date(a.transaction_date)).forEach(e=>{
-            if(detYp+rowHeightP>doc.page.height-55){doc.addPage();detYp=55;headerP(detYp);detYp+=16;}
-            const bg = (Math.floor(detYp/rowHeightP)%2===0)?'#FFFFFF':'#F8FAFC';
-            doc.roundedRect(50,detYp,490,rowHeightP,1).fill(bg);
-            const baseY = detYp+3;
-            const desc=(e.description||'').replace(/\s+/g,' ').slice(0,60);
-            doc.fillColor('#1E293B');
-            textCell(new Date(e.transaction_date).toLocaleDateString('pt-BR'),56,baseY,{width:46});
-            textCell(e.account_plan_code||'-',102,baseY,{width:30});
-            textCell(e.account||'-',132,baseY,{width:56});
-            textCell(desc,188,baseY,{width:240});
-            textCell(parseFloat(e.amount).toFixed(2),428,baseY,{width:100,align:'right'});
+            if(detYp+rowHeightP>doc.page.height-50){doc.addPage();detYp=50;headerP(detYp);detYp+=15;}
+            const bg = (Math.floor(detYp/rowHeightP)%2===0)?'#FFFFFF':'#F1F5F9';
+            doc.roundedRect(50,detYp,490,rowHeightP-1,1).fill(bg);
+            const baseY = detYp+2;
+            const desc=(e.description||'').replace(/\s+/g,' ').slice(0,45);
+            doc.fillColor('#1E293B').fontSize(6.5);
+            textCell(new Date(e.transaction_date).toLocaleDateString('pt-BR'),56,baseY,{width:42});
+            textCell(e.account_plan_code||'-',98,baseY,{width:18});
+            const conta=(e.account||'-').slice(0,6);
+            textCell(conta,116,baseY,{width:26});
+            textCell(desc,142,baseY,{width:250});
+            textCell(parseFloat(e.amount).toFixed(2),392,baseY,{width:60,align:'right'});
             detYp+=rowHeightP;
         });
     if(detYp+28>doc.page.height){doc.addPage();detYp=55;}
@@ -2159,8 +2163,8 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
     doc.rect(0,0,doc.page.width,90).fill('#6D28D9');
     // Título com emoji desenhado para garantir consistência cross-plataforma
     const titleText = ' Projeção & Concentração';
-    try { await drawEmoji(doc,'🔮', (doc.page.width/2)-140, 28, 28); } catch {}
-    doc.fillColor('#FFFFFF').fontSize(24).text(titleText,0,32,{width:doc.page.width,align:'center'});
+    try { await drawEmoji(doc,'🔮', (doc.page.width/2)-160, 22, 22); } catch {}
+    doc.fillColor('#FFFFFF').fontSize(22).text(titleText,0,24,{width:doc.page.width,align:'center'});
     // Emojis: pdfkit usa fonte atual. A fonte NotoSans-Regular.ttf já cobre vários emojis básicos monocromáticos.
     // Para suporte mais amplo, poderia-se carregar NotoColorEmoji ou Twemoji convertida em fonte e registrar via doc.registerFont('emoji','caminho.ttf') e alternar doc.font('emoji') temporariamente.
     const daysInMonth = endDate.getDate();
@@ -2190,17 +2194,17 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
         doc.addPage();
         doc.rect(0,0,doc.page.width,doc.page.height).fill('#F0FDF4');
         const centerX = doc.page.width/2;
-    try { await drawEmoji(doc,'🎉', centerX-55, 130, 110); } catch { doc.fillColor('#059669').fontSize(80).text('🎉', centerX-40, 140); }
-        doc.fontSize(30).fillColor('#065F46').text('PARABÉNS!', 0, 230, { align: 'center' });
-        doc.fontSize(16).fillColor('#047857').text('Você está no controle das suas finanças!', 0, 270, { align: 'center' });
+    try { await drawEmoji(doc,'🎉', centerX-45, 140, 90); } catch { doc.fillColor('#059669').fontSize(70).text('🎉', centerX-35, 150); }
+        doc.fontSize(28).fillColor('#065F46').text('PARABÉNS!', 0, 230, { align: 'center' });
+        doc.fontSize(15).fillColor('#047857').text('Você está no controle das suas finanças!', 0, 262, { align: 'center' });
         try {
             doc.fontSize(14).fillColor('#059669').text('Mantenha a consistência e alcance objetivos maiores!  ', 0, 300, { align: 'center' });
             await drawEmoji(doc,'🚀', centerX+200, 296, 24);
         } catch {
             doc.fontSize(14).fillColor('#059669').text('Mantenha a consistência e alcance objetivos maiores! 🚀', 0, 300, { align: 'center' });
         }
-    try { await drawEmoji(doc,'💡', (centerX-100), 348, 20); } catch {}
-    doc.fontSize(12).fillColor('#065F46').text('  Foco no próximo mês', 0, 350, { align: 'center', underline:true });
+    try { await drawEmoji(doc,'💡', (centerX-90), 335, 18); } catch {}
+    doc.fontSize(11).fillColor('#065F46').text('  Foco no próximo mês', 0, 338, { align: 'center', underline:true });
         const dicas = [
             {e:'🗓️',t:'Registre micro despesas diariamente'},
             {e:'📊',t:'Compare variação vs. mês anterior'},
