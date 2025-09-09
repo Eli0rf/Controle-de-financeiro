@@ -2170,22 +2170,21 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
     const isMesAtual = (hoje.getFullYear()===year && (hoje.getMonth()+1)===month);
     const projecao = isMesAtual ? (mediaDiariaGeral * daysInMonth) : total;
     const crescimentoProj = total ? ((projecao - total)/ total)*100 : 0;
-    // Cards
-    const projY=110; const card=(x,t,v,c)=>{doc.roundedRect(x,projY,180,80,14).fill(c);doc.fillColor('#F1F5F9').fontSize(10).text(t,x+14,projY+12,{width:150});doc.fontSize(20).fillColor('#FFFFFF').text(v,x+14,projY+34,{width:150});};
-    card(55,'Média Diária Observada',`R$ ${mediaDiariaGeral.toFixed(2)}`,'#7C3AED');
-    card(245,'Projeção Encerramento',`R$ ${projecao.toFixed(2)}`,'#9333EA');
-    card(435,'Crescimento vs Atual',`${crescimentoProj>=0?'+':''}${crescimentoProj.toFixed(1)}%`,'#A855F7');
-    if(!isMesAtual) doc.fontSize(8).fillColor('#DDD6FE').text('Mês encerrado: projeção = total realizado.',55,projY+90,{width:500});
-    // Concentração
-    const topPlans = Object.entries(currByPlan).sort((a,b)=> b[1]-a[1]).slice(0,5);
-    const totalAtualLocal = Object.values(currByPlan).reduce((a,b)=>a+b,0)||1;
-    const shares = topPlans.map(([p,v])=>({ plano:p, share:v/totalAtualLocal }));
-    const hhi = shares.reduce((s,sh)=> s + Math.pow(sh.share,2),0);
-    let cy2 = projY + 130;
-    doc.fontSize(14).fillColor('#FDF4FF').text('Concentração Top 5 (HHI)',55,cy2); cy2+=26;
-    doc.fontSize(10).fillColor('#E9D5FF').text(`HHI ${(hhi*10000).toFixed(0)} • ${(hhi<0.15?'Baixa':'Alta')} concentração`,55,cy2,{width:320}); cy2+=18;
-    shares.forEach((o,i)=>{ const barW = o.share*300; if(cy2+18>doc.page.height-60){doc.addPage();cy2=60; doc.fontSize(14).fillColor('#6D28D9').text('Concentração (cont.)',55,cy2); cy2+=24;} doc.roundedRect(55,cy2,320,14,6).fill('#4C1D95'); doc.roundedRect(55,cy2,barW,14,6).fill('#C084FC'); doc.fillColor('#FFFFFF').fontSize(9).text(`${o.plano} ${(o.share*100).toFixed(1)}%`,60,cy2+3); cy2+=20; });
-    doc.fontSize(8).fillColor('#DDD6FE').text('Escala HHI 0-10000. <1500 baixa, 1500-2500 moderada, >2500 alta.',55,cy2+2,{width:480});
+    // Mini Cards compactos em uma única linha
+    const projY=108; const miniCard=(x,w,t,v,c)=>{doc.roundedRect(x,projY,w,58,10).fill(c);doc.fillColor('#F1F5F9').fontSize(8).text(t,x+8,projY+8,{width:w-16});doc.fontSize(14).fillColor('#FFFFFF').text(v,x+8,projY+26,{width:w-16});};
+    miniCard(55,150,'Média Diária',`R$ ${mediaDiariaGeral.toFixed(2)}`,'#7C3AED');
+    miniCard(215,150,'Projeção Fim',`R$ ${projecao.toFixed(2)}`,'#9333EA');
+    miniCard(375,165,'Crescimento',`${crescimentoProj>=0?'+':''}${crescimentoProj.toFixed(1)}%`,'#A855F7');
+    if(!isMesAtual) doc.fontSize(7).fillColor('#DDD6FE').text('Mês encerrado: projeção = total realizado.',55,projY+64,{width:500});
+    // Resumo de Tetos (Top 4 por % de utilização)
+    const usoTetos = Object.entries(currByPlan).map(([pl,val])=>{ const id=parseInt(pl); const teto = tetos[id]||0; return {pl,val,teto,pct: teto>0?(val/teto)*100:0}; }).filter(o=>o.teto>0).sort((a,b)=> b.pct - a.pct).slice(0,4);
+    let chipY = projY + 74; doc.fontSize(11).fillColor('#EDE9FE').text('Utilização de Tetos (Top)',55,chipY); chipY+=16; doc.fontSize(7.5);
+    usoTetos.forEach((o,i)=>{ const chipW= (o.pct>100?210:200); const x=55 + i* (chipW+10); if(x+chipW>540) return; const cor = o.pct>100?'#DC2626':o.pct>85?'#F59E0B':'#10B981'; doc.roundedRect(x,chipY,chipW,30,8).fill('#1E1B4B'); doc.fillColor('#F8FAFC').fontSize(8).text(`Plano ${o.pl}`,x+10,chipY+6,{width:chipW-20}); doc.fontSize(10).fillColor(cor).text(`${Math.min(o.pct,999).toFixed(0)}%`,x+10,chipY+16,{width:chipW-20}); doc.roundedRect(x+chipW-70,chipY+16,60,8,4).fill('#334155'); const barW = Math.min(60,(o.pct/100)*60); doc.roundedRect(x+chipW-70,chipY+16,barW,8,4).fill(cor); });
+    // Concentração (Top 5) ultracompacta lateral
+    const topPlans = Object.entries(currByPlan).sort((a,b)=> b[1]-a[1]).slice(0,5); const totalAtualLocal = Object.values(currByPlan).reduce((a,b)=>a+b,0)||1; const shares = topPlans.map(([p,v])=>({p, s:v/totalAtualLocal})); const hhi = shares.reduce((s,o)=> s + o.s*o.s,0);
+    let concY = chipY + 42; doc.fontSize(11).fillColor('#FDF4FF').text('Concentração Top 5',55,concY); doc.fontSize(8).fillColor('#E9D5FF').text(`HHI ${(hhi*10000).toFixed(0)}`,200,concY,{width:80}); concY+=14; doc.fontSize(7.5);
+    shares.forEach(o=>{ const barMax=150; const barW=o.s*barMax; if(concY+10>doc.page.height-70) return; doc.roundedRect(55,concY,barMax,6,3).fill('#4C1D95'); doc.roundedRect(55,concY,barW,6,3).fill('#C084FC'); doc.fillColor('#FFFFFF').fontSize(7).text(`${o.p} ${(o.s*100).toFixed(1)}%`,60,concY-1); concY+=10; });
+    doc.fontSize(6.5).fillColor('#DDD6FE').text('HHI <1500 baixa, 1500-2500 moderada, >2500 alta.',55,concY+4,{width:300});
 
         // 🎊 PÁGINA FINAL MOTIVACIONAL (centralizada revisada)
         doc.addPage();
