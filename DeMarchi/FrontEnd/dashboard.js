@@ -6878,7 +6878,24 @@ document.addEventListener('DOMContentLoaded', function() {
         console.log('🧪 === FIM DO TESTE ===');
     };
 
-    // ========== PIX & BOLETO - ESTRUTURA REFORMULADA ==========
+    // ========== PIX & BOLETO - ESTRUTURA REFORMULADA ==========            
+    // Helpers robustos para identificar contas PIX / Boleto (normaliza espaços e casing)
+    function normalizeAccountName(name) {
+        return (name || '').toString().trim();
+    }
+    function isPixAccount(account) {
+        return normalizeAccountName(account).toUpperCase() === 'PIX';
+    }
+    function isBoletoAccount(account) {
+        // Aceita 'BOLETO' ou 'BOLETO(s)' futura variação simples
+        const norm = normalizeAccountName(account).toUpperCase();
+        return norm === 'BOLETO';
+    }
+    function parseAmount(val) {
+        // Garante número mesmo que backend altere chave futuramente
+        const n = parseFloat(val || 0);
+        return isNaN(n) ? 0 : n;
+    }
     async function loadPixBoletoData(forceRefresh = false) {
         try {
             const token = getToken();
@@ -6925,14 +6942,14 @@ document.addEventListener('DOMContentLoaded', function() {
             const lastMonthData = await fetchPixBoletoData(lastMonthYear, lastMonth);
             
             // Calcular estatísticas
-            const pixData = currentData.filter(item => item.account === 'PIX');
-            const boletoData = currentData.filter(item => item.account === 'Boleto');
+            const pixData = currentData.filter(item => isPixAccount(item.account));
+            const boletoData = currentData.filter(item => isBoletoAccount(item.account));
             
-            const pixTotal = pixData.reduce((sum, item) => sum + parseFloat(item.amount), 0);
-            const boletoTotal = boletoData.reduce((sum, item) => sum + parseFloat(item.amount), 0);
+            const pixTotal = pixData.reduce((sum, item) => sum + parseAmount(item.amount ?? item.valor ?? item.value), 0);
+            const boletoTotal = boletoData.reduce((sum, item) => sum + parseAmount(item.amount ?? item.valor ?? item.value), 0);
             const grandTotal = pixTotal + boletoTotal;
             
-            const lastMonthTotal = lastMonthData.reduce((sum, item) => sum + parseFloat(item.amount), 0);
+            const lastMonthTotal = lastMonthData.reduce((sum, item) => sum + parseAmount(item.amount ?? item.valor ?? item.value), 0);
             const growth = lastMonthTotal > 0 ? ((grandTotal - lastMonthTotal) / lastMonthTotal * 100) : 0;
             
             const totalTransactions = currentData.length;
@@ -6975,9 +6992,9 @@ document.addEventListener('DOMContentLoaded', function() {
             const allExpenses = await response.json();
             
             // Filtrar apenas PIX e Boleto
-            return allExpenses.filter(expense => 
-                expense.account === 'PIX' || expense.account === 'Boleto'
-            );
+            return allExpenses.filter(expense => {
+                return isPixAccount(expense.account) || isBoletoAccount(expense.account);
+            });
             
         } catch (error) {
             console.error('Erro ao buscar dados PIX/Boleto:', error);
@@ -7027,10 +7044,12 @@ document.addEventListener('DOMContentLoaded', function() {
                 const month = date.getMonth() + 1;
                 
                 const data = await fetchPixBoletoData(year, month);
+                const pixMonthly = data.filter(item => isPixAccount(item.account));
+                const boletoMonthly = data.filter(item => isBoletoAccount(item.account));
                 monthlyData.push({
                     month: date.toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' }),
-                    pixTotal: data.filter(item => item.account === 'PIX').reduce((sum, item) => sum + parseFloat(item.amount), 0),
-                    boletoTotal: data.filter(item => item.account === 'Boleto').reduce((sum, item) => sum + parseFloat(item.amount), 0)
+                    pixTotal: pixMonthly.reduce((sum, item) => sum + parseAmount(item.amount ?? item.valor ?? item.value), 0),
+                    boletoTotal: boletoMonthly.reduce((sum, item) => sum + parseAmount(item.amount ?? item.valor ?? item.value), 0)
                 });
             }
             
@@ -7169,10 +7188,11 @@ document.addEventListener('DOMContentLoaded', function() {
         if (!canvas) return;
 
         const ctx = canvas.getContext('2d');
-        const data = await fetchPixBoletoData(year, month);
-        
-        const pixTotal = data.filter(item => item.account === 'PIX').reduce((sum, item) => sum + parseFloat(item.amount), 0);
-        const boletoTotal = data.filter(item => item.account === 'Boleto').reduce((sum, item) => sum + parseFloat(item.amount), 0);
+    const data = await fetchPixBoletoData(year, month);
+    const pixList = data.filter(item => isPixAccount(item.account));
+    const boletoList = data.filter(item => isBoletoAccount(item.account));
+    const pixTotal = pixList.reduce((sum, item) => sum + parseAmount(item.amount ?? item.valor ?? item.value), 0);
+    const boletoTotal = boletoList.reduce((sum, item) => sum + parseAmount(item.amount ?? item.valor ?? item.value), 0);
 
         // Destruir gráfico existente
         if (window.pixBoletoDistributionChart) {
@@ -7219,19 +7239,18 @@ document.addEventListener('DOMContentLoaded', function() {
 
         const ctx = canvas.getContext('2d');
         const data = await fetchPixBoletoData(year, month);
-        
-        // Agrupar por categoria
+        // Agrupar por categoria com robustez
         const categoryTotals = {};
         data.forEach(item => {
-            const category = item.category || 'Outros';
+            const category = item.category && item.category.trim() !== '' ? item.category : 'Outros';
             if (!categoryTotals[category]) {
                 categoryTotals[category] = { pix: 0, boleto: 0 };
             }
-            
-            if (item.account === 'PIX') {
-                categoryTotals[category].pix += parseFloat(item.amount);
-            } else {
-                categoryTotals[category].boleto += parseFloat(item.amount);
+            const amt = parseAmount(item.amount ?? item.valor ?? item.value);
+            if (isPixAccount(item.account)) {
+                categoryTotals[category].pix += amt;
+            } else if (isBoletoAccount(item.account)) {
+                categoryTotals[category].boleto += amt;
             }
         });
 
