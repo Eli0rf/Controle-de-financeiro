@@ -372,11 +372,8 @@ app.get('/api/expenses', authenticateToken, async (req, res) => {
 
         // Filtrar gastos recorrentes se não for explicitamente solicitado
         if (include_recurring !== 'true') {
-            // Para contas que não são PIX ou Boleto, não incluir gastos recorrentes
-            // Para PIX e Boleto, incluir apenas se for busca por fatura
-            if (account && ['PIX', 'Boleto'].includes(account)) {
-                // Se for busca por período de fatura, incluir recorrentes
-                // Se for busca geral, excluir recorrentes
+            // Para conta unificada PIX/Boleto: só incluir recorrentes quando buscar intervalo de fatura explícito
+            if (account === 'PIX/Boleto') {
                 if (!start_date && !end_date) {
                     sql += ' AND is_recurring_expense = 0';
                 }
@@ -388,7 +385,7 @@ app.get('/api/expenses', authenticateToken, async (req, res) => {
             sql += ' AND transaction_date >= ? AND transaction_date <= ?';
             params.push(start_date, end_date);
         } else if (account && billingPeriods[account] && year && month) {
-            // Para contas PIX e Boleto, não aplicar filtro de período de fatura
+            // Para conta unificada PIX/Boleto, não aplicar filtro de período de fatura customizado de cartão
             if (!billingPeriods[account].isRecurring) {
                 const { startDay, endDay } = billingPeriods[account];
                 const startDate = new Date(year, month - 1, startDay);
@@ -403,7 +400,7 @@ app.get('/api/expenses', authenticateToken, async (req, res) => {
                 sql += ' AND transaction_date >= ? AND transaction_date <= ?';
                 params.push(startDate.toISOString().slice(0, 10), endDate.toISOString().slice(0, 10));
             } else {
-                // Para PIX e Boleto, filtrar apenas por mês/ano normal
+                // Para conta unificada PIX/Boleto filtrar apenas por mês/ano normal
                 sql += ' AND YEAR(transaction_date) = ? AND MONTH(transaction_date) = ?';
                 params.push(year, month);
             }
@@ -2255,9 +2252,9 @@ app.post('/api/recurring-expenses', authenticateToken, async (req, res) => {
             return res.status(400).json({ message: 'Descrição, valor e conta são obrigatórios.' });
         }
 
-        // Verificar se é conta que permite gastos recorrentes (PIX ou Boleto)
-        if (!['PIX', 'Boleto'].includes(account)) {
-            return res.status(400).json({ message: 'Gastos recorrentes só são permitidos para contas PIX e Boleto.' });
+        // Verificar se é conta que permite gastos recorrentes (apenas conta unificada PIX/Boleto)
+        if (account !== 'PIX/Boleto') {
+            return res.status(400).json({ message: 'Gastos recorrentes só são permitidos para a conta unificada PIX/Boleto.' });
         }
 
         await pool.query(
@@ -2418,7 +2415,9 @@ app.listen(PORT, HOST, async () => {
         
         // Executar migração do banco
         console.log('🔄 Verificando e criando estrutura do banco...');
-        await createDatabase();
+    await createDatabase();
+    // Garantir unificação retroativa de registros PIX/Boleto
+    await ensurePixBoletoUnification();
         
         console.log(`🚀 Servidor rodando em http://${HOST}:${PORT}`);
         console.log('✅ Sistema inicializado com sucesso!');
@@ -2433,9 +2432,62 @@ const billingPeriods = {
     'Nu Vainer': { startDay: 2, endDay: 1 },
     'Ourocard Ketlyn': { startDay: 17, endDay: 16 },
     'PicPay Vainer': { startDay: 1, endDay: 30 },
-    'PIX': { startDay: 1, endDay: 30, isRecurring: true },
-    'Boleto': { startDay: 1, endDay: 30, isRecurring: true }
+    'PIX/Boleto': { startDay: 1, endDay: 30, isRecurring: true }
 };
+
+// Função de unificação retroativa de contas PIX e Boleto para PIX/Boleto
+async function ensurePixBoletoUnification() {
+    try {
+        // Verifica se já existe algum registro antigo com conta PIX ou Boleto
+        const [legacy] = await pool.query("SELECT COUNT(*) as cnt FROM expenses WHERE account IN ('PIX','Boleto')");
+        const needUpdate = legacy[0]?.cnt > 0;
+        if (needUpdate) {
+            console.log('🔄 Unificando contas antigas PIX/Boleto...');
+            await pool.query("UPDATE expenses SET account='PIX/Boleto' WHERE account IN ('PIX','Boleto')");
+        }
+        const [legacyRec] = await pool.query("SHOW TABLES LIKE 'recurring_expenses'");
+        if (legacyRec.length) {
+            const [legacyRecurring] = await pool.query("SELECT COUNT(*) as cnt FROM recurring_expenses WHERE account IN ('PIX','Boleto')");
+            if (legacyRecurring[0]?.cnt > 0) {
+                await pool.query("UPDATE recurring_expenses SET account='PIX/Boleto' WHERE account IN ('PIX','Boleto')");
+            }
+        }
+        if (needUpdate) console.log('✅ Unificação de contas PIX/Boleto concluída'); else console.log('✅ Nenhuma conta antiga PIX ou Boleto encontrada para unificação');
+    } catch (e) {
+        console.error('❌ Erro na unificação de contas PIX/Boleto (ignorado na execução):', e.message);
+    }
+}
+
+// Rota dedicada para obter gastos da conta unificada PIX/Boleto com resumo agregado
+app.get('/api/expenses/pix-boleto', authenticateToken, async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const { year, month } = req.query;
+        const filters = ['user_id = ?', "account = 'PIX/Boleto'"];
+        const params = [userId];
+        if (year) { filters.push('YEAR(transaction_date) = ?'); params.push(year); }
+        if (month) { filters.push('MONTH(transaction_date) = ?'); params.push(month); }
+        const where = filters.join(' AND ');
+        const [rows] = await pool.query(`SELECT * FROM expenses WHERE ${where} ORDER BY transaction_date DESC`, params);
+        const total = rows.reduce((s,r)=> s + parseFloat(r.amount),0);
+        const count = rows.length;
+        const ticket = count ? total / count : 0;
+        const recur = rows.filter(r=> r.is_recurring_expense).reduce((s,r)=> s + parseFloat(r.amount),0);
+        res.json({
+            account: 'PIX/Boleto',
+            year: year ? parseInt(year) : undefined,
+            month: month ? parseInt(month) : undefined,
+            total: parseFloat(total.toFixed(2)),
+            count,
+            ticket: parseFloat(ticket.toFixed(2)),
+            recurring_total: parseFloat(recur.toFixed(2)),
+            expenses: rows
+        });
+    } catch (e) {
+        console.error('Erro ao buscar gastos PIX/Boleto:', e);
+        res.status(500).json({ message: 'Erro ao buscar gastos PIX/Boleto.' });
+    }
+});
 
 app.get('/api/accounts', authenticateToken, async (req, res) => {
     try {

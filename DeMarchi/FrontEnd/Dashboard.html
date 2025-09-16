@@ -728,14 +728,14 @@
                         </div>
             </div>
 
-            <!-- Aba PIX & Boleto - Estrutura Reformulada -->
+            <!-- Aba PIX/Boleto Unificada -->
             <div id="pix-boleto-tab" class="tab-content hidden">
                 <!-- Header com Dashboard Executivo -->
                 <div class="bg-gradient-to-r from-green-600 to-blue-600 text-white p-6 rounded-lg shadow-lg mb-8">
                     <div class="flex justify-between items-center mb-4">
                         <div>
-                            <h2 class="text-3xl font-bold">💳 Centro PIX & Boleto</h2>
-                            <p class="text-green-100 mt-2">Lançamento e análise completa de pagamentos instantâneos e boletos</p>
+                            <h2 class="text-3xl font-bold">💳 Centro PIX/Boleto</h2>
+                            <p class="text-green-100 mt-2">Lançamento e análise consolidada de pagamentos instantâneos e boletos (conta única)</p>
                         </div>
                         <div class="flex gap-2">
                             <button id="add-pix-boleto-expense" 
@@ -763,34 +763,14 @@
                     </div>
                     
                     <!-- Indicadores Principais -->
-                    <div class="grid grid-cols-1 md:grid-cols-5 gap-4">
-                        <div class="bg-gradient-to-br from-green-500 to-green-400 p-4 rounded-xl shadow-md">
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div class="bg-gradient-to-br from-green-500 to-blue-500 p-4 rounded-xl shadow-md">
                             <div class="flex items-center gap-3">
-                                <span class="text-3xl">💸</span>
+                                <span class="text-3xl">💳</span>
                                 <div>
-                                    <p class="text-sm opacity-90">PIX Total</p>
-                                    <p id="pix-total" class="text-xl font-bold">R$ 0,00</p>
-                                    <p class="text-xs opacity-75">Qtd: <span id="pix-count">0</span></p>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="bg-gradient-to-br from-blue-500 to-blue-400 p-4 rounded-xl shadow-md">
-                            <div class="flex items-center gap-3">
-                                <span class="text-3xl">🧾</span>
-                                <div>
-                                    <p class="text-sm opacity-90">Boleto Total</p>
-                                    <p id="boleto-total" class="text-xl font-bold">R$ 0,00</p>
-                                    <p class="text-xs opacity-75">Qtd: <span id="boleto-count">0</span></p>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="bg-gradient-to-br from-purple-500 to-purple-400 p-4 rounded-xl shadow-md">
-                            <div class="flex items-center gap-3">
-                                <span class="text-3xl">📊</span>
-                                <div>
-                                    <p class="text-sm opacity-90">Total Geral</p>
-                                    <p id="pix-boleto-grand-total" class="text-xl font-bold">R$ 0,00</p>
-                                    <p class="text-xs opacity-75">Soma: PIX + Boleto</p>
+                                    <p class="text-sm opacity-90">Total PIX/Boleto</p>
+                                    <p id="pix-boleto-total" class="text-xl font-bold">R$ 0,00</p>
+                                    <p class="text-xs opacity-75">Qtd: <span id="pix-boleto-count">0</span></p>
                                 </div>
                             </div>
                         </div>
@@ -804,7 +784,7 @@
                                 </div>
                             </div>
                         </div>
-                        <div class="bg-gradient-to-br from-red-500 to-red-400 p-4 rounded-xl shadow-md">
+                        <div class="bg-gradient-to-br from-purple-500 to-purple-400 p-4 rounded-xl shadow-md">
                             <div class="flex items-center gap-3">
                                 <span class="text-3xl">💰</span>
                                 <div>
@@ -835,11 +815,7 @@
                             
                             <div>
                                 <label class="block text-sm font-medium text-gray-700 mb-1">Tipo de Pagamento *</label>
-                                <select id="pix-boleto-account" class="w-full p-3 border rounded-lg focus:border-blue-500 focus:ring-1 focus:ring-blue-500" required>
-                                    <option value="">Selecione...</option>
-                                    <option value="PIX">💸 PIX</option>
-                                    <option value="Boleto">🧾 Boleto</option>
-                                </select>
+                                <input type="text" id="pix-boleto-account" value="PIX/Boleto" readonly class="w-full p-3 border rounded-lg bg-gray-100 text-gray-700" />
                             </div>
                             
                             <div>
@@ -1278,7 +1254,7 @@
                     <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
                         <div class="bg-gradient-to-br from-green-500 to-green-300 p-6 rounded-2xl shadow-lg transform transition duration-500 hover:scale-105">
                             <div class="flex items-center gap-3">
-                                <span class="text-3xl">�</span>
+                                <span class="text-3xl">📊</span>
                                 <div>
                                     <p class="text-sm opacity-90">Gastos Previstos</p>
                                     <p id="predicted-expenses" class="text-2xl font-extrabold text-white mt-1">R$ 0,00</p>
@@ -1288,7 +1264,7 @@
                         </div>
                         <div class="bg-gradient-to-br from-blue-500 to-blue-300 p-6 rounded-2xl shadow-lg transform transition duration-500 hover:scale-105">
                             <div class="flex items-center gap-3">
-                                <span class="text-3xl">�</span>
+                                <span class="text-3xl">💼</span>
                                 <div>
                                     <p class="text-sm opacity-90">Gastos Realizados</p>
                                     <p id="actual-expenses" class="text-2xl font-extrabold text-white mt-1">R$ 0,00</p>
@@ -1319,73 +1295,7 @@
                     </div>
                 </div>
 
-                <!-- Filtros Empresariais Avançados com Metadatabase -->
-                <div class="bg-white p-6 rounded-lg shadow-md mb-8">
-                    <h3 class="text-xl font-semibold text-gray-700 mb-4">🔍 Filtros Empresariais Avançados</h3>
-                    <div class="grid grid-cols-1 md:grid-cols-6 gap-4 mb-4">
-                        <div>
-                            <label class="block text-sm font-medium">Período</label>
-                            <select id="business-period" class="mt-1 block w-full p-2 border rounded-lg">
-                                <option value="current-month">Mês Atual</option>
-                                <option value="last-month">Mês Anterior</option>
-                                <option value="quarter">Trimestre</option>
-                                <option value="year" selected>Ano Atual</option>
-                                <option value="custom">Personalizado</option>
-                            </select>
-                        </div>
-                        <div id="custom-date-fields" class="hidden col-span-2">
-                            <label class="block text-sm font-medium">De - Até</label>
-                            <div class="flex gap-2">
-                                <input type="date" id="business-date-from" class="flex-1 p-2 border rounded-lg">
-                                <input type="date" id="business-date-to" class="flex-1 p-2 border rounded-lg">
-                            </div>
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium">Conta</label>
-                            <select id="business-account" class="mt-1 block w-full p-2 border rounded-lg">
-                                <option value="">Todas</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium">Categoria</label>
-                            <select id="business-category" class="mt-1 block w-full p-2 border rounded-lg">
-                                <option value="">Todas</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium">Buscar</label>
-                            <input type="text" id="business-search" placeholder="Descrição..." class="mt-1 block w-full p-2 border rounded-lg">
-                        </div>
-                    </div>
-                    
-                    <!-- Metadatabase de Filtros -->
-                    <div class="bg-blue-50 p-4 rounded-lg border-l-4 border-blue-500">
-                        <h4 class="font-semibold text-blue-800 mb-3">🔧 Metadatabase de Filtros</h4>
-                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                            <div>
-                                <label class="block text-sm font-medium text-blue-700">Valor Mínimo</label>
-                                <input type="number" id="business-min-amount" step="0.01" placeholder="0.00" class="mt-1 block w-full p-2 border rounded-lg">
-                            </div>
-                            <div>
-                                <label class="block text-sm font-medium text-blue-700">Valor Máximo</label>
-                                <input type="number" id="business-max-amount" step="0.01" placeholder="999999.99" class="mt-1 block w-full p-2 border rounded-lg">
-                            </div>
-                            <div>
-                                <label class="block text-sm font-medium text-blue-700">Status Nota Fiscal</label>
-                                <select id="business-invoice-status" class="mt-1 block w-full p-2 border rounded-lg">
-                                    <option value="">Todos</option>
-                                    <option value="with">Com Nota</option>
-                                    <option value="without">Sem Nota</option>
-                                </select>
-                            </div>
-                        </div>
-                        <div class="mt-4 flex justify-end">
-                            <button id="apply-business-filters" class="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors">
-                                🔄 Aplicar Filtros
-                            </button>
-                        </div>
-                    </div>
-                </div>
+                <!-- (Removido bloco de metadatabase de filtros para simplificação da UI) -->
 
                 <!-- Gráfico Principal - Evolução Anual -->
                 <div class="bg-white p-6 rounded-lg shadow-md mb-8">
@@ -1421,107 +1331,7 @@
                     </div>
                 </div>
 
-                <!-- Resumo por Conta e Fatura -->
-                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-                    <!-- Resumo por Conta -->
-                    <div class="bg-white p-6 rounded-lg shadow-md">
-                        <h3 class="text-xl font-semibold text-gray-700 mb-4">🏦 Gastos por Conta</h3>
-                        <div id="business-account-summary" class="space-y-4">
-                            <!-- Container será preenchido dinamicamente pelo JavaScript -->
-                        </div>
-                    </div>
-
-                    <!-- Resumo por Período de Fatura -->
-                    <div class="bg-white p-6 rounded-lg shadow-md">
-                        <h3 class="text-xl font-semibold text-gray-700 mb-4">🧾 Gastos por Período de Fatura</h3>
-                        <p class="text-sm text-gray-600 mb-4">
-                            * Fatura do mês atual refere-se ao período vigente do mês passado
-                        </p>
-                        <div id="business-billing-summary" class="space-y-4">
-                            <!-- Container será preenchido dinamicamente pelo JavaScript -->
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Análise por Fatura/Período -->
-                <div class="bg-white p-6 rounded-lg shadow-md mb-8">
-                    <h3 class="text-xl font-semibold text-gray-700 mb-4">📅 Análise por Período de Fatura</h3>
-                    <p class="text-sm text-gray-600 mb-4">
-                        Visualize os gastos organizados por período de fechamento de fatura para melhor controle de fluxo de caixa.
-                    </p>
-                    
-                    <!-- Seletor de Período de Fatura -->
-                    <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-                        <div>
-                            <label class="block text-sm font-medium">Ano de Referência</label>
-                            <select id="billing-year" class="mt-1 block w-full p-2 border rounded-lg">
-                                <!-- Preenchido via JS -->
-                            </select>
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium">Mês de Fechamento</label>
-                            <select id="billing-month" class="mt-1 block w-full p-2 border rounded-lg">
-                                <option value="">Todos os Meses</option>
-                                <option value="1">Janeiro</option>
-                                <option value="2">Fevereiro</option>
-                                <option value="3">Março</option>
-                                <option value="4">Abril</option>
-                                <option value="5">Maio</option>
-                                <option value="6">Junho</option>
-                                <option value="7">Julho</option>
-                                <option value="8">Agosto</option>
-                                <option value="9">Setembro</option>
-                                <option value="10">Outubro</option>
-                                <option value="11">Novembro</option>
-                                <option value="12">Dezembro</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium">Conta Específica</label>
-                            <select id="billing-account" class="mt-1 block w-full p-2 border rounded-lg">
-                                <option value="">Todas as Contas</option>
-                                <option value="Nu Bank Ketlyn">Nu Bank Ketlyn</option>
-                                <option value="Nu Vainer">Nu Vainer</option>
-                                <option value="Ourocard Ketlyn">Ourocard Ketlyn</option>
-                                <option value="PicPay Vainer">PicPay Vainer</option>
-                                <option value="Ducatto">Ducatto</option>
-                                <option value="Master">Master</option>
-                                <option value="PIX">PIX</option>
-                                <option value="Boleto">Boleto</option>
-                            </select>
-                        </div>
-                        <div class="flex items-end">
-                            <button id="filter-billing-btn" class="bg-blue-600 text-white px-6 py-2 rounded-lg w-full">
-                                Filtrar Período
-                            </button>
-                        </div>
-                    </div>
-
-                    <!-- Resumo do Período -->
-                    <div id="billing-summary" class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6 hidden">
-                        <div class="bg-blue-50 p-4 rounded-lg border border-blue-200">
-                            <h4 class="font-medium text-blue-700">Total do Período</h4>
-                            <p id="billing-period-total" class="text-2xl font-bold text-blue-600">R$ 0,00</p>
-                        </div>
-                        <div class="bg-green-50 p-4 rounded-lg border border-green-200">
-                            <h4 class="font-medium text-green-700">Transações</h4>
-                            <p id="billing-period-count" class="text-2xl font-bold text-green-600">0</p>
-                        </div>
-                        <div class="bg-purple-50 p-4 rounded-lg border border-purple-200">
-                            <h4 class="font-medium text-purple-700">Média por Dia</h4>
-                            <p id="billing-period-avg" class="text-2xl font-bold text-purple-600">R$ 0,00</p>
-                        </div>
-                        <div class="bg-orange-50 p-4 rounded-lg border border-orange-200">
-                            <h4 class="font-medium text-orange-700">Maior Gasto</h4>
-                            <p id="billing-period-max" class="text-2xl font-bold text-orange-600">R$ 0,00</p>
-                        </div>
-                    </div>
-
-                    <!-- Gráfico de Fatura -->
-                    <div class="mb-6">
-                        <canvas id="billing-period-chart"></canvas>
-                    </div>
-                </div>
+                <!-- (Removidos blocos: Resumo por Período de Fatura e Análise por Período de Fatura) -->
 
                 <!-- Tabela Detalhada de Gastos Empresariais -->
                 <div class="bg-white p-6 rounded-lg shadow-md mb-8">

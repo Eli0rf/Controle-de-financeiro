@@ -164,61 +164,48 @@ document.addEventListener('DOMContentLoaded', function() {
         }).format(value || 0);
     }
 
-    // ========== PERSONALIZAÇÃO VISUAL PARA PIX E BOLETO ==========
-    
-    // Função para obter cores específicas para tipos de pagamento
-    function getPaymentTypeColor(account, opacity = 1) {
-        const colors = {
-            'PIX': `rgba(46, 204, 113, ${opacity})`, // Verde vibrante
-            'Boleto': `rgba(231, 76, 60, ${opacity})`, // Vermelho vibrante
-            'Nu Bank Ketlyn': `rgba(142, 68, 173, ${opacity})`, // Roxo Nubank
-            'Nu Vainer': `rgba(155, 89, 182, ${opacity})`, // Roxo claro
-            'Ourocard Ketlyn': `rgba(241, 196, 15, ${opacity})`, // Dourado
-            'PicPay Vainer': `rgba(39, 174, 96, ${opacity})`, // Verde PicPay
-            'default': `rgba(52, 152, 219, ${opacity})` // Azul padrão
-        };
-        return colors[account] || colors['default'];
+    // ========== PERSONALIZAÇÃO VISUAL PARA CONTA UNIFICADA PIX/Boleto ==========
+
+    function isPixBoletoAccount(account){
+        return (account || '').toUpperCase() === 'PIX/BOLETO';
     }
 
-    // Função para obter ícone específico para tipos de pagamento
+    function getPaymentTypeColor(account, opacity = 1) {
+        if (isPixBoletoAccount(account)) return `rgba(56,189,248,${opacity})`; // azul turquesa
+        const map = {
+            'Nu Bank Ketlyn': `rgba(142, 68, 173, ${opacity})`,
+            'Nu Vainer': `rgba(155, 89, 182, ${opacity})`,
+            'Ourocard Ketlyn': `rgba(241, 196, 15, ${opacity})`,
+            'PicPay Vainer': `rgba(39, 174, 96, ${opacity})`
+        };
+        return map[account] || `rgba(99,102,106,${opacity})`;
+    }
+
     function getPaymentTypeIcon(account) {
+        if (isPixBoletoAccount(account)) return '💳';
         const icons = {
-            'PIX': '💸',
-            'Boleto': '📋',
             'Nu Bank Ketlyn': '💜',
             'Nu Vainer': '🟣',
             'Ourocard Ketlyn': '🟡',
-            'PicPay Vainer': '💚',
-            'default': '💳'
+            'PicPay Vainer': '💚'
         };
-        return icons[account] || icons['default'];
+        return icons[account] || '💰';
     }
 
-    // Função para gerar gradiente específico para PIX e Boleto
     function createPaymentGradient(ctx, account) {
-        const gradient = ctx.createLinearGradient(0, 0, 0, 400);
-        
-        if (account === 'PIX') {
-            gradient.addColorStop(0, 'rgba(46, 204, 113, 0.8)');
-            gradient.addColorStop(1, 'rgba(46, 204, 113, 0.1)');
-        } else if (account === 'Boleto') {
-            gradient.addColorStop(0, 'rgba(231, 76, 60, 0.8)');
-            gradient.addColorStop(1, 'rgba(231, 76, 60, 0.1)');
+        const g = ctx.createLinearGradient(0,0,0,300);
+        if (isPixBoletoAccount(account)) {
+            g.addColorStop(0,'rgba(56,189,248,0.9)');
+            g.addColorStop(1,'rgba(56,189,248,0.15)');
         } else {
-            gradient.addColorStop(0, getPaymentTypeColor(account, 0.8));
-            gradient.addColorStop(1, getPaymentTypeColor(account, 0.1));
+            g.addColorStop(0,getPaymentTypeColor(account,0.85));
+            g.addColorStop(1,getPaymentTypeColor(account,0.15));
         }
-        
-        return gradient;
+        return g;
     }
 
-    // Função para personalizar labels com ícones
     function enhanceLabelsWithIcons(labels, accounts) {
-        return labels.map((label, index) => {
-            const account = accounts[index];
-            const icon = getPaymentTypeIcon(account);
-            return `${icon} ${label}`;
-        });
+        return labels.map((label, idx)=>`${getPaymentTypeIcon(accounts[idx])} ${label}`);
     }
 
     // ===== QUARTERLY & PROJECTION (INTEGRAÇÃO NOVO ENDPOINT) =====
@@ -2216,11 +2203,9 @@ document.addEventListener('DOMContentLoaded', function() {
                 let planStatus = '';
                 let rowClass = 'border-b hover:bg-gray-50';
                 
-                // Destaque especial para PIX e Boleto
-                if (expense.account === 'PIX') {
-                    rowClass = 'border-b hover:bg-green-50 border-l-4 border-l-green-400';
-                } else if (expense.account === 'Boleto') {
-                    rowClass = 'border-b hover:bg-red-50 border-l-4 border-l-red-400';
+                // Destaque especial para conta unificada PIX/Boleto
+                if (expense.account === 'PIX/Boleto') {
+                    rowClass = 'border-b hover:bg-cyan-50 border-l-4 border-l-cyan-400';
                 }
                 
                 if (expense.account_plan_code !== null && expense.account_plan_code !== undefined && expense.account_plan_code !== '') {
@@ -2230,7 +2215,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         planCode = '<span class="text-orange-600 font-semibold">Sem Categoria</span>';
                         planStatus = '<span class="text-xs bg-orange-100 text-orange-800 px-2 py-1 rounded">🤖 Auto-classificado</span>';
                         // Manter o destaque de PIX/Boleto mesmo com categoria em falta
-                        if (expense.account !== 'PIX' && expense.account !== 'Boleto') {
+                        if (expense.account !== 'PIX/Boleto') {
                             rowClass = 'border-b hover:bg-orange-50 bg-orange-25';
                         }
                     } else {
@@ -2257,8 +2242,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     <td class="p-3 ${valorClass}">R$ ${parseFloat(expense.amount).toFixed(2)}</td>
                     <td class="p-3 text-sm">
                         <span class="px-2 py-1 rounded text-xs font-medium ${
-                            expense.account === 'PIX' ? 'bg-green-100 text-green-800 border border-green-200' :
-                            expense.account === 'Boleto' ? 'bg-red-100 text-red-800 border border-red-200' :
+                            expense.account === 'PIX/Boleto' ? 'bg-cyan-100 text-cyan-800 border border-cyan-200' :
                             'bg-gray-50 text-gray-700'
                         }">
                             ${getPaymentTypeIcon(expense.account)} ${expense.account}
@@ -2307,8 +2291,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const comNota = expenses.filter(e => e.invoice_path);
         
         // Estatísticas específicas para PIX e Boleto
-        const pixExpenses = expenses.filter(e => e.account === 'PIX');
-        const boletoExpenses = expenses.filter(e => e.account === 'Boleto');
+    const pixBoletoExpenses = expenses.filter(e => e.account === 'PIX/Boleto');
         const totalPix = pixExpenses.reduce((sum, e) => sum + parseFloat(e.amount), 0);
         const totalBoleto = boletoExpenses.reduce((sum, e) => sum + parseFloat(e.amount), 0);
         
@@ -2556,8 +2539,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     valueFont: CHART_CONFIG.valueFont,
                     // Efeito especial para PIX e Boleto
                     hoverBackgroundColor: accounts.map(account => {
-                        if (account === 'PIX') return 'rgba(46, 204, 113, 1)';
-                        if (account === 'Boleto') return 'rgba(231, 76, 60, 1)';
+                        if (account === 'PIX/Boleto') return 'rgba(56,189,248,1)';
                         return getPaymentTypeColor(account, 1);
                     })
                 }]
@@ -2688,15 +2670,13 @@ document.addEventListener('DOMContentLoaded', function() {
             // Gerar cores personalizadas para cada conta
             const personalColors = accounts.map(account => {
                 // Cores mais claras para gastos pessoais
-                if (account === 'PIX') return 'rgba(46, 204, 113, 0.6)';
-                if (account === 'Boleto') return 'rgba(231, 76, 60, 0.6)';
+                if (account === 'PIX/Boleto') return 'rgba(56,189,248,0.6)';
                 return getPaymentTypeColor(account, 0.6);
             });
             
             const businessColors = accounts.map(account => {
                 // Cores mais escuras para gastos empresariais
-                if (account === 'PIX') return 'rgba(46, 204, 113, 0.9)';
-                if (account === 'Boleto') return 'rgba(231, 76, 60, 0.9)';
+                if (account === 'PIX/Boleto') return 'rgba(56,189,248,0.9)';
                 return getPaymentTypeColor(account, 0.9);
             });
             
@@ -4951,7 +4931,7 @@ document.addEventListener('DOMContentLoaded', function() {
         };
 
         // Validar se é conta permitida
-        if (!['PIX', 'Boleto'].includes(data.account)) {
+    if (data.account !== 'PIX/Boleto') {
             showNotification('Gastos recorrentes só são permitidos para contas PIX e Boleto', 'error');
             return;
         }
@@ -6837,7 +6817,7 @@ document.addEventListener('DOMContentLoaded', function() {
             
             // 2. Filtrar por PIX e Boleto
             const pixBoletoExpenses = allExpenses.filter(expense => 
-                expense.account === 'PIX' || expense.account === 'Boleto'
+                expense.account === 'PIX/Boleto'
             );
             console.log('💳 Expenses PIX/Boleto:', pixBoletoExpenses.length);
             
@@ -6850,7 +6830,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 
                 // 4. Calcular totais
                 const pixTotal = pixBoletoExpenses
-                    .filter(e => e.account === 'PIX')
+                    .filter(e => e.account === 'PIX/Boleto')
                     .reduce((sum, e) => sum + parseFloat(e.amount || 0), 0);
                 
                 const boletoTotal = pixBoletoExpenses
@@ -7487,8 +7467,7 @@ document.addEventListener('DOMContentLoaded', function() {
         console.log('🔄 Atualizando estatísticas PIX e Boleto...');
         console.log('📊 Total de gastos recebidos:', expenses.length);
         
-        const pixExpenses = expenses.filter(e => e.account === 'PIX');
-        const boletoExpenses = expenses.filter(e => e.account === 'Boleto');
+    const pixBoletoExpenses = expenses.filter(e => e.account === 'PIX/Boleto');
         
         console.log('💳 Gastos PIX encontrados:', pixExpenses.length);
         console.log('📄 Gastos Boleto encontrados:', boletoExpenses.length);
@@ -7642,8 +7621,7 @@ document.addEventListener('DOMContentLoaded', function() {
             return;
         }
         
-        const pixExpenses = expenses.filter(e => e.account === 'PIX');
-        const boletoExpenses = expenses.filter(e => e.account === 'Boleto');
+    const pixBoletoExpenses = expenses.filter(e => e.account === 'PIX/Boleto');
         
         const pixTotal = pixExpenses.reduce((sum, e) => sum + parseFloat(e.amount || 0), 0);
         const boletoTotal = boletoExpenses.reduce((sum, e) => sum + parseFloat(e.amount || 0), 0);
