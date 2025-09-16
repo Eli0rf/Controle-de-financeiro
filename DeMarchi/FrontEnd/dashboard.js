@@ -3786,16 +3786,18 @@ document.addEventListener('DOMContentLoaded', function() {
                 throw new Error(error.message || 'Erro ao buscar contas.');
             }
             
-            const accounts = await response.json();
+            let accounts = await response.json();
+            // Garantir que conta unificada exista mesmo que ainda não haja registros
+            if (!accounts.includes('PIX/Boleto')) accounts.push('PIX/Boleto');
+            // Remover legados se ainda vierem do backend
+            accounts = accounts.filter(a => a && a !== 'PIX' && a !== 'Boleto');
 
             select.innerHTML = '<option value="">Todas as Contas</option>';
             accounts.forEach(account => {
-                if (account) {
-                    const option = document.createElement('option');
-                    option.value = account;
-                    option.textContent = account;
-                    select.appendChild(option);
-                }
+                const option = document.createElement('option');
+                option.value = account;
+                option.textContent = account;
+                select.appendChild(option);
             });
         } catch (error) {
             console.error('Erro ao carregar contas:', error);
@@ -3840,15 +3842,15 @@ document.addEventListener('DOMContentLoaded', function() {
                 throw new Error(error.message || 'Erro ao buscar contas.');
             }
             
-            const accounts = await response.json();
+            let accounts = await response.json();
+            if (!accounts.includes('PIX/Boleto')) accounts.push('PIX/Boleto');
+            accounts = accounts.filter(a => a && a !== 'PIX' && a !== 'Boleto');
             irAccount.innerHTML = '<option value="">Todas</option>';
             accounts.forEach(account => {
-                if (account) {
-                    const option = document.createElement('option');
-                    option.value = account;
-                    option.textContent = account;
-                    irAccount.appendChild(option);
-                }
+                const option = document.createElement('option');
+                option.value = account;
+                option.textContent = account;
+                irAccount.appendChild(option);
             });
         } catch (error) {
             console.error('Erro ao carregar contas IR:', error);
@@ -10701,13 +10703,24 @@ document.addEventListener('DOMContentLoaded', function() {
         if (accountSelect && filterAccountSelect) {
             accountSelect.innerHTML = '<option value="">Todas as Contas</option>';
             
-            // Copiar opções do filtro principal
+            // Copiar opções do filtro principal, garantindo conta unificada
+            const seen = new Set();
             for (let i = 1; i < filterAccountSelect.options.length; i++) {
                 const option = filterAccountSelect.options[i];
-                const newOption = document.createElement('option');
-                newOption.value = option.value;
-                newOption.textContent = option.textContent;
-                accountSelect.appendChild(newOption);
+                if (!option.value || option.value === 'PIX' || option.value === 'Boleto') continue;
+                if (!seen.has(option.value)) {
+                    const newOption = document.createElement('option');
+                    newOption.value = option.value;
+                    newOption.textContent = option.textContent;
+                    accountSelect.appendChild(newOption);
+                    seen.add(option.value);
+                }
+            }
+            if (!seen.has('PIX/Boleto')) {
+                const opt = document.createElement('option');
+                opt.value = 'PIX/Boleto';
+                opt.textContent = 'PIX/Boleto';
+                accountSelect.appendChild(opt);
             }
         }
     }
