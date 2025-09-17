@@ -6952,6 +6952,110 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
+    // Helper: normaliza a resposta do backend para o formato esperado pelos gráficos/tabela
+    function normalizeRecurringPixBoletoBI(biData) {
+        if (!biData || typeof biData !== 'object') return {
+            summary: { totalPlanned: 0, avgActual: 0, overallReliability: 0 },
+            monthlyHistory: [],
+            categoryBreakdown: [],
+            trendsSummary: { increasing: 0, decreasing: 0, stable: 0 },
+            projections: { nextMonth: 0, threeMonths: 0, yearEnd: 0 },
+            expenses: []
+        };
+
+        const period = biData.period || {};
+        const results = Array.isArray(biData.expenses) ? biData.expenses : [];
+        const summaryRaw = biData.summary || {};
+
+        // KPIs
+        const summary = {
+            totalPlanned: Number(summaryRaw.totalPlanned || 0),
+            avgActual: Number(summaryRaw.totalActualAvg || 0),
+            overallReliability: Number(summaryRaw.avgReliability || 0)
+        };
+
+        // Monthly history agregado (últimos 12 meses)
+        const monthlyHistory = [];
+        const baseYear = Number(period.year) || new Date().getFullYear();
+        const baseMonth = Number(period.month) || (new Date().getMonth() + 1);
+        for (let i = 11; i >= 0; i--) {
+            const date = new Date(baseYear, baseMonth - 1 - i);
+            const y = date.getFullYear();
+            const m = date.getMonth() + 1;
+            let totalPlanned = 0;
+            let totalActual = 0;
+            for (const r of results) {
+                const hist = Array.isArray(r.history) ? r.history : [];
+                // cada item da history tem planned/actual/ year/month
+                const hm = hist.find(h => h.year === y && h.month === m);
+                if (hm) {
+                    totalPlanned += Number(hm.planned || r.plannedAmount || 0);
+                    totalActual += Number(hm.actual || 0);
+                } else {
+                    // fallback: usa o valor planejado do recorrente
+                    totalPlanned += Number(r.plannedAmount || 0);
+                }
+            }
+            const variationPercent = totalPlanned > 0 ? ((totalActual - totalPlanned) / totalPlanned) * 100 : 0;
+            monthlyHistory.push({
+                year: y,
+                month: m,
+                monthLabel: date.toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' }),
+                totalPlanned,
+                totalActual,
+                variationPercent
+            });
+        }
+
+        // Category breakdown em array
+        const cb = summaryRaw.categoryBreakdown || {};
+        const categoryBreakdown = Object.keys(cb).map(k => ({
+            category: k,
+            totalPlanned: Number(cb[k]?.planned || 0),
+            avgActual: Number(cb[k]?.avgActual || 0),
+            count: Number(cb[k]?.count || 0)
+        })).sort((a,b)=> b.totalPlanned - a.totalPlanned);
+
+        // Tendências
+        const trendsSummary = summaryRaw.trends || { increasing: 0, decreasing: 0, stable: 0 };
+
+        // Projeções agregadas (soma das projeções por item)
+        const projections = results.reduce((acc, r) => {
+            const p = r.projections || {};
+            acc.nextMonth += Number(p.nextMonth || 0);
+            acc.threeMonths += Number(p.next3Months || p.nextThreeMonths || 0);
+            acc.yearEnd += Number(p.yearEnd || 0);
+            return acc;
+        }, { nextMonth: 0, threeMonths: 0, yearEnd: 0 });
+
+        // Adaptar itens para tabela esperada
+        const adaptedExpenses = results.map(r => {
+            const stats = r.statistics || {};
+            // pegar atual do mês do período
+            let currentMonthActual = 0;
+            const hist = Array.isArray(r.history) ? r.history : [];
+            const hm = hist.find(h => h.year === baseYear && h.month === baseMonth);
+            if (hm) currentMonthActual = Number(hm.actual || 0);
+            // mapear direção
+            const dir = stats.trendDirection;
+            const trend = dir === 'up' ? 'increasing' : dir === 'down' ? 'decreasing' : 'stable';
+            return {
+                id: r.id,
+                description: r.description,
+                category: r.category,
+                paymentDay: r.dayOfMonth,
+                plannedAmount: Number(r.plannedAmount || 0),
+                avgActual: Number(stats.avgActual || 0),
+                variationPercent: Number(stats.avgVariation || 0),
+                reliability: Number(stats.reliability || 0),
+                trend,
+                currentMonthActual
+            };
+        });
+
+        return { summary, monthlyHistory, categoryBreakdown, trendsSummary, projections, expenses: adaptedExpenses };
+    }
+
     // Carregar dados BI de gastos recorrentes PIX/Boleto
     async function loadRecurringPixBoletoBI() {
         try {
@@ -6961,8 +7065,10 @@ document.addEventListener('DOMContentLoaded', function() {
                 throw new Error('Erro ao buscar dados de gastos recorrentes');
             }
             
-            const biData = await response.json();
-            console.log('📊 Dados BI recebidos:', biData);
+            const raw = await response.json();
+            console.log('📊 Dados BI recebidos (raw):', raw);
+            const biData = normalizeRecurringPixBoletoBI(raw);
+            console.log('📊 Dados BI normalizados:', biData);
 
             // Atualizar KPIs principais
             updateRecurringKPIs(biData);
@@ -7412,7 +7518,8 @@ document.addEventListener('DOMContentLoaded', function() {
             const response = await authenticatedFetch(url);
             if (!response.ok) throw new Error('Erro ao aplicar filtros');
 
-            const biData = await response.json();
+            const raw = await response.json();
+            const biData = normalizeRecurringPixBoletoBI(raw);
             
             // Atualizar dashboard com dados filtrados
             updateRecurringKPIs(biData);
@@ -7865,7 +7972,7 @@ document.addEventListener('DOMContentLoaded', function() {
             console.log('📊 Total de despesas obtidas para PIX/Boleto (todos os períodos):', expenses.length);
             
             // Log de debug para ver se há gastos PIX/Boleto
-            const pixBoletoCount = expenses.filter(e => e.account === 'PIX' || e.account === 'Boleto').length;
+            const pixBoletoCount = expenses.filter(e => isPixBoletoAccount(e.account) || e.account === 'PIX' || e.account === 'Boleto').length;
             console.log('💳 Gastos PIX/Boleto encontrados:', pixBoletoCount);
             
             if (pixBoletoCount === 0) {
@@ -8001,7 +8108,7 @@ document.addEventListener('DOMContentLoaded', function() {
         try {
             const expenses = await fetchPixBoletoExpenses();
             let filteredExpenses = expenses.filter(expense => 
-                expense.account === 'PIX' || expense.account === 'Boleto'
+                isPixBoletoAccount(expense.account) || expense.account === 'PIX' || expense.account === 'Boleto'
             );
             
             console.log('📊 Gastos PIX/Boleto antes dos filtros:', filteredExpenses.length);
