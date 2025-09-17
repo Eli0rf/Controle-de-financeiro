@@ -354,6 +354,25 @@ app.post('/api/expenses', authenticateToken, upload.single('invoice'), async (re
         res.status(201).json({ message: numberOfInstallments > 1 ? 'Gastos parcelados adicionados com sucesso!' : 'Gasto adicionado com sucesso!' });
     } catch (error) {
         console.error('ERRO AO ADICIONAR GASTO:', error);
+        const msg = (error && (error.message || '')).toLowerCase();
+        // Mapear erros comuns para feedback claro
+        if (msg.includes('enum') || msg.includes('truncated') || msg.includes('incorrect')) {
+            return res.status(400).json({ 
+                error: 'INVALID_ACCOUNT_ENUM', 
+                message: "Conta inválida. Use 'PIX/Boleto' ou recarregue a página para atualizar.",
+                details: error.message 
+            });
+        }
+        if (error.code === 'ER_NO_REFERENCED_ROW_2' || msg.includes('foreign key')) {
+            return res.status(400).json({ 
+                error: 'INVALID_USER', 
+                message: 'Sessão expirada ou usuário inválido. Faça login novamente.',
+                details: error.message 
+            });
+        }
+        if (error.code === 'ER_BAD_NULL_ERROR') {
+            return res.status(400).json({ error: 'MISSING_FIELDS', message: 'Campos obrigatórios ausentes.', details: error.message });
+        }
         res.status(500).json({ message: 'Ocorreu um erro no servidor ao adicionar o gasto.' });
     }
 });
