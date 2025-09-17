@@ -959,7 +959,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 21: 1890.00, 22: 2430.00, 23: 2700.00, 24: 1080.00, 25: 2100.00,
                 26: 2460.00, 27: 2500.00, 28: 3060.00, 29: 3600.00, 30: 3060.00,
                 31: 3840.00, 32: 4320.00, 33: 4800.00, 34: 4800.00, 35: 5400.00,
-                36: 5760.00, 37: 6720.00, 38: 7200.00, 39: 8400.00, 40: 9600.00
+                36: 5760.00, 37: 6720.00, 38: 7200.00, 39: 8400.00, 40: 9600.00,
+                46: 1000.00, 47: 1000.00
             };
 
             // Calcular totais por plano a partir dos dados de despesas
@@ -1246,7 +1247,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 21: 1890.00, 22: 2430.00, 23: 2700.00, 24: 1080.00, 25: 2100.00,
                 26: 2460.00, 27: 2500.00, 28: 3060.00, 29: 3600.00, 30: 3060.00,
                 31: 3840.00, 32: 4320.00, 33: 4800.00, 34: 4800.00, 35: 5400.00,
-                36: 5760.00, 37: 6720.00, 38: 7200.00, 39: 8400.00, 40: 9600.00
+                36: 5760.00, 37: 6720.00, 38: 7200.00, 39: 8400.00, 40: 9600.00,
+                46: 1000.00, 47: 1000.00
             };
 
             // Calcular totais por plano a partir dos dados de despesas
@@ -5759,6 +5761,34 @@ document.addEventListener('DOMContentLoaded', function() {
     // Tornar função global para uso nos botões
     window.closeModal = closeModal;
 
+    // Função para gerar cores distintas para gráficos
+    function generateDistinctColors(count) {
+        const colors = [
+            'rgba(59, 130, 246, 0.7)',   // Blue
+            'rgba(34, 197, 94, 0.7)',    // Green
+            'rgba(239, 68, 68, 0.7)',    // Red
+            'rgba(251, 146, 60, 0.7)',   // Orange
+            'rgba(168, 85, 247, 0.7)',   // Purple
+            'rgba(250, 204, 21, 0.7)',   // Yellow
+            'rgba(14, 165, 233, 0.7)',   // Light Blue
+            'rgba(236, 72, 153, 0.7)',   // Pink
+            'rgba(16, 185, 129, 0.7)',   // Emerald
+            'rgba(245, 101, 101, 0.7)',  // Light Red
+            'rgba(139, 92, 246, 0.7)',   // Violet
+            'rgba(6, 182, 212, 0.7)',    // Cyan
+        ];
+
+        // Se precisar de mais cores, gerar dinamicamente
+        if (count > colors.length) {
+            for (let i = colors.length; i < count; i++) {
+                const hue = (i * 137.508) % 360; // Golden angle approximation
+                colors.push(`hsla(${hue}, 70%, 60%, 0.7)`);
+            }
+        }
+
+        return colors.slice(0, count);
+    }
+
     // Função para gerar relatório PDF
     async function generatePDFReport() {
         try {
@@ -6899,202 +6929,528 @@ document.addEventListener('DOMContentLoaded', function() {
             const token = getToken();
             if (!token) return;
 
-            console.log('🔄 Carregando dados PIX e Boleto...');
-            showNotification('Carregando dados PIX e Boleto...', 'info', 2000);
+            console.log('🔄 Carregando dados BI PIX/Boleto Recorrentes...');
+            showNotification('Carregando analytics de gastos recorrentes...', 'info', 2000);
 
             // Aguardar Chart.js
             if (!await waitForChartJs()) {
-                console.warn('Chart.js não carregado para PIX/Boleto');
+                console.warn('Chart.js não carregado para PIX/Boleto BI');
                 setTimeout(() => loadPixBoletoData(), 500);
                 return;
             }
 
-            // Carregar dados completos
-            await loadPixBoletoMetrics();
-            await loadPixBoletoCharts();
-            await loadPixBoletoTables();
-            setupPixBoletoFilters();
+            // Carregar dados BI de gastos recorrentes
+            await loadRecurringPixBoletoBI();
+            setupRecurringPixBoletoEventHandlers();
 
-            showNotification('Dados PIX e Boleto carregados com sucesso!', 'success', 2000);
-            console.log('✅ PIX/Boleto carregado com sucesso');
+            showNotification('Dashboard BI PIX/Boleto carregado com sucesso!', 'success', 2000);
+            console.log('✅ BI PIX/Boleto Recorrentes carregado');
 
         } catch (error) {
-            console.error('❌ Erro ao carregar PIX/Boleto:', error);
-            showNotification('Erro ao carregar dados PIX/Boleto: ' + error.message, 'error');
+            console.error('❌ Erro ao carregar BI PIX/Boleto:', error);
+            showNotification('Erro ao carregar analytics: ' + error.message, 'error');
         }
     }
 
-    // Função para carregar métricas PIX/Boleto (unificado)
-    async function loadPixBoletoMetrics() {
+    // Carregar dados BI de gastos recorrentes PIX/Boleto
+    async function loadRecurringPixBoletoBI() {
         try {
-            const currentDate = new Date();
-            const currentYear = currentDate.getFullYear();
-            const currentMonth = currentDate.getMonth() + 1;
-            
-            // Buscar dados atuais
-            const currentData = await fetchPixBoletoData(currentYear, currentMonth);
-            
-            // Buscar dados do mês anterior para comparação
-            const lastMonth = currentMonth === 1 ? 12 : currentMonth - 1;
-            const lastMonthYear = currentMonth === 1 ? currentYear - 1 : currentYear;
-            const lastMonthData = await fetchPixBoletoData(lastMonthYear, lastMonth);
-            
-            // Calcular estatísticas unificadas
-            const grandTotal = currentData.reduce((sum, item) => sum + parseAmount(item.amount ?? item.valor ?? item.value), 0);
-            
-            const lastMonthTotal = lastMonthData.reduce((sum, item) => sum + parseAmount(item.amount ?? item.valor ?? item.value), 0);
-            const growth = lastMonthTotal > 0 ? ((grandTotal - lastMonthTotal) / lastMonthTotal * 100) : 0;
-            
-            const totalTransactions = currentData.length;
-            const averageTransaction = totalTransactions > 0 ? grandTotal / totalTransactions : 0;
-            
-            // Atualizar interface
-            updatePixBoletoMetrics({
-                grandTotal,
-                count: totalTransactions,
-                growth,
-                average: averageTransaction
-            });
-            
-            // Estatísticas detalhadas (não aplicável na versão unificada)
-            
-        } catch (error) {
-            console.error('Erro ao carregar métricas PIX/Boleto:', error);
-            throw error;
-        }
-    }
-
-    // Função para buscar dados PIX/Boleto (unificado com fallback)
-    async function fetchPixBoletoData(year, month) {
-        try {
-            let url = `${API_BASE_URL}/api/expenses?year=${year}`;
-            if (month) {
-                url += `&month=${month}`;
-            }
-            
-            const response = await authenticatedFetch(url);
+            const response = await authenticatedFetch(`${API_BASE_URL}/api/recurring-pix-boleto`);
             
             if (!response.ok) {
-                throw new Error('Erro ao buscar dados PIX/Boleto');
+                throw new Error('Erro ao buscar dados de gastos recorrentes');
             }
             
-            const allExpenses = await response.json();
-            // Preferir unificados, com fallback para legados
-            const unified = allExpenses.filter(exp => isPixBoletoAccount(exp.account));
-            if (unified.length > 0) return unified;
-            return allExpenses.filter(expense => isPixAccount(expense.account) || isBoletoAccount(expense.account));
+            const biData = await response.json();
+            console.log('📊 Dados BI recebidos:', biData);
+
+            // Atualizar KPIs principais
+            updateRecurringKPIs(biData);
+            
+            // Renderizar gráficos BI
+            renderRecurringPlannedVsActualChart(biData.monthlyHistory);
+            renderRecurringVariationChart(biData.monthlyHistory);
+            renderRecurringCategoryChart(biData.categoryBreakdown);
+            
+            // Atualizar análise de tendências
+            updateTrendsAnalysis(biData.trendsSummary);
+            
+            // Atualizar projeções
+            updateProjections(biData.projections);
+            
+            // Renderizar tabela inteligente
+            renderRecurringExpensesTable(biData.expenses);
+            
+            // Popular filtros de anos
+            populateRecurringYearFilter();
             
         } catch (error) {
-            console.error('Erro ao buscar dados PIX/Boleto:', error);
-            return [];
+            console.error('Erro ao carregar dados BI:', error);
+            showNotification('Erro ao carregar analytics de gastos recorrentes', 'error');
         }
     }
 
-    // Função para atualizar métricas na interface (unificado)
-    function updatePixBoletoMetrics(data) {
-        const totalEl = document.getElementById('pix-boleto-total');
-        const countEl = document.getElementById('pix-boleto-count');
-        const growthEl = document.getElementById('pix-boleto-growth');
-        const averageEl = document.getElementById('pix-boleto-average');
+    // Atualizar KPIs principais do dashboard
+    function updateRecurringKPIs(biData) {
+        // Total programado
+        const totalPlannedEl = document.getElementById('recurring-total-planned');
+        if (totalPlannedEl && biData.summary) {
+            totalPlannedEl.textContent = formatCurrency(biData.summary.totalPlanned || 0);
+        }
 
-        if (totalEl) totalEl.textContent = formatCurrency(data.grandTotal ?? 0);
-        if (countEl) countEl.textContent = data.count ?? 0;
-        if (averageEl) averageEl.textContent = formatCurrency(data.average ?? 0);
+        // Média realizada
+        const avgActualEl = document.getElementById('recurring-avg-actual');
+        if (avgActualEl && biData.summary) {
+            avgActualEl.textContent = formatCurrency(biData.summary.avgActual || 0);
+        }
 
-        // Atualizar crescimento
-        if (growthEl) {
-            const growth = Number.isFinite(data.growth) ? data.growth : 0;
-            const growthText = growth >= 0 ? `+${growth.toFixed(1)}%` : `${growth.toFixed(1)}%`;
-            const growthColor = growth >= 0 ? 'text-green-400' : 'text-red-400';
+        // Confiabilidade
+        const reliabilityEl = document.getElementById('recurring-reliability');
+        if (reliabilityEl && biData.summary) {
+            const reliability = biData.summary.overallReliability || 0;
+            reliabilityEl.textContent = `${reliability.toFixed(1)}%`;
+            // Cor baseada na confiabilidade
+            reliabilityEl.className = reliability >= 80 ? 'text-xl font-bold text-green-300' :
+                                    reliability >= 60 ? 'text-xl font-bold text-yellow-300' :
+                                    'text-xl font-bold text-red-300';
+        }
 
-            growthEl.textContent = growthText;
-            growthEl.className = `text-xl font-bold ${growthColor}`;
+        // Total de gastos ativos
+        const countEl = document.getElementById('recurring-count');
+        if (countEl && biData.expenses) {
+            countEl.textContent = biData.expenses.length.toString();
         }
     }
 
-    // Função para carregar gráficos PIX/Boleto (unificado)
-    async function loadPixBoletoCharts() {
-        try {
-            const currentDate = new Date();
-            const currentYear = currentDate.getFullYear();
-            const currentMonth = currentDate.getMonth() + 1;
-            
-            // Buscar dados dos últimos 12 meses
-            const monthlyData = [];
-            for (let i = 11; i >= 0; i--) {
-                const date = new Date(currentYear, currentMonth - 1 - i);
-                const year = date.getFullYear();
-                const month = date.getMonth() + 1;
-                
-                const data = await fetchPixBoletoData(year, month);
-                monthlyData.push({
-                    month: date.toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' }),
-                    total: data.reduce((sum, item) => sum + parseAmount(item.amount ?? item.valor ?? item.value), 0)
-                });
+    // Renderizar gráfico Programado vs Realizado
+    function renderRecurringPlannedVsActualChart(monthlyHistory) {
+        const canvas = document.getElementById('recurring-planned-vs-actual-chart');
+        if (!canvas || !monthlyHistory) return;
+
+        const ctx = canvas.getContext('2d');
+        destroyChart('recurringPlannedVsActualChart');
+
+        const labels = monthlyHistory.map(m => m.monthLabel);
+        const plannedData = monthlyHistory.map(m => m.totalPlanned);
+        const actualData = monthlyHistory.map(m => m.totalActual);
+
+        chartRegistry.recurringPlannedVsActualChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [
+                    {
+                        label: '📋 Programado',
+                        data: plannedData,
+                        borderColor: 'rgba(59, 130, 246, 1)',
+                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                        borderWidth: 3,
+                        fill: false,
+                        tension: 0.1
+                    },
+                    {
+                        label: '💰 Realizado',
+                        data: actualData,
+                        borderColor: 'rgba(34, 197, 94, 1)',
+                        backgroundColor: 'rgba(34, 197, 94, 0.1)',
+                        borderWidth: 3,
+                        fill: false,
+                        tension: 0.1
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: {
+                    intersect: false,
+                    mode: 'index'
+                },
+                plugins: {
+                    title: {
+                        display: true,
+                        text: 'Evolução: Programado vs Realizado',
+                        font: { size: 14, weight: 'bold' }
+                    },
+                    legend: {
+                        display: true,
+                        position: 'top'
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                return `${context.dataset.label}: ${formatCurrency(context.parsed.y)}`;
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            callback: function(value) {
+                                return formatCurrency(value);
+                            }
+                        }
+                    }
+                }
             }
-            
-            // Renderizar gráficos unificados
-            renderPixBoletoEvolutionChartUnified(monthlyData);
-            await renderPixBoletoDistributionChartUnified(currentYear, currentMonth);
-            await renderPixBoletoCategoryChartUnified(currentYear, currentMonth);
-            await renderPixBoletoLimitsChart(currentYear, currentMonth);
-            
-        } catch (error) {
-            console.error('Erro ao carregar gráficos PIX/Boleto:', error);
-            throw error;
+        });
+    }
+
+    // Renderizar gráfico de variação percentual
+    function renderRecurringVariationChart(monthlyHistory) {
+        const canvas = document.getElementById('recurring-variation-chart');
+        if (!canvas || !monthlyHistory) return;
+
+        const ctx = canvas.getContext('2d');
+        destroyChart('recurringVariationChart');
+
+        const labels = monthlyHistory.map(m => m.monthLabel);
+        const variationData = monthlyHistory.map(m => m.variationPercent);
+
+        chartRegistry.recurringVariationChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [
+                    {
+                        label: '📊 Variação %',
+                        data: variationData,
+                        backgroundColor: variationData.map(v => 
+                            v > 0 ? 'rgba(239, 68, 68, 0.7)' : 'rgba(34, 197, 94, 0.7)'
+                        ),
+                        borderColor: variationData.map(v => 
+                            v > 0 ? 'rgba(239, 68, 68, 1)' : 'rgba(34, 197, 94, 1)'
+                        ),
+                        borderWidth: 1
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    title: {
+                        display: true,
+                        text: 'Variação Mensal (%)',
+                        font: { size: 14, weight: 'bold' }
+                    },
+                    legend: {
+                        display: false
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                const value = context.parsed.y;
+                                const sign = value >= 0 ? '+' : '';
+                                return `Variação: ${sign}${value.toFixed(1)}%`;
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    y: {
+                        ticks: {
+                            callback: function(value) {
+                                return value + '%';
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    // Renderizar gráfico por categoria
+    function renderRecurringCategoryChart(categoryBreakdown) {
+        const canvas = document.getElementById('recurring-category-chart');
+        if (!canvas || !categoryBreakdown) return;
+
+        const ctx = canvas.getContext('2d');
+        destroyChart('recurringCategoryChart');
+
+        const labels = categoryBreakdown.map(c => c.category);
+        const data = categoryBreakdown.map(c => c.totalPlanned);
+        const colors = generateDistinctColors(labels.length);
+
+        chartRegistry.recurringCategoryChart = new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: labels,
+                datasets: [
+                    {
+                        data: data,
+                        backgroundColor: colors,
+                        borderColor: colors.map(c => c.replace('0.7', '1')),
+                        borderWidth: 2
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    title: {
+                        display: true,
+                        text: 'Distribuição por Categoria',
+                        font: { size: 14, weight: 'bold' }
+                    },
+                    legend: {
+                        display: true,
+                        position: 'bottom'
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                const label = context.label;
+                                const value = context.parsed;
+                                const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                                const percentage = ((value / total) * 100).toFixed(1);
+                                return `${label}: ${formatCurrency(value)} (${percentage}%)`;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    // Atualizar análise de tendências
+    function updateTrendsAnalysis(trendsSummary) {
+        if (!trendsSummary) return;
+
+        const increasingEl = document.getElementById('trends-increasing');
+        const decreasingEl = document.getElementById('trends-decreasing');
+        const stableEl = document.getElementById('trends-stable');
+
+        if (increasingEl) increasingEl.textContent = trendsSummary.increasing || 0;
+        if (decreasingEl) decreasingEl.textContent = trendsSummary.decreasing || 0;
+        if (stableEl) stableEl.textContent = trendsSummary.stable || 0;
+    }
+
+    // Atualizar projeções
+    function updateProjections(projections) {
+        if (!projections) return;
+
+        const nextMonthEl = document.getElementById('projection-next-month');
+        const threeMonthsEl = document.getElementById('projection-3-months');
+        const yearEndEl = document.getElementById('projection-year-end');
+
+        if (nextMonthEl) nextMonthEl.textContent = formatCurrency(projections.nextMonth || 0);
+        if (threeMonthsEl) threeMonthsEl.textContent = formatCurrency(projections.threeMonths || 0);
+        if (yearEndEl) yearEndEl.textContent = formatCurrency(projections.yearEnd || 0);
+    }
+
+    // Renderizar tabela inteligente de gastos recorrentes
+    function renderRecurringExpensesTable(expenses) {
+        const tableBody = document.getElementById('recurring-expenses-table');
+        if (!tableBody || !expenses) return;
+
+        tableBody.innerHTML = '';
+
+        expenses.forEach(expense => {
+            const row = document.createElement('tr');
+            row.className = 'border-b hover:bg-gray-50';
+
+            // Status color based on budget performance
+            const statusClass = getExpenseStatusClass(expense);
+            const reliabilityColor = getReliabilityColor(expense.reliability);
+            const trendIcon = getTrendIcon(expense.trend);
+
+            row.innerHTML = `
+                <td class="p-3">
+                    <div class="font-medium">${expense.description || 'N/A'}</div>
+                    <div class="text-xs text-gray-500">${expense.category || 'Sem categoria'}</div>
+                </td>
+                <td class="p-3 text-center">${expense.paymentDay || 'Variável'}</td>
+                <td class="p-3 text-right font-medium">${formatCurrency(expense.plannedAmount || 0)}</td>
+                <td class="p-3 text-right">${formatCurrency(expense.avgActual || 0)}</td>
+                <td class="p-3 text-right">
+                    <span class="font-medium ${expense.variationPercent >= 0 ? 'text-red-600' : 'text-green-600'}">
+                        ${expense.variationPercent >= 0 ? '+' : ''}${(expense.variationPercent || 0).toFixed(1)}%
+                    </span>
+                </td>
+                <td class="p-3 text-center">
+                    <span class="px-2 py-1 rounded-full text-xs font-medium ${reliabilityColor}">
+                        ${(expense.reliability || 0).toFixed(0)}%
+                    </span>
+                </td>
+                <td class="p-3 text-center">${trendIcon}</td>
+                <td class="p-3">
+                    <div class="flex items-center gap-2">
+                        <div class="w-3 h-3 rounded-full ${statusClass}"></div>
+                        <span class="text-xs">${getStatusText(expense)}</span>
+                    </div>
+                </td>
+                <td class="p-3">
+                    <button onclick="showDetailedAnalysis(${expense.id})" 
+                            class="text-blue-600 hover:text-blue-800 text-sm">
+                        🔍 Analisar
+                    </button>
+                </td>
+            `;
+
+            tableBody.appendChild(row);
+        });
+    }
+
+    // Obter classe de status do gasto
+    function getExpenseStatusClass(expense) {
+        if (!expense.currentMonthActual) return 'bg-gray-400'; // Pendente
+        
+        const variation = expense.variationPercent || 0;
+        if (Math.abs(variation) <= 10) return 'bg-green-500'; // No orçamento
+        if (variation > 10) return 'bg-orange-500'; // Acima do orçamento
+        return 'bg-blue-500'; // Abaixo do orçamento
+    }
+
+    // Obter cor da confiabilidade
+    function getReliabilityColor(reliability) {
+        const rel = reliability || 0;
+        if (rel >= 80) return 'bg-green-100 text-green-800';
+        if (rel >= 60) return 'bg-yellow-100 text-yellow-800';
+        return 'bg-red-100 text-red-800';
+    }
+
+    // Obter ícone de tendência
+    function getTrendIcon(trend) {
+        switch (trend) {
+            case 'increasing': return '📈';
+            case 'decreasing': return '📉';
+            case 'stable': return '➡️';
+            default: return '❓';
         }
     }
 
-    // Função para carregar tabelas PIX e Boleto
-    async function loadPixBoletoTables() {
+    // Obter texto do status
+    function getStatusText(expense) {
+        if (!expense.currentMonthActual) return 'Pendente';
+        
+        const variation = expense.variationPercent || 0;
+        if (Math.abs(variation) <= 10) return 'No Orçamento';
+        if (variation > 10) return 'Acima';
+        return 'Abaixo';
+    }
+
+    // Popular filtro de anos
+    function populateRecurringYearFilter() {
+        const yearSelect = document.getElementById('recurring-year');
+        if (!yearSelect) return;
+
+        const currentYear = new Date().getFullYear();
+        yearSelect.innerHTML = '';
+
+        for (let year = currentYear; year >= currentYear - 3; year--) {
+            const option = document.createElement('option');
+            option.value = year;
+            option.textContent = year;
+            if (year === currentYear) option.selected = true;
+            yearSelect.appendChild(option);
+        }
+    }
+
+    // Configurar event handlers para BI de gastos recorrentes
+    function setupRecurringPixBoletoEventHandlers() {
+        // Botão de refresh
+        const refreshBtn = document.getElementById('refresh-recurring-pix-boleto');
+        if (refreshBtn) {
+            refreshBtn.addEventListener('click', () => {
+                loadRecurringPixBoletoBI();
+            });
+        }
+
+        // Filtros de período
+        const applyFiltersBtn = document.getElementById('apply-recurring-filters');
+        if (applyFiltersBtn) {
+            applyFiltersBtn.addEventListener('click', applyRecurringFilters);
+        }
+
+        // Ordenação da tabela
+        const reliabilitySortBtn = document.getElementById('toggle-reliability-sort');
+        const variationSortBtn = document.getElementById('toggle-variation-sort');
+        
+        if (reliabilitySortBtn) {
+            reliabilitySortBtn.addEventListener('click', () => sortRecurringTable('reliability'));
+        }
+        
+        if (variationSortBtn) {
+            variationSortBtn.addEventListener('click', () => sortRecurringTable('variation'));
+        }
+
+        // Fechar análise detalhada
+        const closeDetailedBtn = document.getElementById('close-detailed-analysis');
+        if (closeDetailedBtn) {
+            closeDetailedBtn.addEventListener('click', () => {
+                document.getElementById('detailed-analysis-section').classList.add('hidden');
+            });
+        }
+
+        // Export BI report
+        const exportBtn = document.getElementById('export-recurring-report');
+        if (exportBtn) {
+            exportBtn.addEventListener('click', exportRecurringReport);
+        }
+    }
+
+    // Aplicar filtros de período
+    async function applyRecurringFilters() {
+        const year = document.getElementById('recurring-year')?.value;
+        const month = document.getElementById('recurring-month')?.value;
+
         try {
-            const currentDate = new Date();
-            const currentYear = currentDate.getFullYear();
-            const currentMonth = currentDate.getMonth() + 1;
+            let url = `${API_BASE_URL}/api/recurring-pix-boleto`;
+            const params = new URLSearchParams();
             
-            const data = await fetchPixBoletoData(currentYear, currentMonth);
+            if (year) params.append('year', year);
+            if (month) params.append('month', month);
             
-            // Renderizar tabelas
-            renderPixBoletoTransactionsTable(data);
-            renderPixBoletoSummaryTable(data);
-            renderTopPixBoletoList(data);
+            if (params.toString()) {
+                url += '?' + params.toString();
+            }
+
+            const response = await authenticatedFetch(url);
+            if (!response.ok) throw new Error('Erro ao aplicar filtros');
+
+            const biData = await response.json();
             
+            // Atualizar dashboard com dados filtrados
+            updateRecurringKPIs(biData);
+            renderRecurringPlannedVsActualChart(biData.monthlyHistory);
+            renderRecurringVariationChart(biData.monthlyHistory);
+            renderRecurringCategoryChart(biData.categoryBreakdown);
+            updateTrendsAnalysis(biData.trendsSummary);
+            updateProjections(biData.projections);
+            renderRecurringExpensesTable(biData.expenses);
+
+            showNotification('Filtros aplicados com sucesso!', 'success');
+
         } catch (error) {
-            console.error('Erro ao carregar tabelas PIX/Boleto:', error);
-            throw error;
+            console.error('Erro ao aplicar filtros:', error);
+            showNotification('Erro ao aplicar filtros', 'error');
         }
     }
 
-    // Função para configurar filtros PIX e Boleto
-    function setupPixBoletoFilters() {
-        const monthSelect = document.getElementById('pix-boleto-month-filter');
-        const yearSelect = document.getElementById('pix-boleto-year-filter');
-        const typeSelect = document.getElementById('pix-boleto-type-filter');
-        
-        if (monthSelect) {
-            monthSelect.addEventListener('change', handlePixBoletoFilterChange);
-        }
-        
-        if (yearSelect) {
-            yearSelect.addEventListener('change', handlePixBoletoFilterChange);
-        }
-        
-        if (typeSelect) {
-            typeSelect.addEventListener('change', handlePixBoletoFilterChange);
-        }
+    // Ordenar tabela de gastos recorrentes
+    function sortRecurringTable(criteria) {
+        // Implementation for table sorting
+        console.log(`Ordenando tabela por: ${criteria}`);
+        // This would re-render the table with sorted data
     }
 
-    // Função para lidar com mudanças nos filtros
-    async function handlePixBoletoFilterChange() {
-        try {
-            await loadPixBoletoMetrics();
-            await loadPixBoletoCharts();
-            await loadPixBoletoTables();
-        } catch (error) {
-            console.error('Erro ao atualizar dados PIX/Boleto:', error);
-            showNotification('Erro ao atualizar dados', 'error');
-        }
+    // Exportar relatório BI
+    function exportRecurringReport() {
+        // Implementation for BI report export
+        console.log('Exportando relatório BI de gastos recorrentes...');
+        showNotification('Funcionalidade de export em desenvolvimento', 'info');
     }
+
+    // Função global para análise detalhada (chamada pelos botões da tabela)
+    window.showDetailedAnalysis = function(expenseId) {
+        console.log(`Mostrando análise detalhada para gasto ID: ${expenseId}`);
+        document.getElementById('detailed-analysis-section').classList.remove('hidden');
+        // Carregar dados específicos do gasto e renderizar gráficos detalhados
+    };
 
     // ========== GRÁFICOS PIX/BOLETO (UNIFICADO) ==========
     // Função para renderizar gráfico de evolução (unificado)

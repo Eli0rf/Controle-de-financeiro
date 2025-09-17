@@ -760,7 +760,7 @@ const tetos = {
     31: 200.00, 32: 450.00, 33: 100.00, 34: 54.80, 35: 0.00,
     36: 0.00, 37: 0.00, 38: 0.00, 39: 400.00, 40: 0.00,
     41: 0.00, 42: 0.00, 43: 210.00, 44: 0.00, 45: 12700.00,
-    46: 0.00, 47: 0.00
+    46: 1000.00, 47: 1000.00
 };
 
 // Rota protegida para tetos por plano de contas
@@ -3229,6 +3229,159 @@ app.post('/api/recurring-expenses/process', authenticateToken, async (req, res) 
         res.status(500).json({ message: 'Erro ao processar gastos recorrentes.' });
     }
 });
+
+// --- 12. GASTOS RECORRENTES PIX/BOLETO BI ---
+app.get('/api/recurring-pix-boleto', authenticateToken, async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const { year, month } = req.query;
+        const currentYear = year ? parseInt(year) : new Date().getFullYear();
+        const currentMonth = month ? parseInt(month) : new Date().getMonth() + 1;
+
+        // 1. Buscar gastos recorrentes PIX/Boleto
+        const [recurringExpenses] = await pool.query(`
+            SELECT * FROM recurring_expenses 
+            WHERE user_id = ? AND (account = 'PIX/Boleto' OR account = 'PIX' OR account = 'Boleto')
+            AND is_active = 1
+            ORDER BY day_of_month, description
+        `, [userId]);
+
+        // 2. Buscar histórico dos últimos 12 meses para cada recorrente
+        const results = [];
+        
+        for (const recurring of recurringExpenses) {
+            const history = [];
+            
+            // Buscar 12 meses de histórico
+            for (let i = 11; i >= 0; i--) {
+                const date = new Date(currentYear, currentMonth - 1 - i);
+                const histYear = date.getFullYear();
+                const histMonth = date.getMonth() + 1;
+                
+                const [monthlyExpenses] = await pool.query(`
+                    SELECT * FROM expenses 
+                    WHERE user_id = ? AND recurring_expense_id = ?
+                    AND YEAR(transaction_date) = ? AND MONTH(transaction_date) = ?
+                `, [userId, recurring.id, histYear, histMonth]);
+                
+                const monthData = {
+                    year: histYear,
+                    month: histMonth,
+                    monthLabel: date.toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' }),
+                    planned: parseFloat(recurring.amount),
+                    actual: monthlyExpenses.reduce((sum, exp) => sum + parseFloat(exp.amount), 0),
+                    transactions: monthlyExpenses.length,
+                    paid: monthlyExpenses.length > 0
+                };
+                
+                monthData.variation = monthData.planned > 0 ? 
+                    ((monthData.actual - monthData.planned) / monthData.planned * 100) : 0;
+                monthData.status = monthData.paid ? 
+                    (Math.abs(monthData.variation) <= 5 ? 'on-track' : 
+                     monthData.variation > 5 ? 'over-budget' : 'under-budget') : 'pending';
+                
+                history.push(monthData);
+            }
+            
+            // 3. Calcular estatísticas BI
+            const paidMonths = history.filter(h => h.paid);
+            const avgActual = paidMonths.length > 0 ? 
+                paidMonths.reduce((sum, h) => sum + h.actual, 0) / paidMonths.length : 0;
+            const avgVariation = paidMonths.length > 0 ?
+                paidMonths.reduce((sum, h) => sum + h.variation, 0) / paidMonths.length : 0;
+            
+            const variations = paidMonths.map(h => h.variation);
+            const stdDev = variations.length > 1 ? 
+                Math.sqrt(variations.reduce((sum, v) => sum + Math.pow(v - avgVariation, 2), 0) / (variations.length - 1)) : 0;
+            
+            // Tendência (regressão linear simples)
+            const trend = calculateTrend(paidMonths.map((h, i) => ({ x: i, y: h.actual })));
+            
+            results.push({
+                id: recurring.id,
+                description: recurring.description,
+                account: recurring.account,
+                category: recurring.category,
+                dayOfMonth: recurring.day_of_month,
+                plannedAmount: parseFloat(recurring.amount),
+                isBusinessExpense: recurring.is_business_expense,
+                
+                // Estatísticas BI
+                statistics: {
+                    avgActual,
+                    avgVariation,
+                    stdDev,
+                    reliability: Math.max(0, 100 - Math.abs(avgVariation) - stdDev),
+                    trend: trend.slope,
+                    trendDirection: trend.slope > 0.1 ? 'up' : trend.slope < -0.1 ? 'down' : 'stable',
+                    paymentConsistency: (paidMonths.length / 12) * 100,
+                    lastPayment: paidMonths.length > 0 ? paidMonths[paidMonths.length - 1] : null
+                },
+                
+                // Histórico mensal
+                history,
+                
+                // Projeções
+                projections: {
+                    nextMonth: avgActual,
+                    next3Months: avgActual * 3,
+                    yearEnd: avgActual * (12 - (currentMonth - 1)),
+                    confidenceLevel: Math.min(100, Math.max(50, 100 - stdDev))
+                }
+            });
+        }
+
+        // 4. Resumo geral
+        const summary = {
+            totalRecurring: results.length,
+            totalPlanned: results.reduce((sum, r) => sum + r.plannedAmount, 0),
+            totalActualAvg: results.reduce((sum, r) => sum + r.statistics.avgActual, 0),
+            avgReliability: results.length > 0 ? 
+                results.reduce((sum, r) => sum + r.statistics.reliability, 0) / results.length : 0,
+            
+            categoryBreakdown: results.reduce((acc, r) => {
+                const cat = r.category || 'Outros';
+                if (!acc[cat]) acc[cat] = { count: 0, planned: 0, avgActual: 0 };
+                acc[cat].count++;
+                acc[cat].planned += r.plannedAmount;
+                acc[cat].avgActual += r.statistics.avgActual;
+                return acc;
+            }, {}),
+            
+            trends: {
+                increasing: results.filter(r => r.statistics.trendDirection === 'up').length,
+                decreasing: results.filter(r => r.statistics.trendDirection === 'down').length,
+                stable: results.filter(r => r.statistics.trendDirection === 'stable').length
+            }
+        };
+
+        res.json({
+            period: { year: currentYear, month: currentMonth },
+            summary,
+            expenses: results
+        });
+
+    } catch (error) {
+        console.error('Erro ao buscar gastos recorrentes PIX/Boleto:', error);
+        res.status(500).json({ message: 'Erro ao buscar gastos recorrentes PIX/Boleto.' });
+    }
+});
+
+// Função auxiliar para calcular tendência
+function calculateTrend(points) {
+    if (points.length < 2) return { slope: 0, intercept: 0 };
+    
+    const n = points.length;
+    const sumX = points.reduce((sum, p) => sum + p.x, 0);
+    const sumY = points.reduce((sum, p) => sum + p.y, 0);
+    const sumXY = points.reduce((sum, p) => sum + p.x * p.y, 0);
+    const sumXX = points.reduce((sum, p) => sum + p.x * p.x, 0);
+    
+    const slope = (n * sumXY - sumX * sumY) / (n * sumXX - sumX * sumX);
+    const intercept = (sumY - slope * sumX) / n;
+    
+    return { slope: isNaN(slope) ? 0 : slope, intercept: isNaN(intercept) ? 0 : intercept };
+}
 
 // --- MIDDLEWARE DE TRATAMENTO DE ERROS ---
 app.use((error, req, res, next) => {
