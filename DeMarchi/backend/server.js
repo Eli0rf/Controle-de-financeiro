@@ -304,7 +304,7 @@ app.post('/api/login', async (req, res) => {
 app.post('/api/expenses', authenticateToken, upload.single('invoice'), async (req, res) => {
     try {
         // Campos enviados pelo formulário
-        const { transaction_date, amount, description, account, account_plan_code, total_installments } = req.body;
+    const { transaction_date, amount, description, account, account_plan_code, total_installments } = req.body;
         const userId = req.user.id;
         const has_invoice = req.body.has_invoice === 'true' || req.body.has_invoice === true;
         const invoicePath = req.file ? req.file.path : null;
@@ -314,9 +314,11 @@ app.post('/api/expenses', authenticateToken, upload.single('invoice'), async (re
         const finalAccountPlanCode = finalIsBusiness ? null : (account_plan_code || null);
 
         // Validação básica
-        if (!transaction_date || !amount || !description || !account) {
+    if (!transaction_date || !amount || !description || !account) {
             return res.status(400).json({ message: 'Campos obrigatórios em falta.' });
         }
+    // Normaliza conta obsoleta para enum válido
+    const normalizedAccount = (account || '').toUpperCase() === 'PIX' || (account || '').toUpperCase() === 'BOLETO' ? 'PIX/Boleto' : account;
         const numberOfInstallments = parseInt(total_installments || '1', 10);
         const installmentAmount = parseFloat(amount);
         if (isNaN(installmentAmount) || isNaN(numberOfInstallments) || numberOfInstallments < 1) {
@@ -336,7 +338,7 @@ app.post('/api/expenses', authenticateToken, upload.single('invoice'), async (re
                     installmentDate.toISOString().slice(0,10),
                     installmentAmount.toFixed(2),
                     installmentDescription,
-                    account,
+                    normalizedAccount,
                     finalIsBusiness,
                     finalAccountPlanCode,
                     (i === 0 && has_invoice) ? 1 : 0,
@@ -450,6 +452,7 @@ app.put('/api/expenses/:id', authenticateToken, upload.single('invoice'), async 
             account,
             account_plan_code
         } = req.body;
+    const normalizedAccount = (account || '').toUpperCase() === 'PIX' || (account || '').toUpperCase() === 'BOLETO' ? 'PIX/Boleto' : account;
 
         const is_business_expense = req.body.is_business_expense === 'true';
         const has_invoice = req.body.has_invoice === 'true';
@@ -492,7 +495,7 @@ app.put('/api/expenses/:id', authenticateToken, upload.single('invoice'), async 
             transaction_date,
             parseFloat(amount),
             description,
-            account,
+            normalizedAccount,
             finalAccountPlanCode,
             finalIsBusiness,
             has_invoice,
