@@ -117,6 +117,11 @@ document.addEventListener('DOMContentLoaded', function() {
         alertPercentage: 80
     };
 
+    // Dados globais para sorting da tabela de gastos recorrentes
+    let currentRecurringExpenses = [];
+    let currentSortCriteria = null;
+    let currentSortDirection = 'desc'; // 'asc' or 'desc'
+
     // ========== SISTEMA DE INSIGHTS ==========
     const refreshInsightsBtn = document.getElementById('refresh-insights-btn');
     const insightTabBtns = document.querySelectorAll('.insight-tab-btn');
@@ -7551,6 +7556,9 @@ document.addEventListener('DOMContentLoaded', function() {
         const tableBody = document.getElementById('recurring-expenses-table');
         if (!tableBody || !expenses) return;
 
+        // Armazenar dados atuais para sorting
+        currentRecurringExpenses = [...expenses];
+
         tableBody.innerHTML = '';
 
         expenses.forEach(expense => {
@@ -7770,9 +7778,104 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Ordenar tabela de gastos recorrentes
     function sortRecurringTable(criteria) {
-        // Implementation for table sorting
-        console.log(`Ordenando tabela por: ${criteria}`);
-        // This would re-render the table with sorted data
+        if (!currentRecurringExpenses || currentRecurringExpenses.length === 0) {
+            console.log('Nenhum dado de gastos recorrentes para ordenar');
+            return;
+        }
+
+        // Toggle direction if same criteria, otherwise default to descending
+        if (currentSortCriteria === criteria) {
+            currentSortDirection = currentSortDirection === 'desc' ? 'asc' : 'desc';
+        } else {
+            currentSortDirection = 'desc';
+        }
+        currentSortCriteria = criteria;
+
+        // Create a copy and sort
+        const sortedExpenses = [...currentRecurringExpenses];
+
+        sortedExpenses.sort((a, b) => {
+            let valueA, valueB;
+
+            switch (criteria) {
+                case 'reliability':
+                    valueA = Number(a.reliability || 0);
+                    valueB = Number(b.reliability || 0);
+                    break;
+                case 'variation':
+                    valueA = Number(a.variationPercent || 0);
+                    valueB = Number(b.variationPercent || 0);
+                    break;
+                case 'plannedAmount':
+                    valueA = Number(a.plannedAmount || 0);
+                    valueB = Number(b.plannedAmount || 0);
+                    break;
+                case 'avgActual':
+                    valueA = Number(a.avgActual || 0);
+                    valueB = Number(b.avgActual || 0);
+                    break;
+                default:
+                    return 0;
+            }
+
+            // Handle special sorting for PIX/Boleto expenses
+            // PIX/Boleto expenses get priority in ascending order
+            const aIsPixBoleto = isPixBoletoAccount(a.account);
+            const bIsPixBoleto = isPixBoletoAccount(b.account);
+            
+            if (aIsPixBoleto && !bIsPixBoleto) return -1; // PIX/Boleto first
+            if (!aIsPixBoleto && bIsPixBoleto) return 1;
+
+            // Sort by the actual criteria
+            if (currentSortDirection === 'desc') {
+                return valueB - valueA;
+            } else {
+                return valueA - valueB;
+            }
+        });
+
+        // Update button states
+        updateSortButtonStates(criteria);
+
+        // Re-render table with sorted data
+        renderRecurringExpensesTable(sortedExpenses);
+
+        console.log(`Tabela ordenada por: ${criteria} (${currentSortDirection})`);
+        showNotification(`Ordenado por ${criteria === 'reliability' ? 'confiabilidade' : 'variação'} (${currentSortDirection === 'desc' ? 'maior para menor' : 'menor para maior'})`, 'success', 2000);
+    }
+
+    // Update sort button states
+    function updateSortButtonStates(activeCriteria) {
+        const reliabilityBtn = document.getElementById('toggle-reliability-sort');
+        const variationBtn = document.getElementById('toggle-variation-sort');
+
+        // Reset all buttons
+        [reliabilityBtn, variationBtn].forEach(btn => {
+            if (btn) {
+                btn.classList.remove('bg-green-600', 'bg-blue-600');
+                btn.classList.add('bg-blue-500');
+                btn.innerHTML = btn.innerHTML.replace(/↑|↓/g, '');
+            }
+        });
+
+        // Update active button
+        let activeBtn = null;
+        if (activeCriteria === 'reliability' && reliabilityBtn) {
+            activeBtn = reliabilityBtn;
+        } else if (activeCriteria === 'variation' && variationBtn) {
+            activeBtn = variationBtn;
+        }
+
+        if (activeBtn) {
+            activeBtn.classList.remove('bg-blue-500');
+            activeBtn.classList.add('bg-green-600');
+            
+            // Add sort direction indicator
+            const arrow = currentSortDirection === 'desc' ? '↓' : '↑';
+            if (!activeBtn.innerHTML.includes(arrow)) {
+                activeBtn.innerHTML += ` ${arrow}`;
+            }
+        }
     }
 
     // Exportar relatório BI
