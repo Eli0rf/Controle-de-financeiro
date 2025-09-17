@@ -7090,9 +7090,11 @@ document.addEventListener('DOMContentLoaded', function() {
     // Carregar dados BI de gastos recorrentes PIX/Boleto
     async function loadRecurringPixBoletoBI() {
         try {
+            console.log('🔄 Iniciando carregamento de dados BI PIX/Boleto...');
             const response = await authenticatedFetch(`${API_BASE_URL}/api/recurring-pix-boleto`);
             
             if (!response.ok) {
+                console.error('❌ Erro na resposta da API:', response.status, response.statusText);
                 throw new Error('Erro ao buscar dados de gastos recorrentes');
             }
             
@@ -7103,9 +7105,12 @@ document.addEventListener('DOMContentLoaded', function() {
 
             // Se não houver dados suficientes, tentar fallback baseado em endpoints existentes
             const hasAnyData = (biData?.monthlyHistory || []).some(m => (m.totalPlanned || 0) > 0 || (m.totalActual || 0) > 0) || (biData?.expenses || []).length > 0;
+            console.log('📊 Tem dados:', hasAnyData, 'monthlyHistory:', biData?.monthlyHistory?.length, 'expenses:', biData?.expenses?.length);
+            
             if (!hasAnyData) {
                 console.warn('ℹ️ BI retornou vazio, ativando fallback de PIX/Boleto...');
                 const fb = await buildRecurringPixBoletoFallback(raw?.period);
+                console.log('📊 Dados fallback:', fb);
                 if (fb) {
                     // Atualizar KPIs principais
                     updateRecurringKPIs(fb);
@@ -7118,6 +7123,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     updateProjections(fb.projections);
                     // Tabela (minimamente preenchida)
                     renderRecurringExpensesTable(fb.expenses);
+                    showNotification('Exibindo dados PIX/Boleto via fallback', 'warning');
                     return;
                 }
             }
@@ -7142,11 +7148,15 @@ document.addEventListener('DOMContentLoaded', function() {
             // Popular filtros de anos
             populateRecurringYearFilter();
             
+            console.log('✅ Dados BI PIX/Boleto carregados com sucesso');
+            
         } catch (error) {
-            console.error('Erro ao carregar dados BI:', error);
+            console.error('❌ Erro ao carregar dados BI:', error);
             // Último recurso: tentar fallback mesmo em erro de rede/404
             try {
+                console.log('⚠️ Tentando fallback de emergência...');
                 const fb = await buildRecurringPixBoletoFallback();
+                console.log('📊 Fallback de emergência:', fb);
                 if (fb) {
                     updateRecurringKPIs(fb);
                     renderRecurringPlannedVsActualChart(fb.monthlyHistory);
@@ -7155,18 +7165,20 @@ document.addEventListener('DOMContentLoaded', function() {
                     updateTrendsAnalysis(fb.trendsSummary);
                     updateProjections(fb.projections);
                     renderRecurringExpensesTable(fb.expenses);
-                    showNotification('Exibindo dados PIX/Boleto via fallback', 'warning');
+                    showNotification('Exibindo dados PIX/Boleto via fallback de emergência', 'warning');
                     return;
                 }
             } catch (e) {
-                console.error('Fallback falhou:', e);
+                console.error('❌ Fallback falhou:', e);
             }
-            showNotification('Erro ao carregar analytics de gastos recorrentes', 'error');
+            showNotification('Erro ao carregar analytics de gastos recorrentes: ' + error.message, 'error');
         }
     }
 
     // Atualizar KPIs principais do dashboard
     function updateRecurringKPIs(biData) {
+        console.log('📊 Atualizando KPIs com dados:', biData);
+        
         // Total mensal REALIZADO (PIX/Boleto) exibido no card "Total Programado"
         // Regra: se houver período selecionado, usa aquele mês/ano; caso contrário, usa o mês mais recente da série
         const totalPlannedEl = document.getElementById('recurring-total-planned');
@@ -7175,29 +7187,37 @@ document.addEventListener('DOMContentLoaded', function() {
             let selectedYear = Number(document.getElementById('recurring-year')?.value || 0) || null;
             let selectedMonth = Number(document.getElementById('recurring-month')?.value || 0) || null;
 
+            console.log('📊 KPI Total Programado - History:', monthlyHistory.length, 'Filtros:', selectedYear, selectedMonth);
+
             // Encontrar entrada alvo
             let target = null;
             if (selectedYear && selectedMonth) {
                 target = monthlyHistory.find(m => m.year === selectedYear && m.month === selectedMonth) || null;
+                console.log('📊 Target por filtro:', target);
             }
             if (!target && monthlyHistory.length) {
                 target = monthlyHistory[monthlyHistory.length - 1]; // último é o mês base mais recente
+                console.log('📊 Target padrão (último):', target);
             }
 
             const monthlyActual = Number(target?.totalActual || 0);
+            console.log('📊 Valor mensal calculado:', monthlyActual);
             totalPlannedEl.textContent = formatCurrency(monthlyActual);
         }
 
         // Média realizada
         const avgActualEl = document.getElementById('recurring-avg-actual');
         if (avgActualEl && biData.summary) {
-            avgActualEl.textContent = formatCurrency(biData.summary.avgActual || 0);
+            const avgValue = biData.summary.avgActual || 0;
+            console.log('📊 Média realizada:', avgValue);
+            avgActualEl.textContent = formatCurrency(avgValue);
         }
 
         // Confiabilidade
         const reliabilityEl = document.getElementById('recurring-reliability');
         if (reliabilityEl && biData.summary) {
             const reliability = biData.summary.overallReliability || 0;
+            console.log('📊 Confiabilidade:', reliability);
             reliabilityEl.textContent = `${reliability.toFixed(1)}%`;
             // Cor baseada na confiabilidade
             reliabilityEl.className = reliability >= 80 ? 'text-xl font-bold text-green-300' :
@@ -7208,48 +7228,64 @@ document.addEventListener('DOMContentLoaded', function() {
         // Total de gastos ativos
         const countEl = document.getElementById('recurring-count');
         if (countEl && biData.expenses) {
-            countEl.textContent = biData.expenses.length.toString();
+            const count = biData.expenses.length;
+            console.log('📊 Total de gastos ativos:', count);
+            countEl.textContent = count.toString();
         }
+        
+        console.log('✅ KPIs atualizados');
     }
 
     // Fallback builder para BI de recorrentes PIX/Boleto quando a rota dedicada não estiver disponível
     async function buildRecurringPixBoletoFallback(period) {
         try {
+            console.log('🔧 Construindo fallback PIX/Boleto...', period);
+            
             // 1) Buscar lista de recorrências para obter o total planejado mensal
             let plannedSum = 0;
             let recurringItems = [];
             try {
+                console.log('🔧 Buscando gastos recorrentes...');
                 const r = await authenticatedFetch(`${API_BASE_URL}/api/recurring-expenses`);
                 if (r.ok) {
                     const rec = await r.json();
+                    console.log('🔧 Gastos recorrentes recebidos:', rec);
                     recurringItems = (Array.isArray(rec) ? rec : []).filter(x => {
                         const acc = (x.account || '').toUpperCase();
                         return acc === 'PIX/BOLETO' || acc === 'PIX' || acc === 'BOLETO';
                     });
                     plannedSum = recurringItems.reduce((s, it) => s + Number(it.amount || 0), 0);
+                    console.log('🔧 Itens PIX/Boleto filtrados:', recurringItems.length, 'Soma planejada:', plannedSum);
                 }
             } catch (e) {
-                console.warn('Falha ao buscar recorrentes (fallback continuará):', e.message);
+                console.warn('⚠️ Falha ao buscar recorrentes (fallback continuará):', e.message);
             }
 
             // 2) Buscar todas despesas PIX/Boleto (rota dedicada) e filtrar últimos 12 meses
             let all = [];
+            console.log('🔧 Buscando despesas PIX/Boleto...');
             const expResp = await authenticatedFetch(`${API_BASE_URL}/api/expenses/pix-boleto`);
             if (expResp.ok) {
                 const expRaw = await expResp.json();
                 all = Array.isArray(expRaw?.expenses) ? expRaw.expenses : [];
+                console.log('🔧 Despesas PIX/Boleto da rota dedicada:', all.length);
             } else {
                 // Fallback adicional: usar rota genérica filtrando por conta
-                console.warn('Rota /api/expenses/pix-boleto indisponível; usando /api/expenses?account=PIX/Boleto para construir fallback BI');
+                console.warn('⚠️ Rota /api/expenses/pix-boleto indisponível; usando /api/expenses?account=PIX/Boleto para construir fallback BI');
                 const generic = await authenticatedFetch(`${API_BASE_URL}/api/expenses?account=PIX/Boleto`);
-                if (!generic.ok) return null;
+                if (!generic.ok) {
+                    console.error('❌ Falha na rota genérica também');
+                    return null;
+                }
                 const list = await generic.json();
                 all = Array.isArray(list) ? list : [];
+                console.log('🔧 Despesas PIX/Boleto da rota genérica:', all.length);
             }
 
             // Determinar período base
             const baseYear = Number(period?.year) || new Date().getFullYear();
             const baseMonth = Number(period?.month) || (new Date().getMonth() + 1);
+            console.log('🔧 Período base:', baseYear, baseMonth);
 
             // Agrupar últimos 12 meses
             const monthlyHistory = [];
@@ -7274,6 +7310,9 @@ document.addEventListener('DOMContentLoaded', function() {
                     variationPercent
                 });
             }
+            
+            console.log('🔧 Histórico mensal construído:', monthlyHistory.length, 'meses');
+            console.log('🔧 Amostra histórico:', monthlyHistory.slice(-3));
 
             // 3) Quebra por categoria (últimos 12 meses)
             const last12Start = new Date(baseYear, baseMonth - 12, 1);
@@ -7292,6 +7331,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 count: last12.filter(e => (e.category || 'Outros') === category).length
             })).sort((a,b) => b.totalPlanned - a.totalPlanned);
 
+            console.log('🔧 Quebra por categoria:', categoryBreakdown.length, 'categorias');
+
             // 4) KPIs e projeções simples
             const monthsWithData = monthlyHistory.filter(m => m.totalActual > 0);
             const avgActual = monthsWithData.length ? monthsWithData.reduce((s,m)=> s + m.totalActual, 0) / monthsWithData.length : 0;
@@ -7302,6 +7343,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 threeMonths: avgActual * 3,
                 yearEnd: avgActual * (12 - (baseMonth - 1))
             };
+
+            console.log('🔧 KPIs calculados - Planejado:', plannedSum, 'Média real:', avgActual, 'Confiabilidade:', reliability);
 
             // 5) Tabela: mapear recorrentes (se houver) com dados mínimos
             const expensesRows = (recurringItems.length ? recurringItems : []).map(r => ({
@@ -7317,7 +7360,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 currentMonthActual: 0
             }));
 
-            return {
+            const result = {
                 summary: { totalPlanned: plannedSum, avgActual, overallReliability: reliability },
                 monthlyHistory,
                 categoryBreakdown,
@@ -7325,8 +7368,11 @@ document.addEventListener('DOMContentLoaded', function() {
                 projections,
                 expenses: expensesRows
             };
+            
+            console.log('🔧 Fallback construído com sucesso:', result);
+            return result;
         } catch (e) {
-            console.error('Erro no fallback de PIX/Boleto:', e);
+            console.error('❌ Erro no fallback de PIX/Boleto:', e);
             return null;
         }
     }
