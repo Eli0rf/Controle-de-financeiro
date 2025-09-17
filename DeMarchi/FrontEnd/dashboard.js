@@ -3063,6 +3063,11 @@ document.addEventListener('DOMContentLoaded', function() {
 
             const formData = new FormData(addExpenseForm);
             formData.set('is_business_expense', businessCheckbox.checked);
+            // Normalização de conta: se usuário ainda tiver valor obsoleto 'PIX' ou 'Boleto'
+            const originalAccount = (formData.get('account') || '').trim();
+            if (originalAccount.toUpperCase() === 'PIX' || originalAccount.toUpperCase() === 'BOLETO') {
+                formData.set('account', 'PIX/Boleto');
+            }
             
             const response = await authenticatedFetch(`${API_BASE_URL}/api/expenses`, { 
                 method: 'POST', 

@@ -2438,21 +2438,34 @@ const billingPeriods = {
 // Função de unificação retroativa de contas PIX e Boleto para PIX/Boleto
 async function ensurePixBoletoUnification() {
     try {
-        // Verifica se já existe algum registro antigo com conta PIX ou Boleto
-        const [legacy] = await pool.query("SELECT COUNT(*) as cnt FROM expenses WHERE account IN ('PIX','Boleto')");
-        const needUpdate = legacy[0]?.cnt > 0;
+        // Case-insensitive cleanup para qualquer variação de PIX / Boleto
+        const [expBefore] = await pool.query("SELECT \
+            SUM(CASE WHEN UPPER(account)='PIX' THEN 1 ELSE 0 END) AS pix_cnt, \
+            SUM(CASE WHEN UPPER(account)='BOLETO' THEN 1 ELSE 0 END) AS boleto_cnt \
+            FROM expenses");
+        const needUpdate = (expBefore[0]?.pix_cnt || 0) + (expBefore[0]?.boleto_cnt || 0) > 0;
+        if (needUpdate) console.log(`🔄 Unificando contas antigas em expenses (PIX=${expBefore[0].pix_cnt}, Boleto=${expBefore[0].boleto_cnt})`);
         if (needUpdate) {
-            console.log('🔄 Unificando contas antigas PIX/Boleto...');
-            await pool.query("UPDATE expenses SET account='PIX/Boleto' WHERE account IN ('PIX','Boleto')");
+            await pool.query("UPDATE expenses SET account='PIX/Boleto' WHERE UPPER(account) IN ('PIX','BOLETO')");
         }
         const [legacyRec] = await pool.query("SHOW TABLES LIKE 'recurring_expenses'");
         if (legacyRec.length) {
-            const [legacyRecurring] = await pool.query("SELECT COUNT(*) as cnt FROM recurring_expenses WHERE account IN ('PIX','Boleto')");
-            if (legacyRecurring[0]?.cnt > 0) {
-                await pool.query("UPDATE recurring_expenses SET account='PIX/Boleto' WHERE account IN ('PIX','Boleto')");
+            const [recBefore] = await pool.query("SELECT \
+                SUM(CASE WHEN UPPER(account)='PIX' THEN 1 ELSE 0 END) AS pix_cnt, \
+                SUM(CASE WHEN UPPER(account)='BOLETO' THEN 1 ELSE 0 END) AS boleto_cnt \
+                FROM recurring_expenses");
+            const needUpdateRec = (recBefore[0]?.pix_cnt || 0) + (recBefore[0]?.boleto_cnt || 0) > 0;
+            if (needUpdateRec) console.log(`🔄 Unificando contas antigas em recurring_expenses (PIX=${recBefore[0].pix_cnt}, Boleto=${recBefore[0].boleto_cnt})`);
+            if (needUpdateRec) {
+                await pool.query("UPDATE recurring_expenses SET account='PIX/Boleto' WHERE UPPER(account) IN ('PIX','BOLETO')");
             }
         }
-        if (needUpdate) console.log('✅ Unificação de contas PIX/Boleto concluída'); else console.log('✅ Nenhuma conta antiga PIX ou Boleto encontrada para unificação');
+        if (needUpdate) {
+            const [after] = await pool.query("SELECT COUNT(*) AS cnt FROM expenses WHERE account='PIX/Boleto'");
+            console.log(`✅ Unificação concluída. Registros agora como PIX/Boleto: ${after[0].cnt}`);
+        } else {
+            console.log('✅ Nenhuma conta antiga PIX ou Boleto encontrada para unificação');
+        }
     } catch (e) {
         console.error('❌ Erro na unificação de contas PIX/Boleto (ignorado na execução):', e.message);
     }
