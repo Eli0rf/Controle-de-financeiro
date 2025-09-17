@@ -4889,11 +4889,26 @@ document.addEventListener('DOMContentLoaded', function() {
         try {
             // Buscar gastos da conta unificada PIX/Boleto pela rota dedicada
             const response = await authenticatedFetch(`${API_BASE_URL}/api/expenses/pix-boleto`);
-            if (!response.ok) throw new Error('Erro ao carregar gastos da conta PIX/Boleto');
+            if (response.ok) {
+                const payload = await response.json();
+                const expenses = Array.isArray(payload?.expenses) ? payload.expenses : [];
+                renderRecurringExpensesList(expenses);
+                return;
+            }
 
-            const payload = await response.json();
-            const expenses = Array.isArray(payload?.expenses) ? payload.expenses : [];
-            renderRecurringExpensesList(expenses);
+            // Fallback: alguns backends ainda não possuem a rota dedicada. Tenta a rota genérica com filtro de conta.
+            if (response.status === 404) {
+                console.warn('Rota /api/expenses/pix-boleto ausente no backend. Aplicando fallback /api/expenses?account=PIX/Boleto');
+                const fallbackRes = await authenticatedFetch(`${API_BASE_URL}/api/expenses?account=PIX/Boleto`);
+                if (fallbackRes.ok) {
+                    const list = await fallbackRes.json();
+                    const expenses = Array.isArray(list) ? list : [];
+                    renderRecurringExpensesList(expenses);
+                    return;
+                }
+            }
+
+            throw new Error(`Erro ao carregar gastos da conta PIX/Boleto (status ${response.status})`);
         } catch (error) {
             console.error('Erro ao carregar gastos PIX/Boleto:', error);
             showNotification('Erro ao carregar gastos PIX/Boleto', 'error');
@@ -7198,13 +7213,19 @@ document.addEventListener('DOMContentLoaded', function() {
             }
 
             // 2) Buscar todas despesas PIX/Boleto (rota dedicada) e filtrar últimos 12 meses
+            let all = [];
             const expResp = await authenticatedFetch(`${API_BASE_URL}/api/expenses/pix-boleto`);
-            if (!expResp.ok) {
-                console.warn('Rota /api/expenses/pix-boleto indisponível para fallback');
-                return null;
+            if (expResp.ok) {
+                const expRaw = await expResp.json();
+                all = Array.isArray(expRaw?.expenses) ? expRaw.expenses : [];
+            } else {
+                // Fallback adicional: usar rota genérica filtrando por conta
+                console.warn('Rota /api/expenses/pix-boleto indisponível; usando /api/expenses?account=PIX/Boleto para construir fallback BI');
+                const generic = await authenticatedFetch(`${API_BASE_URL}/api/expenses?account=PIX/Boleto`);
+                if (!generic.ok) return null;
+                const list = await generic.json();
+                all = Array.isArray(list) ? list : [];
             }
-            const expRaw = await expResp.json();
-            const all = Array.isArray(expRaw?.expenses) ? expRaw.expenses : [];
 
             // Determinar período base
             const baseYear = Number(period?.year) || new Date().getFullYear();
