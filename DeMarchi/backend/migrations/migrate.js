@@ -67,7 +67,7 @@ async function createDatabase() {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
     `);
     
-    // Criar tabela expenses
+  // Criar tabela expenses
     await connection.query(`
       CREATE TABLE IF NOT EXISTS expenses (
         id INT(11) NOT NULL AUTO_INCREMENT,
@@ -75,7 +75,7 @@ async function createDatabase() {
         transaction_date DATE NOT NULL,
         amount DECIMAL(10,2) NOT NULL,
         description VARCHAR(255) NOT NULL,
-        account ENUM('Nu Bank Ketlyn','Nu Vainer','Ourocard Ketlyn','PicPay Vainer','PIX','Boleto') NOT NULL,
+    account ENUM('Nu Bank Ketlyn','Nu Vainer','Ourocard Ketlyn','PicPay Vainer','PIX','Boleto','PIX/Boleto') NOT NULL,
         is_business_expense TINYINT(1) DEFAULT 0,
         account_plan_code INT(11) DEFAULT NULL,
         has_invoice TINYINT(1) DEFAULT NULL,
@@ -98,7 +98,7 @@ async function createDatabase() {
         user_id INT(11) NOT NULL,
         description VARCHAR(255) NOT NULL,
         amount DECIMAL(10,2) NOT NULL,
-        account ENUM('Nu Bank Ketlyn','Nu Vainer','Ourocard Ketlyn','PicPay Vainer','PIX','Boleto') NOT NULL,
+        account ENUM('Nu Bank Ketlyn','Nu Vainer','Ourocard Ketlyn','PicPay Vainer','PIX','Boleto','PIX/Boleto') NOT NULL,
         account_plan_code INT(11) DEFAULT NULL,
         is_business_expense TINYINT(1) DEFAULT 0,
         day_of_month INT(2) DEFAULT 1,
@@ -110,6 +110,17 @@ async function createDatabase() {
         CONSTRAINT recurring_expenses_ibfk_1 FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
     `);
+
+    // Garantir que bases existentes aceitem 'PIX/Boleto' no ENUM (sem remover os antigos para não quebrar)
+    try {
+      await connection.query(`ALTER TABLE expenses 
+        MODIFY COLUMN account ENUM('Nu Bank Ketlyn','Nu Vainer','Ourocard Ketlyn','PicPay Vainer','PIX','Boleto','PIX/Boleto') NOT NULL`);
+      await connection.query(`ALTER TABLE recurring_expenses 
+        MODIFY COLUMN account ENUM('Nu Bank Ketlyn','Nu Vainer','Ourocard Ketlyn','PicPay Vainer','PIX','Boleto','PIX/Boleto') NOT NULL`);
+      console.log('✓ ENUM de account atualizado para incluir PIX/Boleto');
+    } catch (e) {
+      console.log('⚠️  Aviso ao alterar ENUM de account:', e.message);
+    }
     
     // Criar tabela recurring_expense_processing
     await connection.query(`
