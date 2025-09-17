@@ -7162,10 +7162,25 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Atualizar KPIs principais do dashboard
     function updateRecurringKPIs(biData) {
-        // Total programado
+        // Total mensal REALIZADO (PIX/Boleto) exibido no card "Total Programado"
+        // Regra: se houver período selecionado, usa aquele mês/ano; caso contrário, usa o mês mais recente da série
         const totalPlannedEl = document.getElementById('recurring-total-planned');
-        if (totalPlannedEl && biData.summary) {
-            totalPlannedEl.textContent = formatCurrency(biData.summary.totalPlanned || 0);
+        if (totalPlannedEl) {
+            const monthlyHistory = Array.isArray(biData?.monthlyHistory) ? biData.monthlyHistory : [];
+            let selectedYear = Number(document.getElementById('recurring-year')?.value || 0) || null;
+            let selectedMonth = Number(document.getElementById('recurring-month')?.value || 0) || null;
+
+            // Encontrar entrada alvo
+            let target = null;
+            if (selectedYear && selectedMonth) {
+                target = monthlyHistory.find(m => m.year === selectedYear && m.month === selectedMonth) || null;
+            }
+            if (!target && monthlyHistory.length) {
+                target = monthlyHistory[monthlyHistory.length - 1]; // último é o mês base mais recente
+            }
+
+            const monthlyActual = Number(target?.totalActual || 0);
+            totalPlannedEl.textContent = formatCurrency(monthlyActual);
         }
 
         // Média realizada
