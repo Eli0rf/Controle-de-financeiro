@@ -4887,15 +4887,16 @@ document.addEventListener('DOMContentLoaded', function() {
 
     async function loadRecurringExpenses() {
         try {
-            const response = await authenticatedFetch(`${API_BASE_URL}/api/recurring-expenses`);
+            // Buscar gastos da conta unificada PIX/Boleto pela rota dedicada
+            const response = await authenticatedFetch(`${API_BASE_URL}/api/expenses/pix-boleto`);
+            if (!response.ok) throw new Error('Erro ao carregar gastos da conta PIX/Boleto');
 
-            if (!response.ok) throw new Error('Erro ao carregar gastos recorrentes');
-
-            const recurringExpenses = await response.json();
-            renderRecurringExpensesList(recurringExpenses);
+            const payload = await response.json();
+            const expenses = Array.isArray(payload?.expenses) ? payload.expenses : [];
+            renderRecurringExpensesList(expenses);
         } catch (error) {
-            console.error('Erro ao carregar gastos recorrentes:', error);
-            showNotification('Erro ao carregar gastos recorrentes', 'error');
+            console.error('Erro ao carregar gastos PIX/Boleto:', error);
+            showNotification('Erro ao carregar gastos PIX/Boleto', 'error');
         }
     }
 
@@ -4903,38 +4904,48 @@ document.addEventListener('DOMContentLoaded', function() {
         if (!recurringList) return;
 
         if (expenses.length === 0) {
-            recurringList.innerHTML = '<p class="text-gray-500 text-center">Nenhum gasto recorrente cadastrado.</p>';
+            recurringList.innerHTML = '<p class="text-gray-500 text-center">Nenhum gasto encontrado para PIX/Boleto.</p>';
             return;
         }
 
-        recurringList.innerHTML = expenses.map(expense => `
+        // Renderiza itens de despesas (não necessariamente recorrentes) da conta PIX/Boleto
+        recurringList.innerHTML = expenses.map(item => {
+            const amount = Number(item.amount || item.valor || 0);
+            const date = new Date(item.transaction_date || item.date);
+            const isRecurring = !!item.is_recurring_expense;
+            const business = !!item.is_business_expense;
+            const plan = item.account_plan_code;
+
+            return `
             <div class="bg-gray-50 p-4 rounded-lg mb-3">
                 <div class="flex justify-between items-start">
                     <div class="flex-1">
-                        <h4 class="font-medium text-gray-800">${expense.description}</h4>
+                        <h4 class="font-medium text-gray-800">${item.description || 'Sem descrição'}</h4>
                         <p class="text-sm text-gray-600">
-                            <strong>Valor:</strong> €${parseFloat(expense.amount).toFixed(2)} | 
-                            <strong>Conta:</strong> ${expense.account} | 
-                            <strong>Dia:</strong> ${expense.day_of_month}
+                            <strong>Valor:</strong> ${formatCurrency(amount)} | 
+                            <strong>Conta:</strong> ${item.account || 'PIX/Boleto'} | 
+                            <strong>Data:</strong> ${isNaN(date) ? '-' : date.toLocaleDateString('pt-BR')}
                         </p>
-                        ${expense.account_plan_code ? `<p class="text-sm text-gray-600"><strong>Plano:</strong> ${expense.account_plan_code}</p>` : ''}
-                        <p class="text-sm ${expense.is_business_expense ? 'text-blue-600' : 'text-green-600'}">
-                            ${expense.is_business_expense ? '💼 Empresarial' : '🏠 Pessoal'}
+                        ${plan ? `<p class="text-sm text-gray-600"><strong>Plano:</strong> ${plan}</p>` : ''}
+                        <p class="text-sm ${business ? 'text-blue-600' : 'text-green-600'}">
+                            ${business ? '💼 Empresarial' : '🏠 Pessoal'} ${isRecurring ? '• 🔁 Recorrente' : ''}
                         </p>
                     </div>
                     <div class="flex gap-2">
-                        <button onclick="editRecurringExpense(${expense.id})" 
+                        ${isRecurring ? `
+                        <button onclick="editRecurringExpense(${item.recurring_expense_id || item.id})" 
                                 class="bg-blue-500 text-white px-3 py-1 rounded text-sm">
                             Editar
                         </button>
-                        <button onclick="deleteRecurringExpense(${expense.id})" 
+                        <button onclick="deleteRecurringExpense(${item.recurring_expense_id || item.id})" 
                                 class="bg-red-500 text-white px-3 py-1 rounded text-sm">
                             Remover
-                        </button>
+                        </button>` : ''}
                     </div>
                 </div>
             </div>
-        `).join('');
+            `;
+        }).join('');
     }
 
     async function handleRecurringExpenseSubmit(e) {
@@ -7070,6 +7081,27 @@ document.addEventListener('DOMContentLoaded', function() {
             const biData = normalizeRecurringPixBoletoBI(raw);
             console.log('📊 Dados BI normalizados:', biData);
 
+            // Se não houver dados suficientes, tentar fallback baseado em endpoints existentes
+            const hasAnyData = (biData?.monthlyHistory || []).some(m => (m.totalPlanned || 0) > 0 || (m.totalActual || 0) > 0) || (biData?.expenses || []).length > 0;
+            if (!hasAnyData) {
+                console.warn('ℹ️ BI retornou vazio, ativando fallback de PIX/Boleto...');
+                const fb = await buildRecurringPixBoletoFallback(raw?.period);
+                if (fb) {
+                    // Atualizar KPIs principais
+                    updateRecurringKPIs(fb);
+                    // Renderizar gráficos BI
+                    renderRecurringPlannedVsActualChart(fb.monthlyHistory);
+                    renderRecurringVariationChart(fb.monthlyHistory);
+                    renderRecurringCategoryChart(fb.categoryBreakdown);
+                    // Tendências e projeções básicas
+                    updateTrendsAnalysis(fb.trendsSummary);
+                    updateProjections(fb.projections);
+                    // Tabela (minimamente preenchida)
+                    renderRecurringExpensesTable(fb.expenses);
+                    return;
+                }
+            }
+
             // Atualizar KPIs principais
             updateRecurringKPIs(biData);
             
@@ -7092,6 +7124,23 @@ document.addEventListener('DOMContentLoaded', function() {
             
         } catch (error) {
             console.error('Erro ao carregar dados BI:', error);
+            // Último recurso: tentar fallback mesmo em erro de rede/404
+            try {
+                const fb = await buildRecurringPixBoletoFallback();
+                if (fb) {
+                    updateRecurringKPIs(fb);
+                    renderRecurringPlannedVsActualChart(fb.monthlyHistory);
+                    renderRecurringVariationChart(fb.monthlyHistory);
+                    renderRecurringCategoryChart(fb.categoryBreakdown);
+                    updateTrendsAnalysis(fb.trendsSummary);
+                    updateProjections(fb.projections);
+                    renderRecurringExpensesTable(fb.expenses);
+                    showNotification('Exibindo dados PIX/Boleto via fallback', 'warning');
+                    return;
+                }
+            } catch (e) {
+                console.error('Fallback falhou:', e);
+            }
             showNotification('Erro ao carregar analytics de gastos recorrentes', 'error');
         }
     }
@@ -7125,6 +7174,119 @@ document.addEventListener('DOMContentLoaded', function() {
         const countEl = document.getElementById('recurring-count');
         if (countEl && biData.expenses) {
             countEl.textContent = biData.expenses.length.toString();
+        }
+    }
+
+    // Fallback builder para BI de recorrentes PIX/Boleto quando a rota dedicada não estiver disponível
+    async function buildRecurringPixBoletoFallback(period) {
+        try {
+            // 1) Buscar lista de recorrências para obter o total planejado mensal
+            let plannedSum = 0;
+            let recurringItems = [];
+            try {
+                const r = await authenticatedFetch(`${API_BASE_URL}/api/recurring-expenses`);
+                if (r.ok) {
+                    const rec = await r.json();
+                    recurringItems = (Array.isArray(rec) ? rec : []).filter(x => {
+                        const acc = (x.account || '').toUpperCase();
+                        return acc === 'PIX/BOLETO' || acc === 'PIX' || acc === 'BOLETO';
+                    });
+                    plannedSum = recurringItems.reduce((s, it) => s + Number(it.amount || 0), 0);
+                }
+            } catch (e) {
+                console.warn('Falha ao buscar recorrentes (fallback continuará):', e.message);
+            }
+
+            // 2) Buscar todas despesas PIX/Boleto (rota dedicada) e filtrar últimos 12 meses
+            const expResp = await authenticatedFetch(`${API_BASE_URL}/api/expenses/pix-boleto`);
+            if (!expResp.ok) {
+                console.warn('Rota /api/expenses/pix-boleto indisponível para fallback');
+                return null;
+            }
+            const expRaw = await expResp.json();
+            const all = Array.isArray(expRaw?.expenses) ? expRaw.expenses : [];
+
+            // Determinar período base
+            const baseYear = Number(period?.year) || new Date().getFullYear();
+            const baseMonth = Number(period?.month) || (new Date().getMonth() + 1);
+
+            // Agrupar últimos 12 meses
+            const monthlyHistory = [];
+            for (let i = 11; i >= 0; i--) {
+                const d = new Date(baseYear, baseMonth - 1 - i, 1);
+                const y = d.getFullYear();
+                const m = d.getMonth() + 1;
+                const label = d.toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' });
+                const monthActual = all.filter(e => {
+                    const dt = new Date(e.transaction_date || e.date);
+                    return dt.getFullYear() === y && (dt.getMonth() + 1) === m;
+                }).reduce((s, e) => s + Number(e.amount || e.valor || e.value || 0), 0);
+
+                const totalPlanned = plannedSum; // usar soma das recorrências como planejado mensal
+                const variationPercent = totalPlanned > 0 ? ((monthActual - totalPlanned) / totalPlanned) * 100 : 0;
+                monthlyHistory.push({
+                    year: y,
+                    month: m,
+                    monthLabel: label,
+                    totalPlanned,
+                    totalActual: monthActual,
+                    variationPercent
+                });
+            }
+
+            // 3) Quebra por categoria (últimos 12 meses)
+            const last12Start = new Date(baseYear, baseMonth - 12, 1);
+            const last12 = all.filter(e => new Date(e.transaction_date || e.date) >= last12Start);
+            const categoryTotals = {};
+            last12.forEach(e => {
+                const cat = e.category || 'Outros';
+                const amt = Number(e.amount || e.valor || e.value || 0);
+                if (!categoryTotals[cat]) categoryTotals[cat] = 0;
+                categoryTotals[cat] += amt;
+            });
+            const categoryBreakdown = Object.entries(categoryTotals).map(([category, total]) => ({
+                category,
+                totalPlanned: total, // aqui usamos total como indicador visual
+                avgActual: total,
+                count: last12.filter(e => (e.category || 'Outros') === category).length
+            })).sort((a,b) => b.totalPlanned - a.totalPlanned);
+
+            // 4) KPIs e projeções simples
+            const monthsWithData = monthlyHistory.filter(m => m.totalActual > 0);
+            const avgActual = monthsWithData.length ? monthsWithData.reduce((s,m)=> s + m.totalActual, 0) / monthsWithData.length : 0;
+            const avgVariation = monthsWithData.length ? monthsWithData.reduce((s,m)=> s + m.variationPercent, 0) / monthsWithData.length : 0;
+            const reliability = Math.max(0, Math.min(100, 100 - Math.abs(avgVariation)));
+            const projections = {
+                nextMonth: avgActual,
+                threeMonths: avgActual * 3,
+                yearEnd: avgActual * (12 - (baseMonth - 1))
+            };
+
+            // 5) Tabela: mapear recorrentes (se houver) com dados mínimos
+            const expensesRows = (recurringItems.length ? recurringItems : []).map(r => ({
+                id: r.id,
+                description: r.description,
+                category: r.category,
+                paymentDay: r.day_of_month,
+                plannedAmount: Number(r.amount || 0),
+                avgActual: 0,
+                variationPercent: 0,
+                reliability: 0,
+                trend: 'stable',
+                currentMonthActual: 0
+            }));
+
+            return {
+                summary: { totalPlanned: plannedSum, avgActual, overallReliability: reliability },
+                monthlyHistory,
+                categoryBreakdown,
+                trendsSummary: { increasing: 0, decreasing: 0, stable: expensesRows.length },
+                projections,
+                expenses: expensesRows
+            };
+        } catch (e) {
+            console.error('Erro no fallback de PIX/Boleto:', e);
+            return null;
         }
     }
 
@@ -7520,6 +7682,21 @@ document.addEventListener('DOMContentLoaded', function() {
 
             const raw = await response.json();
             const biData = normalizeRecurringPixBoletoBI(raw);
+            const hasAnyData = (biData?.monthlyHistory || []).some(m => (m.totalPlanned || 0) > 0 || (m.totalActual || 0) > 0) || (biData?.expenses || []).length > 0;
+            if (!hasAnyData) {
+                const fb = await buildRecurringPixBoletoFallback({ year: Number(year), month: Number(month) });
+                if (fb) {
+                    updateRecurringKPIs(fb);
+                    renderRecurringPlannedVsActualChart(fb.monthlyHistory);
+                    renderRecurringVariationChart(fb.monthlyHistory);
+                    renderRecurringCategoryChart(fb.categoryBreakdown);
+                    updateTrendsAnalysis(fb.trendsSummary);
+                    updateProjections(fb.projections);
+                    renderRecurringExpensesTable(fb.expenses);
+                    showNotification('Filtros aplicados (fallback)', 'warning');
+                    return;
+                }
+            }
             
             // Atualizar dashboard com dados filtrados
             updateRecurringKPIs(biData);
@@ -7534,6 +7711,23 @@ document.addEventListener('DOMContentLoaded', function() {
 
         } catch (error) {
             console.error('Erro ao aplicar filtros:', error);
+            // Tentar fallback com os filtros selecionados
+            try {
+                const fb = await buildRecurringPixBoletoFallback({ year: Number(year), month: Number(month) });
+                if (fb) {
+                    updateRecurringKPIs(fb);
+                    renderRecurringPlannedVsActualChart(fb.monthlyHistory);
+                    renderRecurringVariationChart(fb.monthlyHistory);
+                    renderRecurringCategoryChart(fb.categoryBreakdown);
+                    updateTrendsAnalysis(fb.trendsSummary);
+                    updateProjections(fb.projections);
+                    renderRecurringExpensesTable(fb.expenses);
+                    showNotification('Filtros aplicados via fallback', 'warning');
+                    return;
+                }
+            } catch (e) {
+                console.error('Fallback (filtros) falhou:', e);
+            }
             showNotification('Erro ao aplicar filtros', 'error');
         }
     }
