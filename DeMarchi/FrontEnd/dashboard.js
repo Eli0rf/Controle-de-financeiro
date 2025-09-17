@@ -4718,31 +4718,44 @@ document.addEventListener('DOMContentLoaded', function() {
                 return;
             }
 
-            const checkVisibility = () => {
-                const parent = element.parentElement;
-                const isVisible = parent && parent.offsetWidth > 0 && parent.offsetHeight > 0;
-                
-                if (isVisible) {
+            // Helper robusto para visibilidade real (considera ancestrais)
+            const isActuallyVisible = (el) => {
+                if (!el) return false;
+                const style = window.getComputedStyle(el);
+                if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
+                const rect = el.getBoundingClientRect();
+                if (rect.width === 0 || rect.height === 0) return false;
+                // Verificar ancestrais próximos (até 3 níveis) para display:none
+                let p = el.parentElement;
+                let depth = 0;
+                while (p && depth < 3) {
+                    const ps = window.getComputedStyle(p);
+                    if (ps.display === 'none' || ps.visibility === 'hidden') return false;
+                    p = p.parentElement; depth++;
+                }
+                return true;
+            };
+
+            // Polling com tentativas para aguardar tabs/accordions exibirem o container
+            const maxAttempts = 20; // ~5s com delay 250ms
+            let attempts = 0;
+            const tryCheck = () => {
+                attempts++;
+                const ok = isActuallyVisible(element.parentElement || element);
+                if (ok) {
                     resolve(true);
+                } else if (attempts < maxAttempts) {
+                    setTimeout(tryCheck, 250);
                 } else {
-                    // Aguarda um pouco mais
-                    setTimeout(() => {
-                        const isVisibleNow = parent && parent.offsetWidth > 0 && parent.offsetHeight > 0;
-                        resolve(isVisibleNow);
-                    }, 100);
+                    // Sem bloquear: permitir criação posterior sob demanda
+                    resolve(false);
                 }
             };
 
-            // Verificar imediatamente
-            const initialCheck = element.parentElement && 
-                                 element.parentElement.offsetWidth > 0 && 
-                                 element.parentElement.offsetHeight > 0;
-            
-            if (initialCheck) {
+            if (isActuallyVisible(element.parentElement || element)) {
                 resolve(true);
             } else {
-                // Aguardar um tempo para o elemento se tornar visível
-                setTimeout(checkVisibility, 250);
+                tryCheck();
             }
         });
     }
@@ -4768,7 +4781,11 @@ document.addEventListener('DOMContentLoaded', function() {
             // Aguardar container estar visível
             return waitForContainerVisible(canvasId).then((isVisible) => {
                 if (!isVisible) {
-                    console.warn(`⚠️ Container do gráfico ${chartKey} não está visível`);
+                    // Evitar ruído no console; agenda nova tentativa quando a UI provavelmente já carregou
+                    setTimeout(() => {
+                        // Tentar novamente silenciosamente
+                        createChart(chartKey, canvasId, config);
+                    }, 500);
                     return null;
                 }
 
