@@ -87,7 +87,7 @@ app.get('/health', async (req, res) => {
         connection.release(); // Libera a conexão de volta para o pool
         
         // Se tudo deu certo, retorna 200 OK
-        res.status(200).json({ status: 'ok', db: 'connected' });
+        res.status(200).json({ status: 'ok', db: 'connected', version: '1.0.1' });
     } catch (error) {
         // Se a conexão com o banco falhar, o serviço não está saudável
         console.error('Health check falhou:', error);
