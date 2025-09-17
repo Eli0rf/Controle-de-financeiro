@@ -749,6 +749,7 @@ app.get('/api/dashboard', authenticateToken, async (req, res) => {
 
 // --- 8.1. ROTA DE TETOS POR PLANO DE CONTAS (ALERTAS) ---
 // Tetos de gastos por plano de contas - baseado na planilha atualizada
+// Observação: estendido até o plano 47. Caso não haja teto definido, permanece 0.00.
 const tetos = {
     1: 1000.00, 2: 2782.47, 3: 2431.67, 4: 350.00, 5: 2100.00,
     6: 550.00, 7: 270.00, 8: 1200.00, 9: 1200.00, 10: 270.00,
@@ -758,14 +759,15 @@ const tetos = {
     26: 1000.00, 27: 500.00, 28: 450.00, 29: 285.00, 30: 700.00,
     31: 200.00, 32: 450.00, 33: 100.00, 34: 54.80, 35: 0.00,
     36: 0.00, 37: 0.00, 38: 0.00, 39: 400.00, 40: 0.00,
-    41: 0.00, 42: 0.00, 43: 210.00, 44: 0.00, 45: 12700.00
+    41: 0.00, 42: 0.00, 43: 210.00, 44: 0.00, 45: 12700.00,
+    46: 0.00, 47: 0.00
 };
 
 // Rota protegida para tetos por plano de contas
 app.get('/api/expenses-goals', authenticateToken, async (req, res) => {
     try {
         const userId = req.user.id;
-        const { year, month } = req.query;
+        const { year, month, account } = req.query;
 
         let sql = `
             SELECT account_plan_code, SUM(amount) as Total
@@ -773,6 +775,18 @@ app.get('/api/expenses-goals', authenticateToken, async (req, res) => {
             WHERE user_id = ? AND account_plan_code IS NOT NULL
         `;
         const params = [userId];
+
+        // Filtro opcional por conta (ex.: PIX/Boleto)
+        if (account) {
+            // Normaliza valores legados para a conta unificada
+            let normalized = account.trim();
+            const upper = normalized.toUpperCase();
+            if (upper === 'PIX' || upper === 'BOLETO' || upper === 'PIX/BOLETO') {
+                normalized = 'PIX/Boleto';
+            }
+            sql += ' AND account = ?';
+            params.push(normalized);
+        }
 
         if (year && month) {
             sql += ' AND YEAR(transaction_date) = ? AND MONTH(transaction_date) = ?';

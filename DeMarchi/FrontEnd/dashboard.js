@@ -2290,10 +2290,9 @@ document.addEventListener('DOMContentLoaded', function() {
         const semCategoria = expenses.filter(e => e.is_business_expense && (!e.account_plan_code || e.account_plan_code === ''));
         const comNota = expenses.filter(e => e.invoice_path);
         
-        // Estatísticas específicas para PIX e Boleto
-    const pixBoletoExpenses = expenses.filter(e => e.account === 'PIX/Boleto');
-        const totalPix = pixExpenses.reduce((sum, e) => sum + parseFloat(e.amount), 0);
-        const totalBoleto = boletoExpenses.reduce((sum, e) => sum + parseFloat(e.amount), 0);
+        // Estatísticas unificadas para PIX/Boleto
+        const pixBoletoExpenses = expenses.filter(e => (e.account || '').toUpperCase() === 'PIX/BOLETO');
+        const totalPixBoleto = pixBoletoExpenses.reduce((sum, e) => sum + parseFloat(e.amount || 0), 0);
         
         const totalEmpresarial = empresariais.reduce((sum, e) => sum + parseFloat(e.amount), 0);
         const totalPessoal = pessoais.reduce((sum, e) => sum + parseFloat(e.amount), 0);
@@ -2322,15 +2321,10 @@ document.addEventListener('DOMContentLoaded', function() {
                 <div class="text-lg font-bold text-green-600">R$ ${totalPessoal.toFixed(2)}</div>
                 <div class="text-xs text-gray-500">${pessoais.length} gastos</div>
             </div>
-            <div class="text-center border-l-4 border-l-green-400 bg-green-50">
-                <div class="text-sm text-green-700 font-medium">💸 PIX</div>
-                <div class="text-lg font-bold text-green-800">R$ ${totalPix.toFixed(2)}</div>
-                <div class="text-xs text-green-600">${pixExpenses.length} transações</div>
-            </div>
-            <div class="text-center border-l-4 border-l-red-400 bg-red-50">
-                <div class="text-sm text-red-700 font-medium">📋 Boleto</div>
-                <div class="text-lg font-bold text-red-800">R$ ${totalBoleto.toFixed(2)}</div>
-                <div class="text-xs text-red-600">${boletoExpenses.length} transações</div>
+            <div class="text-center border-l-4 border-l-cyan-400 bg-cyan-50">
+                <div class="text-sm text-cyan-700 font-medium">💳 PIX/Boleto</div>
+                <div class="text-lg font-bold text-cyan-800">R$ ${totalPixBoleto.toFixed(2)}</div>
+                <div class="text-xs text-cyan-600">${pixBoletoExpenses.length} transações</div>
             </div>
             <div class="text-center">
                 <div class="text-sm text-gray-600">Sem Categoria</div>
@@ -6930,7 +6924,7 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-    // Função para carregar métricas PIX e Boleto
+    // Função para carregar métricas PIX/Boleto (unificado)
     async function loadPixBoletoMetrics() {
         try {
             const currentDate = new Date();
@@ -6945,13 +6939,8 @@ document.addEventListener('DOMContentLoaded', function() {
             const lastMonthYear = currentMonth === 1 ? currentYear - 1 : currentYear;
             const lastMonthData = await fetchPixBoletoData(lastMonthYear, lastMonth);
             
-            // Calcular estatísticas
-            const pixData = currentData.filter(item => isPixAccount(item.account));
-            const boletoData = currentData.filter(item => isBoletoAccount(item.account));
-            
-            const pixTotal = pixData.reduce((sum, item) => sum + parseAmount(item.amount ?? item.valor ?? item.value), 0);
-            const boletoTotal = boletoData.reduce((sum, item) => sum + parseAmount(item.amount ?? item.valor ?? item.value), 0);
-            const grandTotal = pixTotal + boletoTotal;
+            // Calcular estatísticas unificadas
+            const grandTotal = currentData.reduce((sum, item) => sum + parseAmount(item.amount ?? item.valor ?? item.value), 0);
             
             const lastMonthTotal = lastMonthData.reduce((sum, item) => sum + parseAmount(item.amount ?? item.valor ?? item.value), 0);
             const growth = lastMonthTotal > 0 ? ((grandTotal - lastMonthTotal) / lastMonthTotal * 100) : 0;
@@ -6961,17 +6950,13 @@ document.addEventListener('DOMContentLoaded', function() {
             
             // Atualizar interface
             updatePixBoletoMetrics({
-                pixTotal,
-                boletoTotal,
                 grandTotal,
-                pixCount: pixData.length,
-                boletoCount: boletoData.length,
+                count: totalTransactions,
                 growth,
                 average: averageTransaction
             });
             
-            // Calcular e exibir estatísticas detalhadas
-            updatePixBoletoDetailedStats(pixData, boletoData);
+            // Estatísticas detalhadas (não aplicável na versão unificada)
             
         } catch (error) {
             console.error('Erro ao carregar métricas PIX/Boleto:', error);
@@ -6979,7 +6964,7 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-    // Função para buscar dados PIX e Boleto
+    // Função para buscar dados PIX/Boleto (unificado com fallback)
     async function fetchPixBoletoData(year, month) {
         try {
             let url = `${API_BASE_URL}/api/expenses?year=${year}`;
@@ -6994,11 +6979,10 @@ document.addEventListener('DOMContentLoaded', function() {
             }
             
             const allExpenses = await response.json();
-            
-            // Filtrar apenas PIX e Boleto
-            return allExpenses.filter(expense => {
-                return isPixAccount(expense.account) || isBoletoAccount(expense.account);
-            });
+            // Preferir unificados, com fallback para legados
+            const unified = allExpenses.filter(exp => isPixBoletoAccount(exp.account));
+            if (unified.length > 0) return unified;
+            return allExpenses.filter(expense => isPixAccount(expense.account) || isBoletoAccount(expense.account));
             
         } catch (error) {
             console.error('Erro ao buscar dados PIX/Boleto:', error);
@@ -7006,34 +6990,29 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-    // Função para atualizar métricas na interface
+    // Função para atualizar métricas na interface (unificado)
     function updatePixBoletoMetrics(data) {
-        const pixTotalEl = document.getElementById('pix-total');
-        const boletoTotalEl = document.getElementById('boleto-total');
-        const grandTotalEl = document.getElementById('pix-boleto-grand-total');
-        const pixCountEl = document.getElementById('pix-count');
-        const boletoCountEl = document.getElementById('boleto-count');
+        const totalEl = document.getElementById('pix-boleto-total');
+        const countEl = document.getElementById('pix-boleto-count');
         const growthEl = document.getElementById('pix-boleto-growth');
         const averageEl = document.getElementById('pix-boleto-average');
-        
-        if (pixTotalEl) pixTotalEl.textContent = formatCurrency(data.pixTotal);
-        if (boletoTotalEl) boletoTotalEl.textContent = formatCurrency(data.boletoTotal);
-        if (grandTotalEl) grandTotalEl.textContent = formatCurrency(data.grandTotal);
-        if (pixCountEl) pixCountEl.textContent = data.pixCount;
-        if (boletoCountEl) boletoCountEl.textContent = data.boletoCount;
-        if (averageEl) averageEl.textContent = formatCurrency(data.average);
-        
+
+        if (totalEl) totalEl.textContent = formatCurrency(data.grandTotal ?? 0);
+        if (countEl) countEl.textContent = data.count ?? 0;
+        if (averageEl) averageEl.textContent = formatCurrency(data.average ?? 0);
+
         // Atualizar crescimento
         if (growthEl) {
-            const growthText = data.growth >= 0 ? `+${data.growth.toFixed(1)}%` : `${data.growth.toFixed(1)}%`;
-            const growthColor = data.growth >= 0 ? 'text-green-400' : 'text-red-400';
-            
+            const growth = Number.isFinite(data.growth) ? data.growth : 0;
+            const growthText = growth >= 0 ? `+${growth.toFixed(1)}%` : `${growth.toFixed(1)}%`;
+            const growthColor = growth >= 0 ? 'text-green-400' : 'text-red-400';
+
             growthEl.textContent = growthText;
             growthEl.className = `text-xl font-bold ${growthColor}`;
         }
     }
 
-    // Função para carregar gráficos PIX e Boleto
+    // Função para carregar gráficos PIX/Boleto (unificado)
     async function loadPixBoletoCharts() {
         try {
             const currentDate = new Date();
@@ -7048,19 +7027,17 @@ document.addEventListener('DOMContentLoaded', function() {
                 const month = date.getMonth() + 1;
                 
                 const data = await fetchPixBoletoData(year, month);
-                const pixMonthly = data.filter(item => isPixAccount(item.account));
-                const boletoMonthly = data.filter(item => isBoletoAccount(item.account));
                 monthlyData.push({
                     month: date.toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' }),
-                    pixTotal: pixMonthly.reduce((sum, item) => sum + parseAmount(item.amount ?? item.valor ?? item.value), 0),
-                    boletoTotal: boletoMonthly.reduce((sum, item) => sum + parseAmount(item.amount ?? item.valor ?? item.value), 0)
+                    total: data.reduce((sum, item) => sum + parseAmount(item.amount ?? item.valor ?? item.value), 0)
                 });
             }
             
-            // Renderizar gráficos
-            renderPixBoletoEvolutionChart(monthlyData);
-            await renderPixBoletoDistributionChart(currentYear, currentMonth);
-            await renderPixBoletoCategoryChart(currentYear, currentMonth);
+            // Renderizar gráficos unificados
+            renderPixBoletoEvolutionChartUnified(monthlyData);
+            await renderPixBoletoDistributionChartUnified(currentYear, currentMonth);
+            await renderPixBoletoCategoryChartUnified(currentYear, currentMonth);
+            await renderPixBoletoLimitsChart(currentYear, currentMonth);
             
         } catch (error) {
             console.error('Erro ao carregar gráficos PIX/Boleto:', error);
@@ -7080,6 +7057,7 @@ document.addEventListener('DOMContentLoaded', function() {
             // Renderizar tabelas
             renderPixBoletoTransactionsTable(data);
             renderPixBoletoSummaryTable(data);
+            renderTopPixBoletoList(data);
             
         } catch (error) {
             console.error('Erro ao carregar tabelas PIX/Boleto:', error);
@@ -7118,41 +7096,31 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-    // ========== GRÁFICOS PIX & BOLETO ==========
-    // Função para renderizar gráfico de evolução PIX e Boleto
-    function renderPixBoletoEvolutionChart(monthlyData) {
+    // ========== GRÁFICOS PIX/BOLETO (UNIFICADO) ==========
+    // Função para renderizar gráfico de evolução (unificado)
+    function renderPixBoletoEvolutionChartUnified(monthlyData) {
         const canvas = document.getElementById('pix-boleto-evolution-chart');
         if (!canvas) return;
 
         const ctx = canvas.getContext('2d');
         
         // Destruir gráfico existente
-        if (window.pixBoletoEvolutionChart) {
-            window.pixBoletoEvolutionChart.destroy();
+        if (window.pixBoletoEvolutionChartUnified) {
+            window.pixBoletoEvolutionChartUnified.destroy();
         }
 
-        window.pixBoletoEvolutionChart = new Chart(ctx, {
+        window.pixBoletoEvolutionChartUnified = new Chart(ctx, {
             type: 'line',
             data: {
                 labels: monthlyData.map(item => item.month),
-                datasets: [
-                    {
-                        label: 'PIX',
-                        data: monthlyData.map(item => item.pixTotal),
-                        borderColor: '#10B981',
-                        backgroundColor: '#10B98120',
-                        fill: false,
-                        tension: 0.4
-                    },
-                    {
-                        label: 'Boleto',
-                        data: monthlyData.map(item => item.boletoTotal),
-                        borderColor: '#F59E0B',
-                        backgroundColor: '#F59E0B20',
-                        fill: false,
-                        tension: 0.4
-                    }
-                ]
+                datasets: [{
+                    label: 'PIX/Boleto',
+                    data: monthlyData.map(item => item.total),
+                    borderColor: '#06B6D4',
+                    backgroundColor: '#06B6D420',
+                    fill: true,
+                    tension: 0.4
+                }]
             },
             options: {
                 responsive: true,
@@ -7186,30 +7154,31 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
-    // Função para renderizar gráfico de distribuição PIX e Boleto
-    async function renderPixBoletoDistributionChart(year, month) {
+    // Função para renderizar gráfico de distribuição (unificado)
+    async function renderPixBoletoDistributionChartUnified(year, month) {
         const canvas = document.getElementById('pix-boleto-distribution-chart');
         if (!canvas) return;
 
         const ctx = canvas.getContext('2d');
-    const data = await fetchPixBoletoData(year, month);
-    const pixList = data.filter(item => isPixAccount(item.account));
-    const boletoList = data.filter(item => isBoletoAccount(item.account));
-    const pixTotal = pixList.reduce((sum, item) => sum + parseAmount(item.amount ?? item.valor ?? item.value), 0);
-    const boletoTotal = boletoList.reduce((sum, item) => sum + parseAmount(item.amount ?? item.valor ?? item.value), 0);
+        const data = await fetchPixBoletoData(year, month);
+        const personalTotal = data.filter(i => (i.type || '').toLowerCase().includes('pessoal') || (i.type === 'personal'))
+                                  .reduce((s, i) => s + parseAmount(i.amount ?? i.valor ?? i.value), 0);
+        const businessTotal = data.filter(i => (i.type || '').toLowerCase().includes('prof') || (i.type === 'business'))
+                                  .reduce((s, i) => s + parseAmount(i.amount ?? i.valor ?? i.value), 0);
+        const othersTotal = data.reduce((s, i) => s + parseAmount(i.amount ?? i.valor ?? i.value), 0) - (personalTotal + businessTotal);
 
         // Destruir gráfico existente
-        if (window.pixBoletoDistributionChart) {
-            window.pixBoletoDistributionChart.destroy();
+        if (window.pixBoletoDistributionChartUnified) {
+            window.pixBoletoDistributionChartUnified.destroy();
         }
 
-        window.pixBoletoDistributionChart = new Chart(ctx, {
+        window.pixBoletoDistributionChartUnified = new Chart(ctx, {
             type: 'doughnut',
             data: {
-                labels: ['PIX', 'Boleto'],
+                labels: ['Pessoal', 'Empresarial', 'Outros'],
                 datasets: [{
-                    data: [pixTotal, boletoTotal],
-                    backgroundColor: ['#10B981', '#F59E0B'],
+                    data: [personalTotal, businessTotal, Math.max(0, othersTotal)],
+                    backgroundColor: ['#10B981', '#7C3AED', '#9CA3AF'],
                     borderWidth: 2,
                     borderColor: '#fff'
                 }]
@@ -7225,7 +7194,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     tooltip: {
                         callbacks: {
                             label: function(context) {
-                                const total = pixTotal + boletoTotal;
+                                const total = personalTotal + businessTotal + Math.max(0, othersTotal);
                                 const percentage = total > 0 ? ((context.parsed / total) * 100).toFixed(1) : 0;
                                 return `${context.label}: ${formatCurrency(context.parsed)} (${percentage}%)`;
                             }
@@ -7236,57 +7205,39 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
-    // Função para renderizar gráfico de categorias PIX e Boleto
-    async function renderPixBoletoCategoryChart(year, month) {
+    // Função para renderizar gráfico de categorias (unificado)
+    async function renderPixBoletoCategoryChartUnified(year, month) {
         const canvas = document.getElementById('pix-boleto-category-chart');
         if (!canvas) return;
 
         const ctx = canvas.getContext('2d');
         const data = await fetchPixBoletoData(year, month);
-        // Agrupar por categoria com robustez
         const categoryTotals = {};
         data.forEach(item => {
-            const category = item.category && item.category.trim() !== '' ? item.category : 'Outros';
-            if (!categoryTotals[category]) {
-                categoryTotals[category] = { pix: 0, boleto: 0 };
-            }
+            const category = (item.category && item.category.trim() !== '') ? item.category : 'Outros';
             const amt = parseAmount(item.amount ?? item.valor ?? item.value);
-            if (isPixAccount(item.account)) {
-                categoryTotals[category].pix += amt;
-            } else if (isBoletoAccount(item.account)) {
-                categoryTotals[category].boleto += amt;
-            }
+            categoryTotals[category] = (categoryTotals[category] || 0) + amt;
         });
 
         const categories = Object.keys(categoryTotals);
-        const pixData = categories.map(cat => categoryTotals[cat].pix);
-        const boletoData = categories.map(cat => categoryTotals[cat].boleto);
+        const totals = categories.map(cat => categoryTotals[cat]);
 
         // Destruir gráfico existente
-        if (window.pixBoletoCategoryChart) {
-            window.pixBoletoCategoryChart.destroy();
+        if (window.pixBoletoCategoryChartUnified) {
+            window.pixBoletoCategoryChartUnified.destroy();
         }
 
-        window.pixBoletoCategoryChart = new Chart(ctx, {
+        window.pixBoletoCategoryChartUnified = new Chart(ctx, {
             type: 'bar',
             data: {
                 labels: categories,
-                datasets: [
-                    {
-                        label: 'PIX',
-                        data: pixData,
-                        backgroundColor: '#10B981',
-                        borderColor: '#059669',
-                        borderWidth: 1
-                    },
-                    {
-                        label: 'Boleto',
-                        data: boletoData,
-                        backgroundColor: '#F59E0B',
-                        borderColor: '#D97706',
-                        borderWidth: 1
-                    }
-                ]
+                datasets: [{
+                    label: 'PIX/Boleto',
+                    data: totals,
+                    backgroundColor: '#06B6D4',
+                    borderColor: '#0891B2',
+                    borderWidth: 1
+                }]
             },
             options: {
                 responsive: true,
@@ -7305,9 +7256,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     }
                 },
                 scales: {
-                    x: {
-                        stacked: false
-                    },
+                    x: { stacked: false },
                     y: {
                         beginAtZero: true,
                         stacked: false,
@@ -7322,8 +7271,97 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
-    // ========== TABELAS PIX & BOLETO ==========
-    // Função para renderizar tabela de transações PIX e Boleto
+    // Gráfico de Teto x Gasto por Plano (PIX/Boleto)
+    async function renderPixBoletoLimitsChart(year, month) {
+        const canvas = document.getElementById('pix-boleto-limits-chart');
+        if (!canvas) return;
+
+        const ctx = canvas.getContext('2d');
+        try {
+            const params = new URLSearchParams({ year, month, account: 'PIX/Boleto' });
+            const resp = await authenticatedFetch(`${API_BASE_URL}/api/expenses-goals?${params.toString()}`);
+            if (!resp.ok) throw new Error('Falha ao buscar tetos/gastos PIX/Boleto');
+            const data = await resp.json();
+
+            if (!Array.isArray(data) || data.length === 0) {
+                console.log('Sem dados de tetos/gastos para PIX/Boleto');
+                return;
+            }
+
+            const sorted = [...data].sort((a,b)=> parseInt(a.PlanoContasID) - parseInt(b.PlanoContasID));
+            const labels = sorted.map(d => `Plano ${d.PlanoContasID}`);
+            const gastos = sorted.map(d => Number(d.Total || 0));
+            const tetosVals = sorted.map(d => Number(d.Teto || 0));
+
+            // Destrói gráfico anterior, se houver
+            if (window.pixBoletoLimitsChart) window.pixBoletoLimitsChart.destroy();
+
+            window.pixBoletoLimitsChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels,
+                    datasets: [
+                        {
+                            type: 'line',
+                            label: 'Teto',
+                            data: tetosVals,
+                            borderColor: '#16a34a',
+                            backgroundColor: 'rgba(22,163,74,0.15)',
+                            tension: 0.2,
+                            yAxisID: 'y'
+                        },
+                        {
+                            label: 'Gasto',
+                            data: gastos,
+                            backgroundColor: gastos.map((val, i)=>{
+                                const limit = tetosVals[i] || 0;
+                                const p = limit>0 ? (val/limit)*100 : 0;
+                                if (p>100) return 'rgba(239,68,68,0.85)';
+                                if (p>=90) return 'rgba(251,146,60,0.85)';
+                                if (p>=70) return 'rgba(250,204,21,0.85)';
+                                return 'rgba(6,182,212,0.85)';
+                            }),
+                            borderColor: '#0e7490',
+                            borderWidth: 1,
+                            yAxisID: 'y'
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { position: 'bottom' },
+                        tooltip: {
+                            mode: 'index',
+                            intersect: false,
+                            callbacks: {
+                                label: function(ctx){
+                                    return `${ctx.dataset.label}: ${formatCurrency(ctx.parsed.y)}`;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: { callback: v => formatCurrency(v) }
+                        }
+                    }
+                }
+            });
+
+            const periodEl = document.getElementById('pix-boleto-limits-period');
+            if (periodEl) {
+                periodEl.textContent = `${('0'+month).slice(-2)}/${year}`;
+            }
+        } catch (e) {
+            console.error('Erro ao renderizar PIX/Boleto limits chart:', e);
+        }
+    }
+
+    // ========== TABELAS PIX/BOLETO (UNIFICADO) ==========
+    // Função para renderizar tabela de transações (unificado)
     function renderPixBoletoTransactionsTable(data) {
         const container = document.getElementById('pix-boleto-transactions');
         if (!container) return;
@@ -7337,7 +7375,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     <thead class="bg-gray-50">
                         <tr>
                             <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Data</th>
-                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tipo</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Conta</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Descrição</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Categoria</th>
                             <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Valor</th>
@@ -7350,8 +7388,8 @@ document.addEventListener('DOMContentLoaded', function() {
                                     ${new Date(item.transaction_date || item.date).toLocaleDateString('pt-BR')}
                                 </td>
                                 <td class="px-4 py-4 whitespace-nowrap">
-                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${item.account === 'PIX' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}">
-                                        ${item.account}
+                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${isPixBoletoAccount(item.account) ? 'bg-cyan-100 text-cyan-800' : 'bg-gray-100 text-gray-700'}">
+                                        ${isPixBoletoAccount(item.account) ? 'PIX/Boleto' : (item.account || 'N/A')}
                                     </span>
                                 </td>
                                 <td class="px-4 py-4 text-sm text-gray-900">${item.description}</td>
@@ -7369,7 +7407,7 @@ document.addEventListener('DOMContentLoaded', function() {
         container.innerHTML = tableHtml;
     }
 
-    // Função para renderizar tabela de resumo PIX e Boleto
+    // Função para renderizar tabela de resumo (unificado)
     function renderPixBoletoSummaryTable(data) {
         const container = document.getElementById('pix-boleto-summary');
         if (!container) return;
@@ -7379,18 +7417,11 @@ document.addEventListener('DOMContentLoaded', function() {
         data.forEach(item => {
             const category = item.category || 'Outros';
             if (!categoryTotals[category]) {
-                categoryTotals[category] = { pix: 0, boleto: 0, total: 0, count: 0 };
+                categoryTotals[category] = { total: 0, count: 0 };
             }
-            
             const amount = parseFloat(item.amount);
             categoryTotals[category].total += amount;
             categoryTotals[category].count++;
-            
-            if (item.account === 'PIX') {
-                categoryTotals[category].pix += amount;
-            } else {
-                categoryTotals[category].boleto += amount;
-            }
         });
 
         const categories = Object.entries(categoryTotals)
@@ -7402,8 +7433,6 @@ document.addEventListener('DOMContentLoaded', function() {
                     <thead class="bg-gray-50">
                         <tr>
                             <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Categoria</th>
-                            <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">PIX</th>
-                            <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Boleto</th>
                             <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Total</th>
                             <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Transações</th>
                         </tr>
@@ -7412,12 +7441,6 @@ document.addEventListener('DOMContentLoaded', function() {
                         ${categories.map(([category, totals]) => `
                             <tr class="hover:bg-gray-50">
                                 <td class="px-4 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${category}</td>
-                                <td class="px-4 py-4 whitespace-nowrap text-sm text-right ${totals.pix > 0 ? 'text-green-600 font-medium' : 'text-gray-400'}">
-                                    ${totals.pix > 0 ? formatCurrency(totals.pix) : '-'}
-                                </td>
-                                <td class="px-4 py-4 whitespace-nowrap text-sm text-right ${totals.boleto > 0 ? 'text-yellow-600 font-medium' : 'text-gray-400'}">
-                                    ${totals.boleto > 0 ? formatCurrency(totals.boleto) : '-'}
-                                </td>
                                 <td class="px-4 py-4 whitespace-nowrap text-sm font-bold text-right text-red-600">
                                     ${formatCurrency(totals.total)}
                                 </td>
@@ -7432,6 +7455,26 @@ document.addEventListener('DOMContentLoaded', function() {
         `;
 
         container.innerHTML = tableHtml;
+    }
+
+    // Lista Top 10 (unificado)
+    function renderTopPixBoletoList(data) {
+        const container = document.getElementById('top-pix-boleto-list');
+        if (!container) return;
+        const unified = data.filter(e => isPixBoletoAccount(e.account));
+        const top = unified
+            .map(e => ({...e, amountNum: parseAmount(e.amount ?? e.valor ?? e.value)}))
+            .sort((a,b) => b.amountNum - a.amountNum)
+            .slice(0,10);
+        container.innerHTML = top.map(item => `
+            <div class="flex justify-between items-center p-3 border rounded-md hover:bg-gray-50">
+                <div>
+                    <div class="text-sm font-medium text-gray-700">${item.description || 'Sem descrição'}</div>
+                    <div class="text-xs text-gray-400">${new Date(item.transaction_date || item.date).toLocaleDateString('pt-BR')} • ${item.category || 'Outros'}</div>
+                </div>
+                <div class="text-sm font-semibold text-red-600">${formatCurrency(item.amountNum)}</div>
+            </div>
+        `).join('');
     }
     
     // Função específica para buscar gastos PIX e Boleto (todos os períodos)
@@ -7488,404 +7531,36 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     function updatePixBoletoStats(expenses) {
-        console.log('🔄 Atualizando estatísticas PIX e Boleto...');
-        console.log('📊 Total de gastos recebidos:', expenses.length);
-        
-    const pixBoletoExpenses = expenses.filter(e => e.account === 'PIX/Boleto');
-        
-        console.log('💳 Gastos PIX encontrados:', pixExpenses.length);
-        console.log('📄 Gastos Boleto encontrados:', boletoExpenses.length);
-        
-        // Debug dos gastos PIX
-        if (pixExpenses.length > 0) {
-            console.log('💳 Detalhes gastos PIX:', pixExpenses.map(e => ({
-                amount: e.amount,
-                description: e.description,
-                date: e.transaction_date || e.date
-            })));
-        }
-        
-        const pixTotal = pixExpenses.reduce((sum, e) => sum + parseFloat(e.amount || 0), 0);
-        const boletoTotal = boletoExpenses.reduce((sum, e) => sum + parseFloat(e.amount || 0), 0);
-        const totalTransactions = expenses.length;
-        const grandTotal = pixTotal + boletoTotal;
-        
-        console.log('💰 Valores calculados:', {
-            pixTotal,
-            boletoTotal,
-            grandTotal,
-            totalTransactions
-        });
-        
-        // Lista completa de possíveis IDs dos elementos
-        const pixElementIds = ['pix-total', 'total-pix'];
-        const boletoElementIds = ['boleto-total', 'total-boleto'];
-        const grandTotalElementIds = ['pix-boleto-grand-total', 'total-pix-boleto'];
-        const transactionElementIds = ['pix-boleto-transactions'];
-        
-        // Atualizar elementos PIX
-        let pixUpdated = false;
-        pixElementIds.forEach(id => {
-            const element = document.getElementById(id);
-            if (element) {
-                const formattedPixTotal = formatCurrency(pixTotal);
-                element.textContent = formattedPixTotal;
-                console.log(`✅ ${id} atualizado: ${formattedPixTotal}`);
-                pixUpdated = true;
-            } else {
-                console.log(`⚠️ Elemento ${id} não encontrado`);
-            }
-        });
-        if (!pixUpdated) {
-            console.error('❌ NENHUM elemento PIX foi encontrado!');
-        }
-        
-        // Atualizar elementos Boleto
-        let boletoUpdated = false;
-        boletoElementIds.forEach(id => {
-            const element = document.getElementById(id);
-            if (element) {
-                const formattedBoletoTotal = formatCurrency(boletoTotal);
-                element.textContent = formattedBoletoTotal;
-                console.log(`✅ ${id} atualizado: ${formattedBoletoTotal}`);
-                boletoUpdated = true;
-            } else {
-                console.log(`⚠️ Elemento ${id} não encontrado`);
-            }
-        });
-        if (!boletoUpdated) {
-            console.error('❌ NENHUM elemento Boleto foi encontrado!');
-        }
-        
-        // Atualizar elementos de total geral
-        let grandTotalUpdated = false;
-        grandTotalElementIds.forEach(id => {
-            const element = document.getElementById(id);
-            if (element) {
-                const formattedGrandTotal = formatCurrency(grandTotal);
-                element.textContent = formattedGrandTotal;
-                console.log(`✅ ${id} atualizado: ${formattedGrandTotal}`);
-                grandTotalUpdated = true;
-            } else {
-                console.log(`⚠️ Elemento ${id} não encontrado`);
-            }
-        });
-        if (!grandTotalUpdated) {
-            console.error('❌ NENHUM elemento de total geral foi encontrado!');
-        }
-        
-        // Atualizar elementos de transações
-        let transactionUpdated = false;
-        transactionElementIds.forEach(id => {
-            const element = document.getElementById(id);
-            if (element) {
-                element.textContent = totalTransactions;
-                console.log(`✅ ${id} atualizado: ${totalTransactions}`);
-                transactionUpdated = true;
-            } else {
-                console.log(`⚠️ Elemento ${id} não encontrado`);
-            }
-        });
-        if (!transactionUpdated) {
-            console.error('❌ NENHUM elemento de transações foi encontrado!');
-        }
-        
-        // Log final de verificação
-        console.log('🔍 Verificação final dos elementos no DOM:');
-        [...pixElementIds, ...boletoElementIds, ...grandTotalElementIds, ...transactionElementIds].forEach(id => {
-            const element = document.getElementById(id);
-            if (element) {
-                console.log(`✅ ${id}: ${element.textContent}`);
-            } else {
-                console.log(`❌ ${id}: ELEMENTO NÃO ENCONTRADO`);
-            }
-        });
-        
-        // Se não há dados, mostrar notificação informativa
-        if (totalTransactions === 0) {
+        console.log('🔄 Atualizando estatísticas PIX/Boleto (unificado)...');
+        const unified = expenses.filter(e => isPixBoletoAccount(e.account));
+        const total = unified.reduce((sum, e) => sum + parseAmount(e.amount || e.valor || e.value), 0);
+        const count = unified.length;
+        updatePixBoletoMetrics({ grandTotal: total, count, growth: 0, average: count ? total / count : 0 });
+        if (count === 0) {
             console.log('ℹ️ Nenhum gasto PIX/Boleto encontrado para o período');
-            setTimeout(() => {
-                showNotification('ℹ️ Nenhum gasto PIX ou Boleto encontrado para o período selecionado', 'info', 3000);
-            }, 500);
-        } else {
-            console.log('✅ Estatísticas PIX e Boleto atualizadas com sucesso!');
+            setTimeout(() => showNotification('ℹ️ Nenhum gasto PIX/Boleto no período selecionado', 'info', 3000), 500);
         }
-        
-        console.log('📊 Resumo das estatísticas:', {
-            pix: { count: pixExpenses.length, total: pixTotal },
-            boleto: { count: boletoExpenses.length, total: boletoTotal },
-            total: { count: totalTransactions, amount: grandTotal }
-        });
     }
     
     function renderPixBoletoCharts(expenses) {
-        // Usar setTimeout para garantir que os elementos DOM estejam prontos
-        setTimeout(() => {
-            renderPixBoletoComparisonChart(expenses);
-            renderPixBoletoEvolutionChart(expenses);
+        // Atualiza apenas gráficos unificados ao receber lista de despesas
+        setTimeout(async () => {
+            const now = new Date();
+            const year = now.getFullYear();
+            const month = now.getMonth() + 1;
+            const monthlyData = [];
+            for (let i = 11; i >= 0; i--) {
+                const d = new Date(year, month - 1 - i);
+                const y = d.getFullYear();
+                const m = d.getMonth() + 1;
+                const data = await fetchPixBoletoData(y, m);
+                const total = data.reduce((s, it) => s + parseAmount(it.amount ?? it.valor ?? it.value), 0);
+                monthlyData.push({ month: d.toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' }), total });
+            }
+            renderPixBoletoEvolutionChartUnified(monthlyData);
+            await renderPixBoletoDistributionChartUnified(year, month);
+            await renderPixBoletoCategoryChartUnified(year, month);
         }, 100);
-    }
-    
-    async function renderPixBoletoComparisonChart(expenses) {
-        const chartKey = 'pixBoletoComparisonChart';
-        const canvasId = 'pix-boleto-comparison-chart';
-        
-        console.log('🔄 Renderizando gráfico de comparação PIX/Boleto...');
-        
-        if (!isChartJsLoaded()) {
-            console.error('❌ Chart.js não disponível para PIX/Boleto comparison');
-            displayChartFallback(canvasId, 'Chart.js não carregado');
-            return;
-        }
-        
-        // Verificar se o canvas existe
-        const canvas = document.getElementById(canvasId);
-        if (!canvas) {
-            console.error('❌ Canvas não encontrado:', canvasId);
-            return;
-        }
-        
-    const pixBoletoExpenses = expenses.filter(e => e.account === 'PIX/Boleto');
-        
-        const pixTotal = pixExpenses.reduce((sum, e) => sum + parseFloat(e.amount || 0), 0);
-        const boletoTotal = boletoExpenses.reduce((sum, e) => sum + parseFloat(e.amount || 0), 0);
-        
-        if (pixTotal === 0 && boletoTotal === 0) {
-            displayChartFallback(canvasId, 'Sem transações PIX ou Boleto neste período');
-            return;
-        }
-        
-        try {
-            // Destruir gráfico existente
-            destroyChart(chartKey);
-            
-            const config = {
-                type: 'doughnut',
-                data: {
-                    labels: ['💳 PIX', '📄 Boleto'],
-                    datasets: [{
-                        data: [pixTotal, boletoTotal],
-                        backgroundColor: [
-                            'rgba(46, 204, 113, 0.8)',  // Verde PIX
-                            'rgba(231, 76, 60, 0.8)'    // Vermelho Boleto
-                        ],
-                        borderColor: [
-                            'rgba(46, 204, 113, 1)',
-                            'rgba(231, 76, 60, 1)'
-                        ],
-                        borderWidth: 3,
-                        hoverOffset: 10,
-                        showValues: CHART_CONFIG.showValues,
-                        valueColor: CHART_CONFIG.piValueColor,
-                        valueFont: CHART_CONFIG.valueFont
-                    }]
-                },
-                options: mergeChartOptions({
-                    responsive: true,
-                    maintainAspectRatio: true,
-                    plugins: {
-                        title: {
-                            display: true,
-                            text: '💳 Comparação PIX vs Boleto',
-                            font: { size: 16, weight: 'bold' }
-                        },
-                        subtitle: {
-                            display: true,
-                            text: `Total: ${formatCurrency(pixTotal + boletoTotal)}`,
-                            font: { size: 12 }
-                        },
-                        legend: {
-                            position: 'bottom',
-                            labels: {
-                                padding: 15,
-                                usePointStyle: true,
-                                font: { size: 12 }
-                            }
-                        },
-                        tooltip: {
-                            callbacks: {
-                                label: function(context) {
-                                    const value = context.parsed;
-                                    const total = pixTotal + boletoTotal;
-                                    const percentage = ((value / total) * 100).toFixed(1);
-                                    return [
-                                        `${context.label}: ${formatCurrency(value)}`,
-                                        `Percentual: ${percentage}%`,
-                                        `Transações: ${context.label.includes('PIX') ? pixExpenses.length : boletoExpenses.length}`
-                                    ];
-                                }
-                            }
-                        }
-                    }
-                })
-            };
-            
-            // Usar método mais simples para criar gráfico
-            const ctx = canvas.getContext('2d');
-            const chart = new Chart(ctx, config);
-            chartRegistry[chartKey] = chart;
-            
-            console.log('✅ Gráfico de comparação PIX/Boleto criado com sucesso');
-            
-        } catch (error) {
-            console.error('❌ Erro ao renderizar gráfico PIX/Boleto comparison:', error);
-            displayChartFallback(canvasId, 'Erro ao carregar gráfico');
-        }
-    }
-    
-    async function renderPixBoletoEvolutionChart(expenses) {
-        const chartKey = 'pixBoletoEvolutionChart';
-        const canvasId = 'pix-boleto-evolution-chart';
-        
-        console.log('🔄 Renderizando gráfico de evolução PIX/Boleto...');
-        
-        if (!isChartJsLoaded()) {
-            console.error('❌ Chart.js não disponível para PIX/Boleto evolution');
-            displayChartFallback(canvasId, 'Chart.js não carregado');
-            return;
-        }
-        
-        // Verificar se o canvas existe
-        const canvas = document.getElementById(canvasId);
-        if (!canvas) {
-            console.error('❌ Canvas não encontrado:', canvasId);
-            return;
-        }
-        
-        if (expenses.length === 0) {
-            displayChartFallback(canvasId, 'Sem dados de evolução disponíveis');
-            return;
-        }
-        
-        try {
-            // Destruir gráfico existente
-            destroyChart(chartKey);
-            
-            // Agrupar dados por mês
-            const monthlyData = {};
-            
-            expenses.forEach(expense => {
-                const date = new Date(expense.transaction_date || expense.date);
-                const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-                
-                if (!monthlyData[monthKey]) {
-                    monthlyData[monthKey] = { pix: 0, boleto: 0 };
-                }
-                
-                const amount = parseFloat(expense.amount || 0);
-                if (expense.account === 'PIX') {
-                    monthlyData[monthKey].pix += amount;
-                } else if (expense.account === 'Boleto') {
-                    monthlyData[monthKey].boleto += amount;
-                }
-            });
-            
-            const months = Object.keys(monthlyData).sort();
-            const pixData = months.map(month => monthlyData[month].pix);
-            const boletoData = months.map(month => monthlyData[month].boleto);
-            const monthLabels = months.map(month => {
-                const [year, monthNum] = month.split('-');
-                const monthName = new Date(year, monthNum - 1).toLocaleDateString('pt-BR', { month: 'short' });
-                return `${monthName}/${year}`;
-            });
-            
-            const config = {
-                type: 'line',
-                data: {
-                    labels: monthLabels,
-                    datasets: [
-                        {
-                            label: '💳 PIX',
-                            data: pixData,
-                            borderColor: 'rgba(46, 204, 113, 1)',
-                            backgroundColor: 'rgba(46, 204, 113, 0.1)',
-                            borderWidth: 3,
-                            tension: 0.3,
-                            fill: false,
-                            pointBackgroundColor: 'rgba(46, 204, 113, 1)',
-                            pointBorderColor: '#fff',
-                            pointBorderWidth: 2,
-                            pointRadius: 5,
-                            showValues: CHART_CONFIG.showValues,
-                            valueColor: CHART_CONFIG.valueColor,
-                            valueFont: 'bold 10px Arial'
-                        },
-                        {
-                            label: '📄 Boleto',
-                            data: boletoData,
-                            borderColor: 'rgba(231, 76, 60, 1)',
-                            backgroundColor: 'rgba(231, 76, 60, 0.1)',
-                            borderWidth: 3,
-                            tension: 0.3,
-                            fill: false,
-                            pointBackgroundColor: 'rgba(231, 76, 60, 1)',
-                            pointBorderColor: '#fff',
-                            pointBorderWidth: 2,
-                            pointRadius: 5,
-                            showValues: CHART_CONFIG.showValues,
-                            valueColor: CHART_CONFIG.valueColor,
-                            valueFont: 'bold 10px Arial'
-                        }
-                    ]
-                },
-                options: mergeChartOptions({
-                    responsive: true,
-                    maintainAspectRatio: true,
-                    plugins: {
-                        title: {
-                            display: true,
-                            text: '📈 Evolução PIX e Boleto',
-                            font: { size: 16, weight: 'bold' }
-                        },
-                        legend: {
-                            position: 'top',
-                            labels: {
-                                usePointStyle: true,
-                                font: { size: 12 }
-                            }
-                        },
-                        tooltip: {
-                            mode: 'index',
-                            intersect: false,
-                            callbacks: {
-                                title: function(context) {
-                                    return `Período: ${context[0].label}`;
-                                },
-                                label: function(context) {
-                                    return `${context.dataset.label}: ${formatCurrency(context.parsed.y)}`;
-                                }
-                            }
-                        }
-                    },
-                    scales: {
-                        x: {
-                            title: {
-                                display: true,
-                                text: 'Período'
-                            }
-                        },
-                        y: {
-                            title: {
-                                display: true,
-                                text: 'Valor (R$)'
-                            },
-                            beginAtZero: true
-                        }
-                    }
-                })
-            };
-            
-            // Usar método mais simples para criar gráfico
-            const ctx = canvas.getContext('2d');
-            const chart = new Chart(ctx, config);
-            chartRegistry[chartKey] = chart;
-            
-            console.log('✅ Gráfico de evolução PIX/Boleto criado com sucesso');
-            
-        } catch (error) {
-            console.error('❌ Erro ao renderizar gráfico de evolução PIX/Boleto:', error);
-            displayChartFallback(canvasId, 'Erro ao carregar gráfico de evolução');
-        }
     }
     
     function setupPixBoletoFilters() {
