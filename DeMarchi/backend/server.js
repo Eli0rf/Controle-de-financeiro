@@ -1507,6 +1507,29 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
         const chartImages = await generateChartsForPDF(porPlano, porConta, expenses, chartJSNodeCanvas);
         console.log('✅ Gráficos gerados com sucesso!');
 
+        // 📊 AGRUPAR DESPESAS POR PLANO DE CONTAS PARA MELHOR ORGANIZAÇÃO
+        const expensesByPlan = {};
+        expenses.forEach(expense => {
+            const planCode = expense.account_plan_code || 'Sem Plano';
+            if (!expensesByPlan[planCode]) {
+                expensesByPlan[planCode] = {
+                    planCode,
+                    total: 0,
+                    count: 0,
+                    expenses: []
+                };
+            }
+            expensesByPlan[planCode].total += parseFloat(expense.amount);
+            expensesByPlan[planCode].count++;
+            expensesByPlan[planCode].expenses.push(expense);
+        });
+
+        // Ordenar planos por valor total (maior para menor)
+        const sortedPlanGroups = Object.values(expensesByPlan)
+            .sort((a, b) => b.total - a.total);
+
+        console.log(`📋 Despesas agrupadas em ${sortedPlanGroups.length} planos de contas`);
+
         // Gera PDF estilizado
     const doc = new pdfkit();
         doc.registerFont('NotoSans', path.join(__dirname, 'fonts', 'NotoSans-Regular.ttf'));
@@ -1875,75 +1898,140 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
             if (chartImages && chartImages.planChart) {
                 doc.image(chartImages.planChart, 60, 270, { width: 480 });
             }
-            // Página 2: Lista completa por planos (uso do teto) compacta
+            // Página 2: Lista completa por planos com paginação otimizada
             doc.addPage();
             doc.rect(0,0,doc.page.width,80).fill('#0F172A');
             doc.fillColor('#FFFFFF').fontSize(22).text('📊 Distribuição por Planos (Empresarial)',0,30,{width:doc.page.width,align:'center'});
-            const byPlanoEmp = {}; empresariais.forEach(e=>{const p=e.account_plan_code||'N/A'; byPlanoEmp[p]=(byPlanoEmp[p]||0)+parseFloat(e.amount)});
-            const planosOrdenadosEmp = Object.entries(byPlanoEmp).sort((a,b)=>b[1]-a[1]);
-            let tableY = 110; // inicia abaixo do header
-            // Ajuste dinâmico de densidade: calcula altura alvo para caber todos os planos
-            const maxHeight= doc.page.height - 140; // limite inferior disponível
-            let headerH=16; let rowH=13; let fontRow=8; let barHeight=6; let barWidth=140;
-            const totalLinhas = planosOrdenadosEmp.length;
-            if (tableY + headerH + totalLinhas*rowH > maxHeight) {
-                // Primeira compressão
-                rowH = 11; fontRow=7; barHeight=5; barWidth=120;
-            }
-            if (tableY + headerH + totalLinhas*rowH > maxHeight) {
-                // Segunda compressão - modo ultra compacto
-                rowH = 9; fontRow=6; barHeight=4; barWidth=100;
-            }
-            // Cabeçalho
-            doc.fontSize(fontRow);
-            doc.roundedRect(50,tableY,490,headerH,4).fill('#CBD5E1');
-            doc.fillColor('#0F172A');
-            const headYOffset = headerH - (headerH-8);
-            doc.text('Plano',58,tableY+4,{width:70});
-            doc.text('R$',128,tableY+4,{width:38,align:'right'});
-            doc.text('%Tot',166,tableY+4,{width:32,align:'right'});
-            doc.text('Teto',198,tableY+4,{width:50,align:'right'});
-            doc.text('%Teto',248,tableY+4,{width:42,align:'right'});
-            doc.text('Uso',290,tableY+4,{width:110});
-            doc.text('Status',400,tableY+4,{width:50});
-            doc.text('Share',450,tableY+4,{width:80});
-            tableY+=headerH+2;
-            planosOrdenadosEmp.forEach(([pl,val],i)=>{
-                if(tableY+rowH>maxHeight){
-                    // Se mesmo após compressão não couber, substitui últimas linhas por nota
-                    doc.fillColor('#64748B').fontSize(fontRow).text('...compressão máxima atingida, alguns planos ocultos...',50,tableY+2,{width:490,align:'center'});
-                    tableY = maxHeight+5; return;
+            
+            const byPlanoEmp = {}; 
+            empresariais.forEach(e=>{
+                const p = e.account_plan_code || 'N/A'; 
+                if (!byPlanoEmp[p]) {
+                    byPlanoEmp[p] = {
+                        planCode: p,
+                        total: 0,
+                        count: 0,
+                        expenses: []
+                    };
                 }
+                byPlanoEmp[p].total += parseFloat(e.amount);
+                byPlanoEmp[p].count++;
+                byPlanoEmp[p].expenses.push(e);
+            });
+            
+            const planosOrdenadosEmp = Object.values(byPlanoEmp).sort((a,b)=>b.total-a.total);
+            let tableY = 110; // inicia abaixo do header
+            
+            // Paginação inteligente para planos empresariais
+            const maxItemsPerPage = 12; // Máximo de planos por página
+            const minItemsPerPage = 4;  // Mínimo para evitar páginas quase vazias
+            let itemsOnCurrentPage = 0;
+            
+            // Ajuste dinâmico de densidade baseado no número total de planos
+            let headerH = 16; 
+            let rowH = 13; 
+            let fontRow = 8; 
+            let barHeight = 6; 
+            let barWidth = 140;
+            
+            if (planosOrdenadosEmp.length > 15) {
+                // Compactar mais para muitos planos
+                rowH = 11; 
+                fontRow = 7; 
+                barHeight = 5; 
+                barWidth = 120;
+            }
+            
+            const drawHeader = (y) => {
+                doc.fontSize(fontRow);
+                doc.roundedRect(50,y,490,headerH,4).fill('#CBD5E1');
+                doc.fillColor('#0F172A');
+                doc.text('Plano',58,y+4,{width:70});
+                doc.text('R$',128,y+4,{width:38,align:'right'});
+                doc.text('%Tot',166,y+4,{width:32,align:'right'});
+                doc.text('Teto',198,y+4,{width:50,align:'right'});
+                doc.text('%Teto',248,y+4,{width:42,align:'right'});
+                doc.text('Uso',290,y+4,{width:110});
+                doc.text('Status',400,y+4,{width:50});
+                doc.text('Share',450,y+4,{width:80});
+                return y + headerH + 2;
+            };
+            
+            tableY = drawHeader(tableY);
+            
+            planosOrdenadosEmp.forEach((planGroup, i) => {
+                const availableHeight = doc.page.height - 100 - tableY;
+                
+                // Se não cabe na página atual E já temos itens suficientes, nova página
+                if ((tableY + rowH > doc.page.height - 100) && itemsOnCurrentPage >= minItemsPerPage) {
+                    doc.addPage();
+                    tableY = 60;
+                    tableY = drawHeader(tableY);
+                    itemsOnCurrentPage = 0;
+                }
+                
+                // Se mesmo após nova página não cabe, compactar ou finalizar
+                if (tableY + rowH > doc.page.height - 100) {
+                    doc.fillColor('#64748B').fontSize(fontRow).text(`...${planosOrdenadosEmp.length - i} planos restantes ocultos por limite de espaço...`,50,tableY+2,{width:490,align:'center'});
+                    return;
+                }
+                
+                const val = planGroup.total;
                 const pctTotal = (val/totalEmpresarial)*100;
-                const id = parseInt(pl); const teto = tetos[id] || 0; const pctTeto = teto>0 ? (val/teto)*100 : 0;
+                const id = parseInt(planGroup.planCode); 
+                const teto = tetos[id] || 0; 
+                const pctTeto = teto > 0 ? (val/teto)*100 : 0;
+                
                 const bg = i % 2 === 0 ? '#FFFFFF':'#F1F5F9';
                 doc.roundedRect(50,tableY,490,rowH-1,2).fill(bg);
                 doc.fillColor('#1E293B').fontSize(fontRow);
-                const labelPlano = pl.toString().length>10 ? pl.toString().slice(0,9)+'…' : pl;
+                
+                const labelPlano = planGroup.planCode.toString().length > 10 ? 
+                    planGroup.planCode.toString().slice(0,9)+'…' : planGroup.planCode;
+                
                 doc.text(labelPlano,58,tableY+rowH/3-1,{width:70});
                 doc.text(val.toFixed(0),128,tableY+rowH/3-1,{width:38,align:'right'});
                 doc.text(pctTotal.toFixed(1),166,tableY+rowH/3-1,{width:32,align:'right'});
                 doc.text(teto>0?teto.toFixed(0):'-',198,tableY+rowH/3-1,{width:50,align:'right'});
                 doc.text(teto>0?Math.min((val/teto)*100,999).toFixed(0):'-',248,tableY+rowH/3-1,{width:42,align:'right'});
-                // Barra
-                const barX=290; const barY=tableY+ (rowH-barHeight)/2; const pctClamped=Math.min(100,(val/(tetos[id]||val))*100);
+                
+                // Barra de uso
+                const barX=290; 
+                const barY=tableY+ (rowH-barHeight)/2; 
+                const pctClamped=Math.min(100,(val/(tetos[id]||val))*100);
                 doc.roundedRect(barX,barY,barWidth,barHeight,barHeight/2).fill('#E2E8F0');
                 doc.roundedRect(barX,barY,(pctClamped/100)*barWidth,barHeight,barHeight/2).fill(pctClamped>100?'#DC2626':pctClamped>85?'#F59E0B':'#10B981');
-                // Status Emoji
+                
+                // Status
                 let statusEmoji='✅';
-                if(pctTeto>100) statusEmoji='🔥'; else if(pctTeto>85) statusEmoji='⚠️';
+                if(pctTeto>100) statusEmoji='🔥'; 
+                else if(pctTeto>85) statusEmoji='⚠️';
                 doc.text(statusEmoji,400,tableY+rowH/3-1,{width:50});
-                // Share textual breve
+                
+                // Share
                 doc.text(pctTotal.toFixed(1)+'%',450,tableY+rowH/3-1,{width:80});
-                tableY+=rowH;
+                
+                tableY += rowH;
+                itemsOnCurrentPage++;
             });
-            // Mini BI (resumo de concentração) — logo abaixo se couber
-            if (tableY < maxHeight - 40) {
-                const hhi = planosOrdenadosEmp.reduce((acc,[,v])=>{const s=v/totalEmpresarial; return acc + s*s;},0); // índice de concentração
-                const maiorShare = planosOrdenadosEmp.length? (planosOrdenadosEmp[0][1]/totalEmpresarial)*100 : 0;
+            
+            // Mini BI (resumo de concentração) se couber
+            if (tableY < doc.page.height - 80) {
+                const hhi = planosOrdenadosEmp.reduce((acc, planGroup) => {
+                    const s = planGroup.total / totalEmpresarial; 
+                    return acc + s * s;
+                }, 0);
+                const maiorShare = planosOrdenadosEmp.length ? (planosOrdenadosEmp[0].total / totalEmpresarial) * 100 : 0;
+                
                 doc.fontSize(8).fillColor('#1E293B').text(`Concentração (HHI): ${(hhi*10000).toFixed(0)}`,50,tableY+6,{width:160});
                 doc.text(`Maior Plano: ${maiorShare.toFixed(1)}%`,210,tableY+6,{width:150});
-                const acima85 = planosOrdenadosEmp.filter(([pln,v])=>{const id=parseInt(pln); const teto=tetos[id]||0; return teto>0 && (v/teto)*100>=85;}).length;
+                
+                const acima85 = planosOrdenadosEmp.filter(planGroup => {
+                    const id = parseInt(planGroup.planCode); 
+                    const teto = tetos[id] || 0; 
+                    return teto > 0 && (planGroup.total / teto) * 100 >= 85;
+                }).length;
+                
                 doc.text(`Planos >=85% do teto: ${acima85}`,370,tableY+6,{width:170});
             }
             // Tabela detalhada
@@ -2023,56 +2111,97 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
         // 🏦 PÁGINA POR CONTAS (LISTA RESUMIDA)
     // (Removida página antiga de resumo por contas para evitar página solta redundante)
 
-    // 📋 PÁGINA DE TODAS AS TRANSAÇÕES (tabela compacta)
-    // Adiciona nova página apenas se espaço remanescente for insuficiente
-    // ===== TODAS AS TRANSAÇÕES (tabela compacta sem páginas quase vazias) =====
-    // Força nova página para evitar sobreposição: cabeçalho desta seção é sempre desenhado no topo.
-    const sortedAll=[...expenses].sort((a,b)=> new Date(b.transaction_date)-new Date(a.transaction_date));
-        const bottomMargin = 60; // zona de segurança
-        const textCell = (txt,x,y,opts={})=>{ const keepY = doc.y; doc.text(txt,x,y,{...opts,lineBreak:false}); doc.y = keepY; };
-        doc.addPage();
-        doc.rect(0,0,doc.page.width,78).fill('#0F766E');
-    doc.fillColor('#FFFFFF').fontSize(24).text('📋 TODAS AS TRANSAÇÕES',0,26,{width:doc.page.width,align:'center'});
-        const drawTransHeader = ()=>{
-            const headerY = 110;
-            doc.fontSize(8); // reset
-            doc.roundedRect(40,headerY,510,18,4).fill('#14B8A6');
-            doc.fillColor('#FFFFFF').fontSize(8);
-            doc.text('Data',48,headerY+5,{width:46});
-            doc.text('T',94,headerY+5,{width:18});
-            doc.text('Plano',112,headerY+5,{width:40});
-            doc.text('Conta',152,headerY+5,{width:80});
-            doc.text('Descrição',232,headerY+5,{width:230});
-            doc.text('Valor',462,headerY+5,{width:76,align:'right'});
-            return headerY + 20;
-        };
-        let ty = drawTransHeader();
-        doc.fontSize(8);
-        const rowHeight = 16;
-        sortedAll.forEach((e,i)=>{
-            if (ty + rowHeight > doc.page.height - bottomMargin) {
+    // 📋 PÁGINA DE DESPESAS AGRUPADAS POR PLANO DE CONTAS (OTIMIZADA)
+    doc.addPage();
+    doc.rect(0,0,doc.page.width,78).fill('#0F766E');
+    doc.fillColor('#FFFFFF').fontSize(24).text('📋 DESPESAS POR PLANO DE CONTAS',0,26,{width:doc.page.width,align:'center'});
+    doc.fontSize(12).fillColor('#E0F2FE').text(`${sortedPlanGroups.length} planos • ${expenses.length} transações`,0,55,{width:doc.page.width,align:'center'});
+    
+    let currentY = 110;
+    const pageBottomLimit = doc.page.height - 80;
+    const minItemsPerPage = 3; // Mínimo de itens por página para evitar páginas quase vazias
+    const planHeaderHeight = 45;
+    const itemHeight = 18;
+    
+    // Função para verificar se um grupo de plano cabe na página atual
+    const planFitsOnPage = (planGroup, startY) => {
+        const requiredHeight = planHeaderHeight + (planGroup.count * itemHeight) + 20; // +20 para margem
+        return (startY + requiredHeight) <= pageBottomLimit;
+    };
+    
+    // Função para verificar se vale a pena começar um novo plano na página atual
+    const shouldStartPlanOnNewPage = (planGroup, currentY) => {
+        const availableSpace = pageBottomLimit - currentY;
+        const planTotalHeight = planHeaderHeight + (planGroup.count * itemHeight);
+        
+        // Se o plano não cabe completo E temos pouco espaço, vai para nova página
+        if (planTotalHeight > availableSpace && availableSpace < (planHeaderHeight + (minItemsPerPage * itemHeight))) {
+            return true;
+        }
+        return false;
+    };
+    
+    sortedPlanGroups.forEach((planGroup, planIndex) => {
+        // Verificar se devemos começar este plano em uma nova página
+        if (shouldStartPlanOnNewPage(planGroup, currentY) || currentY === 110 && planIndex > 0) {
+            doc.addPage();
+            currentY = 60;
+        }
+        
+        // Cabeçalho do plano
+        const planBgColor = ['#1E40AF', '#059669', '#DC2626', '#7C3AED', '#EA580C'][planIndex % 5];
+        doc.roundedRect(50, currentY, 490, planHeaderHeight, 8).fill(planBgColor);
+        doc.fillColor('#FFFFFF').fontSize(16).text(`📊 PLANO ${planGroup.planCode}`, 70, currentY + 8);
+        doc.fontSize(20).text(`R$ ${planGroup.total.toFixed(2)}`, 300, currentY + 5, {width: 180, align: 'right'});
+        doc.fontSize(11).text(`${planGroup.count} transação${planGroup.count !== 1 ? 's' : ''}`, 70, currentY + 28);
+        
+        // Percentual do total
+        const percentage = ((planGroup.total / total) * 100).toFixed(1);
+        doc.fontSize(11).text(`${percentage}% do total`, 300, currentY + 28, {width: 180, align: 'right'});
+        
+        currentY += planHeaderHeight + 5;
+        
+        // Listar despesas do plano (com paginação inteligente)
+        const sortedExpenses = planGroup.expenses.sort((a, b) => new Date(b.transaction_date) - new Date(a.transaction_date));
+        
+        sortedExpenses.forEach((expense, expenseIndex) => {
+            // Verificar se precisamos de nova página
+            if (currentY + itemHeight > pageBottomLimit) {
                 doc.addPage();
-                ty = drawTransHeader();
+                currentY = 60;
+                
+                // Repetir cabeçalho do plano na nova página
+                doc.roundedRect(50, currentY, 490, 35, 8).fill('#F3F4F6');
+                doc.fillColor('#374151').fontSize(14).text(`📊 PLANO ${planGroup.planCode} (cont.)`, 70, currentY + 10);
+                currentY += 40;
             }
-            const bg = i % 2 === 0 ? '#FFFFFF' : '#F8FAFC';
-            doc.roundedRect(40,ty,510,rowHeight-2,2).fill(bg);
-            const baseY = ty + 3;
-            const tipo = e.is_business_expense ? 'E':'P';
-            const rowDate = new Date(e.transaction_date).toLocaleDateString('pt-BR');
-            const desc = (e.description||'').replace(/\s+/g,' ').slice(0,55);
-            doc.fillColor('#1E293B');
-            textCell(rowDate,48,baseY,{width:46});
-            textCell(tipo,94,baseY,{width:18});
-            textCell(e.account_plan_code||'-',112,baseY,{width:40});
-            textCell(e.account||'-',152,baseY,{width:80});
-            textCell(desc,232,baseY,{width:230});
-            textCell(parseFloat(e.amount).toFixed(2),462,baseY,{width:76,align:'right'});
-            ty += rowHeight;
+            
+            // Linha da despesa
+            const rowBg = expenseIndex % 2 === 0 ? '#FFFFFF' : '#F9FAFB';
+            doc.roundedRect(70, currentY, 450, itemHeight, 3).fill(rowBg);
+            
+            doc.fillColor('#1F2937').fontSize(9);
+            const expenseDate = new Date(expense.transaction_date).toLocaleDateString('pt-BR');
+            const expenseDesc = (expense.description || '').substring(0, 50) + (expense.description && expense.description.length > 50 ? '...' : '');
+            
+            doc.text(expenseDate, 80, currentY + 5, {width: 80});
+            doc.text(expense.account || '-', 160, currentY + 5, {width: 100});
+            doc.text(expenseDesc, 260, currentY + 5, {width: 200});
+            doc.text(`R$ ${parseFloat(expense.amount).toFixed(2)}`, 460, currentY + 5, {width: 50, align: 'right'});
+            
+            currentY += itemHeight;
         });
-        if (ty + 26 > doc.page.height - bottomMargin) { doc.addPage(); ty = drawTransHeader(); }
-        doc.roundedRect(40,ty,510,18,4).fill('#ECFDF5');
-        doc.fillColor('#047857').fontSize(9).text('TOTAL GERAL',48,ty+4,{width:430});
-        doc.text(`R$ ${total.toFixed(2)}`,462,ty+4,{width:76,align:'right'});
+        
+        currentY += 15; // Espaço entre planos
+    });
+    
+    // Resumo final se houver espaço
+    if (currentY + 60 <= pageBottomLimit) {
+        doc.roundedRect(50, currentY, 490, 45, 8).fill('#ECFDF5');
+        doc.fillColor('#047857').fontSize(14).text('RESUMO GERAL', 70, currentY + 8);
+        doc.fontSize(18).text(`R$ ${total.toFixed(2)}`, 300, currentY + 5, {width: 180, align: 'right'});
+        doc.fontSize(10).text(`${expenses.length} transações em ${sortedPlanGroups.length} planos`, 70, currentY + 28);
+    }
 
         // 📊 BI PESSOAL (resumo similar ao empresarial)
     // BI Pessoal: só quebra se faltar espaço
