@@ -1032,77 +1032,138 @@ async function generateChartsForPDF(porPlano, porConta, expenses, chartJSNodeCan
     const charts = {};
     
     try {
-        // 1. Gráfico de pizza - Distribuição por Plano de Conta
+        // 1. Gráfico de pizza aprimorado - Distribuição por Plano de Conta
         const planLabels = Object.keys(porPlano);
         const planValues = Object.values(porPlano);
         
         if (planLabels.length > 0) {
+            // Ordenar planos por valor para melhor visualização
+            const planData = planLabels.map((label, index) => ({
+                label,
+                value: planValues[index]
+            })).sort((a, b) => b.value - a.value);
+
+            // Agrupar planos menores (menos de 3% do total) em "Outros"
+            const total = planData.reduce((sum, item) => sum + item.value, 0);
+            const threshold = total * 0.03; // 3% do total
+            const mainPlans = planData.filter(item => item.value >= threshold);
+            const otherPlans = planData.filter(item => item.value < threshold);
+            
+            let finalLabels = mainPlans.map(item => item.label);
+            let finalValues = mainPlans.map(item => item.value);
+            
+            // Se há planos "outros", agrupá-los
+            if (otherPlans.length > 0) {
+                const otherTotal = otherPlans.reduce((sum, item) => sum + item.value, 0);
+                finalLabels.push('Outros');
+                finalValues.push(otherTotal);
+            }
+
+            // Cores mais diversificadas e profissionais
+            const colors = [
+                '#1E40AF', '#059669', '#DC2626', '#7C3AED', '#EA580C',
+                '#0891B2', '#65A30D', '#BE185D', '#4338CA', '#0F766E',
+                '#B91C1C', '#7E22CE', '#C2410C', '#0E7490', '#166534'
+            ];
+
             const planConfig = {
-                type: 'pie',
+                type: 'doughnut', // Mudança para doughnut para visual mais moderno
                 data: {
-                    labels: planLabels.map((p, index) => {
-                        const valor = planValues[index];
-                        const total = planValues.reduce((a, b) => a + b, 0);
+                    labels: finalLabels.map((p, index) => {
+                        const valor = finalValues[index];
                         const percentage = ((valor / total) * 100).toFixed(1);
-                        return `Plano ${p}: R$ ${valor.toFixed(2)} (${percentage}%)`;
+                        return `Plano ${p}: ${percentage}%`;
                     }),
                     datasets: [{
-                        data: planValues,
-                        backgroundColor: [
-                            '#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6',
-                            '#06B6D4', '#84CC16', '#F97316', '#EC4899', '#6366F1'
-                        ],
-                        borderWidth: 3,
-                        borderColor: '#ffffff'
+                        data: finalValues,
+                        backgroundColor: colors.slice(0, finalLabels.length),
+                        borderWidth: 4,
+                        borderColor: '#ffffff',
+                        hoverBorderWidth: 6,
+                        hoverOffset: 10
                     }]
                 },
                 options: {
                     responsive: false,
                     maintainAspectRatio: false,
+                    cutout: '45%', // Para o efeito doughnut
                     layout: {
                         padding: {
-                            top: 20,
-                            bottom: 20,
-                            left: 20,
-                            right: 20
+                            top: 30,
+                            bottom: 30,
+                            left: 30,
+                            right: 30
                         }
                     },
                     plugins: {
                         legend: {
-                            position: 'bottom',
+                            position: 'right',
                             labels: {
-                                padding: 15,
+                                padding: 20,
                                 usePointStyle: true,
+                                pointStyle: 'circle',
                                 font: {
-                                    size: 12,
-                                    weight: 'bold'
+                                    size: 11,
+                                    weight: '600'
                                 },
-                                color: '#374151'
+                                color: '#374151',
+                                generateLabels: function(chart) {
+                                    const data = chart.data;
+                                    if (data.labels.length && data.datasets.length) {
+                                        return data.labels.map((label, i) => {
+                                            const value = data.datasets[0].data[i];
+                                            const percentage = ((value / total) * 100).toFixed(1);
+                                            return {
+                                                text: `${label.split(':')[0]}: R$ ${value.toFixed(2)}`,
+                                                fillStyle: data.datasets[0].backgroundColor[i],
+                                                strokeStyle: data.datasets[0].borderColor,
+                                                lineWidth: data.datasets[0].borderWidth,
+                                                hidden: false,
+                                                index: i
+                                            };
+                                        });
+                                    }
+                                    return [];
+                                }
                             }
                         },
                         title: {
                             display: true,
-                            text: '📊 DISTRIBUIÇÃO POR PLANO DE CONTA',
+                            text: ['📊 DISTRIBUIÇÃO POR PLANO DE CONTA', `Total: R$ ${total.toFixed(2)}`],
                             font: { 
-                                size: 18, 
+                                size: 16, 
                                 weight: 'bold' 
                             },
                             color: '#1F2937',
                             padding: {
-                                top: 10,
-                                bottom: 20
+                                top: 15,
+                                bottom: 25
                             }
                         },
                         tooltip: {
+                            backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                            titleColor: '#ffffff',
+                            bodyColor: '#ffffff',
+                            borderColor: '#374151',
+                            borderWidth: 1,
                             callbacks: {
                                 label: function(context) {
-                                    const label = context.label || '';
                                     const value = context.parsed;
-                                    const total = context.dataset.data.reduce((a, b) => a + b, 0);
                                     const percentage = ((value / total) * 100).toFixed(1);
-                                    return `${label}: R$ ${value.toFixed(2)} (${percentage}%)`;
+                                    const planCode = context.label.split(':')[0];
+                                    return [
+                                        `${planCode}`,
+                                        `Valor: R$ ${value.toFixed(2)}`,
+                                        `Percentual: ${percentage}%`
+                                    ];
                                 }
                             }
+                        }
+                    },
+                    // Adicionar valor total no centro do doughnut
+                    elements: {
+                        arc: {
+                            borderWidth: 3
                         }
                     }
                 }
@@ -1110,29 +1171,45 @@ async function generateChartsForPDF(porPlano, porConta, expenses, chartJSNodeCan
             charts.planChart = await chartJSNodeCanvas.renderToBuffer(planConfig);
         }
 
-        // 2. Gráfico de barras - Distribuição por Conta
+        // 2. Gráfico de barras aprimorado - Distribuição por Conta
         const accountLabels = Object.keys(porConta);
         const accountValues = Object.values(porConta);
         
         if (accountLabels.length > 0) {
+            // Ordenar contas por valor para melhor visualização
+            const accountData = accountLabels.map((label, index) => ({
+                label,
+                value: accountValues[index]
+            })).sort((a, b) => b.value - a.value);
+
+            const sortedLabels = accountData.map(item => item.label);
+            const sortedValues = accountData.map(item => item.value);
+            const totalAccount = sortedValues.reduce((a, b) => a + b, 0);
+
+            // Cores graduais baseadas no valor
+            const generateColors = (count) => {
+                const baseColors = ['#1E40AF', '#059669', '#DC2626', '#7C3AED', '#EA580C'];
+                const colors = [];
+                for (let i = 0; i < count; i++) {
+                    colors.push(baseColors[i % baseColors.length]);
+                }
+                return colors;
+            };
+
             const accountConfig = {
                 type: 'bar',
                 data: {
-                    labels: accountLabels,
+                    labels: sortedLabels.map(label => label.length > 15 ? label.substring(0, 12) + '...' : label),
                     datasets: [{
-                        label: 'Valor (R$)',
-                        data: accountValues,
-                        backgroundColor: [
-                            '#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6',
-                            '#06B6D4', '#84CC16', '#F97316', '#EC4899', '#6366F1'
-                        ],
-                        borderColor: [
-                            '#1E40AF', '#047857', '#D97706', '#DC2626', '#7C3AED',
-                            '#0891B2', '#65A30D', '#EA580C', '#DB2777', '#4F46E5'
-                        ],
+                        label: 'Gastos por Conta',
+                        data: sortedValues,
+                        backgroundColor: generateColors(sortedValues.length),
+                        borderColor: '#ffffff',
                         borderWidth: 2,
-                        borderRadius: 8,
-                        borderSkipped: false
+                        borderRadius: 12,
+                        borderSkipped: false,
+                        hoverBackgroundColor: generateColors(sortedValues.length).map(color => color + 'CC'),
+                        hoverBorderWidth: 3
                     }]
                 },
                 options: {
@@ -1140,10 +1217,10 @@ async function generateChartsForPDF(porPlano, porConta, expenses, chartJSNodeCan
                     maintainAspectRatio: false,
                     layout: {
                         padding: {
-                            top: 20,
-                            bottom: 20,
-                            left: 20,
-                            right: 20
+                            top: 30,
+                            bottom: 30,
+                            left: 30,
+                            right: 30
                         }
                     },
                     plugins: {
@@ -1152,22 +1229,34 @@ async function generateChartsForPDF(porPlano, porConta, expenses, chartJSNodeCan
                         },
                         title: {
                             display: true,
-                            text: '🏦 GASTOS POR CONTA',
+                            text: [`🏦 GASTOS POR CONTA`, `Total: R$ ${totalAccount.toFixed(2)}`],
                             font: { 
-                                size: 18, 
+                                size: 16, 
                                 weight: 'bold' 
                             },
                             color: '#1F2937',
                             padding: {
-                                top: 10,
-                                bottom: 20
+                                top: 15,
+                                bottom: 25
                             }
                         },
                         tooltip: {
+                            backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                            titleColor: '#ffffff',
+                            bodyColor: '#ffffff',
+                            borderColor: '#374151',
+                            borderWidth: 1,
                             callbacks: {
+                                title: function(context) {
+                                    return sortedLabels[context[0].dataIndex];
+                                },
                                 label: function(context) {
                                     const value = context.parsed.y;
-                                    return `${context.label}: R$ ${value.toFixed(2)}`;
+                                    const percentage = ((value / totalAccount) * 100).toFixed(1);
+                                    return [
+                                        `Valor: R$ ${value.toFixed(2)}`,
+                                        `Percentual: ${percentage}% do total`
+                                    ];
                                 }
                             }
                         }
@@ -1180,26 +1269,34 @@ async function generateChartsForPDF(porPlano, porConta, expenses, chartJSNodeCan
                             ticks: {
                                 font: {
                                     size: 11,
-                                    weight: 'bold'
+                                    weight: '600'
                                 },
-                                color: '#374151'
+                                color: '#374151',
+                                maxRotation: 45,
+                                minRotation: 0
                             }
                         },
                         y: {
                             beginAtZero: true,
                             grid: {
-                                color: '#E5E7EB',
+                                color: 'rgba(0, 0, 0, 0.1)',
                                 lineWidth: 1
                             },
                             ticks: {
-                                callback: function(value) {
-                                    return 'R$ ' + value.toFixed(2);
-                                },
                                 font: {
-                                    size: 11
+                                    size: 11,
+                                    weight: '500'
                                 },
-                                color: '#6B7280'
+                                color: '#6B7280',
+                                callback: function(value) {
+                                    return 'R$ ' + value.toFixed(0);
+                                }
                             }
+                        }
+                    },
+                    elements: {
+                        bar: {
+                            borderWidth: 2
                         }
                     }
                 }

@@ -3719,7 +3719,20 @@ document.addEventListener('DOMContentLoaded', function() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ year, month, account })
             });
-            if (!response.ok) throw new Error('Falha ao gerar o relatório.');
+            
+            if (!response.ok) {
+                let errorMessage = 'Falha ao gerar o relatório.';
+                try {
+                    const errorData = await response.json();
+                    console.error('Erro detalhado do servidor:', errorData);
+                    errorMessage = `Erro ${response.status}: ${errorData.details || errorData.message || errorMessage}`;
+                } catch (parseError) {
+                    console.error('Erro ao parsear resposta de erro:', parseError);
+                    errorMessage = `Erro ${response.status}: ${response.statusText}`;
+                }
+                throw new Error(errorMessage);
+            }
+            
             const blob = await response.blob();
             const url = window.URL.createObjectURL(blob);
             const a = document.createElement('a');
