@@ -1843,13 +1843,13 @@ document.addEventListener('DOMContentLoaded', function() {
             console.log('📤 Iniciando exportação da análise por categoria...');
             
             // Buscar dados atuais
-            const response = await authenticatedFetch('expenses');
-            if (!response.success) {
+            const response = await authenticatedFetch(`${API_BASE_URL}/api/expenses`);
+            if (!response.ok) {
                 throw new Error('Erro ao buscar dados para exportação');
             }
 
-            const expenses = response.data || [];
-            if (expenses.length === 0) {
+            const expenses = await response.json();
+            if (!expenses || expenses.length === 0) {
                 showNotification('⚠️ Nenhum dado disponível para exportação', 'warning');
                 return;
             }
