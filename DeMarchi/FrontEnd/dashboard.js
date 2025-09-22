@@ -12286,16 +12286,60 @@ document.addEventListener('DOMContentLoaded', function() {
         function computeValueProjection(data){ if(!data||!data.months) return null; const months=data.months; if(!months.length) return null; const last3=months.slice(-3); const avg= last3.length? last3.reduce((s,m)=>s+m.total,0)/last3.length:0; const {a,b}=linearRegression(months.map(m=>m.total)); const lastKey=months[months.length-1].month; let [y,m]=lastKey.split('-').map(Number); const projections=[]; const base=months.length; for(let i=1;i<=3;i++){ m++; if(m>12){m=1;y++;} const idx=base-1+i; const v=a*idx+b; projections.push({month:`${y}-${String(m).padStart(2,'0')}`, projected:Math.max(0,v)});} return {planId:data.plan||'', history: months.map(m=>({month:m.month,value:m.total})), projections, average:avg, regression:{a,b}}; }
         const oldCountFn = computePlanCountProjection; // já existe
         window.renderPlanProjectionChart = function(planId, mode='count', override=null){
-            const canvas=document.getElementById('plan-projection-chart'); const emptyEl=document.getElementById('plan-projection-empty'); if(!canvas) return;
-            const parsed=String(planId||'').trim(); if(!parsed){ if(emptyEl){emptyEl.classList.remove('hidden'); emptyEl.textContent='Informe um plano.';} destroyChart('planProjectionChart'); return; }
-            if(!isChartJsLoaded()){ if(emptyEl){emptyEl.classList.remove('hidden'); emptyEl.textContent='Biblioteca de gráficos não carregada.';} return; }
+            const canvas=document.getElementById('plan-projection-chart'); 
+            const emptyEl=document.getElementById('plan-projection-empty'); 
+            const summaryEl=document.getElementById('plan-projection-summary');
+            if(!canvas) return;
+            const parsed=String(planId||'').trim(); 
+            if(!parsed){ 
+                if(emptyEl){emptyEl.classList.remove('hidden'); emptyEl.textContent='Informe um plano.';} 
+                if(summaryEl){ summaryEl.classList.add('hidden'); summaryEl.textContent=''; }
+                destroyChart('planProjectionChart'); 
+                return; 
+            }
+            if(!isChartJsLoaded()){ 
+                if(emptyEl){emptyEl.classList.remove('hidden'); emptyEl.textContent='Biblioteca de gráficos não carregada.';} 
+                if(summaryEl){ summaryEl.classList.add('hidden'); summaryEl.textContent=''; }
+                return; 
+            }
             let result = mode==='value'? override : oldCountFn(parsed);
-            if(!result || !result.history || !result.history.length){ if(emptyEl){emptyEl.classList.remove('hidden'); emptyEl.textContent='Sem dados históricos suficientes.';} destroyChart('planProjectionChart'); return; }
+            if(!result || !result.history || !result.history.length){ 
+                if(emptyEl){emptyEl.classList.remove('hidden'); emptyEl.textContent='Sem dados históricos suficientes.';} 
+                if(summaryEl){ summaryEl.classList.add('hidden'); summaryEl.textContent=''; }
+                destroyChart('planProjectionChart'); 
+                return; 
+            }
             if(emptyEl) emptyEl.classList.add('hidden');
             const labels=[...result.history.map(h=>h.month), ...result.projections.map(p=>p.month)];
             const historyVals= mode==='value'? result.history.map(h=>h.value) : result.history.map(h=>h.count);
             const projVals = result.projections.map(p=>p.projected);
-            const dataCombined=[...historyVals, ...projVals]; const historyLen=historyVals.length;
+            const dataCombined=[...historyVals, ...projVals]; 
+            const historyLen=historyVals.length;
+            // Totais
+            const totalHistorico = historyVals.reduce((s,v)=>s+(Number(v)||0),0);
+            const totalProjetado = projVals.reduce((s,v)=>s+(Number(v)||0),0);
+            const media3m = result.average || 0;
+            // Atualiza subtítulo
+            const subtitleParts = [];
+            if(mode==='count'){
+                subtitleParts.push(`Média (3m): ${media3m.toFixed(1)}`);
+                subtitleParts.push(`Histórico: ${totalHistorico}`);
+                subtitleParts.push(`Proj(3m): ${totalProjetado.toFixed(0)}`);
+            } else {
+                subtitleParts.push(`Média (3m): ${formatCurrency(media3m)}`);
+                subtitleParts.push(`Histórico: ${formatCurrency(totalHistorico)}`);
+                subtitleParts.push(`Proj(3m): ${formatCurrency(totalProjetado)}`);
+            }
+            const subtitleText = subtitleParts.join(' • ');
+            // Popular resumo
+            if(summaryEl){
+                summaryEl.classList.remove('hidden');
+                if(mode==='count'){
+                    summaryEl.innerHTML = `<strong>Resumo:</strong> Histórico Total: <span class="font-semibold">${totalHistorico}</span> lançamentos • Projeção próximos 3 meses: <span class="font-semibold">${totalProjetado.toFixed(0)}</span>`;
+                } else {
+                    summaryEl.innerHTML = `<strong>Resumo:</strong> Soma Histórica: <span class="font-semibold">${formatCurrency(totalHistorico)}</span> • Projeção (3m): <span class="font-semibold">${formatCurrency(totalProjetado)}</span> • Total Combinado: <span class="font-semibold">${formatCurrency(totalHistorico+totalProjetado)}</span>`;
+                }
+            }
             destroyChart('planProjectionChart');
             chartRegistry.planProjectionChart = new Chart(canvas.getContext('2d'), {
                 type:'bar',
@@ -12304,7 +12348,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     { type:'line', label:'Média (3m)', data:labels.map((_,i)=> i<historyLen? null : result.average), borderColor:'#10b981', backgroundColor:'rgba(16,185,129,0.15)', tension:0.3, pointRadius:4, pointBackgroundColor:'#10b981', yAxisID:'y' },
                     ...(mode==='value' && result.regression ? [{ type:'line', label:'Tendência (Regressão)', data:labels.map((_,i)=> result.regression.a*i + result.regression.b), borderColor:'#f59e0b', borderDash:[6,4], tension:0, pointRadius:0, yAxisID:'y' }] : [])
                 ]},
-                options: mergeChartOptions({ plugins:{ title:{display:true, text: mode==='value'?`🔮 Projeção de Valores - Plano ${result.planId}`:`🔮 Projeção de Lançamentos - Plano ${result.planId}`}, subtitle:{display:true, text:`Média (3m): ${(result.average||0).toFixed(2)}${mode==='value'?' R$':''} • Próximos 3 meses estimados`, font:{size:11}}, legend:{position:'bottom'} }, scales:{ x:{stacked:false}, y:{beginAtZero:true, title:{display:true, text: mode==='value'?'Valor (R$)':'Qtd. Lançamentos'}} } })
+                options: mergeChartOptions({ plugins:{ title:{display:true, text: mode==='value'?`🔮 Projeção de Valores - Plano ${result.planId}`:`🔮 Projeção de Lançamentos - Plano ${result.planId}`}, subtitle:{display:true, text:subtitleText, font:{size:11}}, legend:{position:'bottom'}, tooltip:{ callbacks:{ label: function(ctx){ const raw=ctx.raw; if(mode==='value'){ return `${ctx.dataset.label}: ${formatCurrency(raw)}`; } return `${ctx.dataset.label}: ${raw}`; } } } }, scales:{ x:{stacked:false}, y:{beginAtZero:true, title:{display:true, text: mode==='value'?'Valor (R$)':'Qtd. Lançamentos'}, ticks:{ callback:function(value){ return mode==='value'? formatCurrency(value): value; } } } } })
             });
         };
         async function generatePlanProjection(){
