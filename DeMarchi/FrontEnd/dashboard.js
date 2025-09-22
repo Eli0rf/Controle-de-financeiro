@@ -152,6 +152,174 @@ document.addEventListener('DOMContentLoaded', function() {
         irChart1: null,
         irChart2: null
     };
+    
+    // Projeção de gastos por plano (quantidade de lançamentos futuros)
+    chartRegistry.planProjectionChart = null;
+    
+    // ========== PROJEÇÃO DE GASTOS POR PLANO (QUANTIDADE) ==========
+    /**
+     * Calcula a projeção de número de lançamentos para um plano específico
+     * Estratégia: agrupa contagem de lançamentos por mês (YYYY-MM) para o plano selecionado.
+     * Usa média dos últimos 3 meses completos disponíveis para projetar próximos 3 meses.
+     */
+    function computePlanCountProjection(planId) {
+        if (!allExpensesCache || allExpensesCache.length === 0) return null;
+        const normalizedPlan = String(planId).trim();
+        if (!normalizedPlan) return null;
+
+        // Filtrar despesas do plano
+        const expenses = allExpensesCache.filter(e => String(e.account_plan_code||'') === normalizedPlan);
+        if (expenses.length === 0) return { planId: normalizedPlan, history: [], projections: [] };
+
+        // Agrupar por mês
+        const byMonth = {};
+        expenses.forEach(e => {
+            const rawDate = e.transaction_date || e.date || e.created_at;
+            if (!rawDate) return;
+            const dt = new Date(rawDate);
+            if (isNaN(dt)) return;
+            const key = dt.getFullYear() + '-' + String(dt.getMonth()+1).padStart(2,'0');
+            byMonth[key] = (byMonth[key] || 0) + 1;
+        });
+
+        const monthKeys = Object.keys(byMonth).sort();
+        if (monthKeys.length === 0) return { planId: normalizedPlan, history: [], projections: [] };
+
+        // Considerar últimos até 6 meses para histórico exibido
+        const lastMonths = monthKeys.slice(-6);
+        const history = lastMonths.map(k => ({ month: k, count: byMonth[k] }));
+
+        // Média dos últimos 3 meses (se não houver 3, usar o que tiver)
+        const last3 = monthKeys.slice(-3);
+        const avg = last3.length ? last3.reduce((sum, k) => sum + byMonth[k], 0) / last3.length : 0;
+
+        // Calcular próximos 3 meses
+        const lastDateParts = monthKeys[monthKeys.length - 1].split('-');
+        let year = parseInt(lastDateParts[0]);
+        let month = parseInt(lastDateParts[1]);
+        const projections = [];
+        for (let i=1;i<=3;i++) {
+            month += 1;
+            if (month > 12) { month = 1; year += 1; }
+            const key = year + '-' + String(month).padStart(2,'0');
+            projections.push({ month: key, projected: Math.round(avg) });
+        }
+
+        return { planId: normalizedPlan, history, projections, average: avg };
+    }
+
+    /**
+     * Renderiza gráfico de projeção (barras históricas + linha projetada)
+     */
+    function renderPlanProjectionChart(planId) {
+        const canvas = document.getElementById('plan-projection-chart');
+        const emptyEl = document.getElementById('plan-projection-empty');
+        if (!canvas) return;
+
+        // Validar entrada: somente um plano (número simples)
+        const parsed = String(planId||'').trim();
+        if (!parsed || /[, ]/.test(parsed)) {
+            if (emptyEl) { emptyEl.classList.remove('hidden'); emptyEl.textContent = 'Informe um único plano de conta no filtro para ver a projeção.'; }
+            destroyChart('planProjectionChart');
+            return;
+        }
+
+        if (!isChartJsLoaded()) {
+            if (emptyEl) { emptyEl.classList.remove('hidden'); emptyEl.textContent = 'Biblioteca de gráficos não carregada.'; }
+            return;
+        }
+
+        const result = computePlanCountProjection(parsed);
+        if (!result || result.history.length === 0) {
+            if (emptyEl) { emptyEl.classList.remove('hidden'); emptyEl.textContent = 'Sem dados históricos suficientes para este plano.'; }
+            destroyChart('planProjectionChart');
+            return;
+        }
+        if (emptyEl) emptyEl.classList.add('hidden');
+
+        const labels = [...result.history.map(h => h.month), ...result.projections.map(p => p.month)];
+        const historyCounts = result.history.map(h => h.count);
+        const projectionCounts = result.projections.map(p => p.projected);
+
+        // Dados combinados para dataset único (histórico + projeção) com cores diferentes
+        const dataCombined = [...historyCounts, ...projectionCounts];
+        const historyLen = historyCounts.length;
+
+        destroyChart('planProjectionChart');
+
+        chartRegistry.planProjectionChart = new Chart(canvas.getContext('2d'), {
+            type: 'bar',
+            data: {
+                labels,
+                datasets: [
+                    {
+                        label: 'Lançamentos Históricos',
+                        data: dataCombined,
+                        backgroundColor: labels.map((_, idx) => idx < historyLen ? 'rgba(59,130,246,0.7)' : 'rgba(16,185,129,0.4)'),
+                        borderColor: labels.map((_, idx) => idx < historyLen ? 'rgba(59,130,246,1)' : 'rgba(16,185,129,0.9)'),
+                        borderWidth: 2,
+                        borderRadius: 6,
+                        showValues: true,
+                        valueColor: CHART_CONFIG.valueColor,
+                        valueFont: 'bold 10px Arial'
+                    },
+                    {
+                        type: 'line',
+                        label: 'Projeção Média (3m)',
+                        data: labels.map((_, idx) => idx < historyLen ? null : result.average),
+                        borderColor: '#10b981',
+                        backgroundColor: 'rgba(16,185,129,0.15)',
+                        tension: 0.3,
+                        pointRadius: 4,
+                        pointBackgroundColor: '#10b981',
+                        yAxisID: 'y'
+                    }
+                ]
+            },
+            options: mergeChartOptions({
+                plugins: {
+                    title: { display: true, text: `🔮 Projeção de Lançamentos - Plano ${result.planId}` },
+                    subtitle: { display: true, text: `Média base: ${(result.average||0).toFixed(1)} por mês • Próximos 3 meses estimados`, font: { size: 11 } },
+                    legend: { position: 'bottom' }
+                },
+                scales: {
+                    x: { stacked: false },
+                    y: { beginAtZero: true, title: { display: true, text: 'Qtd. Lançamentos' } }
+                }
+            })
+        });
+    }
+
+    // Listener para filtro de plano (entrada de texto multi) - utilizar apenas primeiro número se múltiplos
+    const filterPlanInput = document.getElementById('filter-plan');
+    if (filterPlanInput) {
+        filterPlanInput.addEventListener('change', () => {
+            // extrair primeiro número
+            const match = filterPlanInput.value.match(/\d+/);
+            if (match) {
+                renderPlanProjectionChart(match[0]);
+            } else {
+                renderPlanProjectionChart(null);
+            }
+        });
+    }
+
+    // Botão de refresh manual
+    const refreshProjectionBtn = document.getElementById('refresh-plan-projection-btn');
+    if (refreshProjectionBtn) {
+        refreshProjectionBtn.addEventListener('click', () => {
+            const match = filterPlanInput?.value.match(/\d+/);
+            if (match) renderPlanProjectionChart(match[0]); else renderPlanProjectionChart(null);
+        });
+    }
+
+    // Inicialização após carregar despesas
+    const originalFetchAndRenderExpenses = fetchAndRenderExpenses;
+    fetchAndRenderExpenses = async function() {
+        await originalFetchAndRenderExpenses();
+        const match = filterPlanInput?.value.match(/\d+/);
+        if (match) renderPlanProjectionChart(match[0]);
+    };
 
     function getToken() {
         const token = localStorage.getItem('token');
