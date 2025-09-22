@@ -2407,6 +2407,9 @@ document.addEventListener('DOMContentLoaded', function() {
             renderLineChart(data.lineChartData);
             renderPieChart(data.pieChartData);
             renderMixedTypeChart(data.mixedTypeChartData);
+            
+            // Debug para verificar se o gráfico de categoria está sendo renderizado
+            console.log('📊 Dados do gráfico de categoria:', data.planChartData);
             renderPlanChart(data.planChartData);
 
         } catch (error) {
@@ -3098,6 +3101,12 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function renderPlanChart(data = []) {
+        console.log('🎯 DEBUG renderPlanChart - início:', { 
+            dataRecebido: data, 
+            tipoData: typeof data, 
+            comprimentoData: Array.isArray(data) ? data.length : 'não é array'
+        });
+        
         const chartKey = 'planChart';
         const canvasId = 'plan-chart';
         
@@ -3112,6 +3121,16 @@ document.addEventListener('DOMContentLoaded', function() {
             console.warn(`⚠️ Canvas ${canvasId} não encontrado`);
             return;
         }
+
+        // Debug: verificar se o canvas está visível
+        const canvasRect = canvas.getBoundingClientRect();
+        console.log(`📊 Canvas ${canvasId} - visibilidade:`, {
+            existe: !!canvas,
+            width: canvasRect.width,
+            height: canvasRect.height,
+            visible: canvasRect.width > 0 && canvasRect.height > 0,
+            parent: canvas.parentElement?.id || 'sem parent'
+        });
 
         try {
             // Destruir gráfico existente
@@ -5326,6 +5345,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         loadBusinessAnalysis();
                     } else if (targetTab === 'reports') {
                         console.log('📊 Carregando aba: Dashboard Executivo');
+                        console.log('🎯 DEBUG: Aba reports ativada - iniciando loadReportsData');
                         loadReportsData();
                     } else {
                         console.log(`📋 Aba ativada: ${targetTab}`);
@@ -6368,6 +6388,7 @@ document.addEventListener('DOMContentLoaded', function() {
             // Processar dados para análise por categoria
             console.log('📊 Processando dados para análise por categoria...');
             const categoryData = processCategoryData(expenses);
+            console.log('🎯 DEBUG: categoryData processado:', categoryData);
             
             // Renderizar todos os gráficos com dados atualizados
             await Promise.allSettled([
