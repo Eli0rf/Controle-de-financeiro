@@ -17,6 +17,8 @@
     <link href="https://cdn.jsdelivr.net/npm/aos@2.3.4/dist/aos.css" rel="stylesheet">
     <!-- SweetAlert2 -->
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <!-- jsPDF para exportação PDF -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" integrity="sha512-/F2DfQeJ6TP2PzefDs2fzGEylh4G6dkprdFM5lTyBC0bYKT1eZq9VHtV6nRvWmvMRGsiE9zMDFMvx6bMpiKdwQ==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
     <!-- Tippy.js (use bundle for Popper and Tippy together, avoids 404 source map) -->
     <link rel="stylesheet" href="https://unpkg.com/tippy.js@6/dist/tippy.css" />
     <script src="https://unpkg.com/@popperjs/core@2.11.8/dist/umd/popper.min.js"></script>
@@ -1795,18 +1797,58 @@
 
                         <!-- Projeção futura por Plano de Conta -->
                         <div class="mt-8">
-                            <div class="flex items-center justify-between mb-3">
-                                <h4 class="text-lg font-semibold text-gray-800">🔮 Projeção de Gastos (Quantidade de Lançamentos)</h4>
-                                <button id="refresh-plan-projection-btn" class="text-indigo-600 hover:text-indigo-800 p-2 rounded-lg hover:bg-indigo-50 transition" title="Atualizar projeção">
-                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
-                                    </svg>
-                                </button>
+                            <div class="flex flex-col gap-3 mb-3">
+                                <div class="flex items-center justify-between">
+                                    <h4 class="text-lg font-semibold text-gray-800">🔮 Projeção de Gastos (Quantidade de Lançamentos)</h4>
+                                    <div class="flex items-center gap-2">
+                                        <button id="refresh-plan-projection-btn" class="text-indigo-600 hover:text-indigo-800 p-2 rounded-lg hover:bg-indigo-50 transition" title="Atualizar projeção">
+                                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                                            </svg>
+                                        </button>
+                                    </div>
+                                </div>
+                                <div class="grid grid-cols-1 md:grid-cols-6 gap-3">
+                                    <div>
+                                        <label for="plan-projection-input" class="text-xs font-semibold text-gray-600">Plano de Conta</label>
+                                        <input id="plan-projection-input" type="number" min="1" placeholder="Ex: 30" class="w-full border rounded-lg p-2 text-sm" />
+                                    </div>
+                                    <div>
+                                        <label for="plan-projection-months" class="text-xs font-semibold text-gray-600">Meses de Histórico</label>
+                                        <select id="plan-projection-months" class="w-full border rounded-lg p-2 text-sm">
+                                            <option value="3">3</option>
+                                            <option value="6" selected>6</option>
+                                            <option value="9">9</option>
+                                            <option value="12">12</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label for="plan-projection-mode" class="text-xs font-semibold text-gray-600">Modo</label>
+                                        <select id="plan-projection-mode" class="w-full border rounded-lg p-2 text-sm">
+                                            <option value="count" selected>Quantidade</option>
+                                            <option value="value">Valor (R$)</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label class="text-xs font-semibold text-gray-600">Ação</label>
+                                        <button id="load-plan-projection-btn" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg p-2 text-sm font-semibold">Gerar</button>
+                                    </div>
+                                    <div class="flex flex-col gap-1">
+                                        <label class="text-xs font-semibold text-gray-600">Exportar</label>
+                                        <div class="flex gap-2">
+                                            <button id="export-plan-projection-png" class="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-lg p-2 text-xs">PNG</button>
+                                            <button id="export-plan-projection-pdf" class="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-lg p-2 text-xs">PDF</button>
+                                        </div>
+                                    </div>
+                                    <div class="hidden md:flex items-end text-xs text-gray-500">
+                                        Média baseada nos últimos meses completos
+                                    </div>
+                                </div>
                             </div>
-                            <p class="text-xs text-gray-500 mb-2">Use o campo de filtro <strong>Plano</strong> (acima) para informar um único plano de conta (ex: 30). A projeção estima quantos lançamentos ainda devem ocorrer nos próximos meses com base no histórico recente.</p>
+                            <p class="text-xs text-gray-500 mb-2">Informe um plano de conta acima. A projeção estima quantos lançamentos (quantidade) podem ocorrer nos próximos 3 meses usando a média recente. Se quiser, ajuste a janela de histórico.</p>
                             <div class="relative h-64 bg-gray-50 rounded-lg p-2">
                                 <canvas id="plan-projection-chart" class="w-full h-full"></canvas>
-                                <div id="plan-projection-empty" class="absolute inset-0 flex items-center justify-center text-gray-500 text-sm hidden">Informe um único plano de conta no filtro para ver a projeção.</div>
+                                <div id="plan-projection-empty" class="absolute inset-0 flex flex-col gap-2 items-center justify-center text-gray-500 text-sm">Informe um plano e clique em Gerar.</div>
                             </div>
                         </div>
                         

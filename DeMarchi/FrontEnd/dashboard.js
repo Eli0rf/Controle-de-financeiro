@@ -290,35 +290,89 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
-    // Listener para filtro de plano (entrada de texto multi) - utilizar apenas primeiro número se múltiplos
-    const filterPlanInput = document.getElementById('filter-plan');
-    if (filterPlanInput) {
-        filterPlanInput.addEventListener('change', () => {
-            // extrair primeiro número
-            const match = filterPlanInput.value.match(/\d+/);
-            if (match) {
-                renderPlanProjectionChart(match[0]);
-            } else {
-                renderPlanProjectionChart(null);
-            }
-        });
-    }
-
-    // Botão de refresh manual
+    // ----- NOVA INTEGRAÇÃO COM INPUTS DEDICADOS -----
+    const planProjectionInput = document.getElementById('plan-projection-input');
+    const planProjectionMonths = document.getElementById('plan-projection-months');
+    const planProjectionGenerateBtn = document.getElementById('load-plan-projection-btn');
     const refreshProjectionBtn = document.getElementById('refresh-plan-projection-btn');
-    if (refreshProjectionBtn) {
-        refreshProjectionBtn.addEventListener('click', () => {
-            const match = filterPlanInput?.value.match(/\d+/);
-            if (match) renderPlanProjectionChart(match[0]); else renderPlanProjectionChart(null);
+
+    async function fetchMultiMonthExpenses(planId, monthsWindow) {
+        // Tenta endpoint mais abrangente (ex: /api/expenses/history) se existir
+        const now = new Date();
+        const endYear = now.getFullYear();
+        const endMonth = now.getMonth() + 1;
+        // Data inicial retrocedendo monthsWindow-1 meses
+        const start = new Date(now.getFullYear(), now.getMonth() - (monthsWindow - 1), 1);
+        const startYear = start.getFullYear();
+        const startMonth = start.getMonth() + 1;
+        const params = new URLSearchParams({
+            startYear, startMonth, endYear, endMonth, plan: planId
         });
+        try {
+            const resp = await authenticatedFetch(`${API_BASE_URL}/api/expenses/history?${params.toString()}`);
+            if (resp.ok) {
+                const json = await resp.json();
+                // Esperado: array de expenses com account_plan_code e data
+                return Array.isArray(json) ? json : (json.expenses || []);
+            }
+        } catch (err) {
+            console.warn('Endpoint /api/expenses/history indisponível, usando cache local:', err.message);
+        }
+        // Fallback: usar cache local filtrado (pode não conter todos os meses solicitados)
+        return allExpensesCache.filter(e => String(e.account_plan_code||'') === String(planId));
     }
 
-    // Inicialização após carregar despesas
+    async function generatePlanProjection() {
+        const planId = planProjectionInput?.value.trim();
+        const monthsWindow = parseInt(planProjectionMonths?.value || '6');
+        if (!planId) {
+            renderPlanProjectionChart(null);
+            return;
+        }
+        // Carregar histórico estendido (atualiza allExpensesCache parcial? Não, só local)
+        const historyExpenses = await fetchMultiMonthExpenses(planId, monthsWindow);
+        if (historyExpenses.length) {
+            // Fusão temporária com cache para cálculo sem sobrescrever tudo
+            const originalCache = allExpensesCache;
+            try {
+                // Mesclar mantendo outros planos para não quebrar filtros
+                const merged = [...originalCache.filter(e => String(e.account_plan_code||'') !== String(planId)), ...historyExpenses];
+                allExpensesCache = merged;
+                renderPlanProjectionChart(planId);
+            } finally {
+                // Restaurar cache original para não afetar outras funções
+                allExpensesCache = originalCache;
+            }
+        } else {
+            renderPlanProjectionChart(planId);
+        }
+    }
+
+    if (planProjectionGenerateBtn) {
+        planProjectionGenerateBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            generatePlanProjection();
+        });
+    }
+    if (refreshProjectionBtn) {
+        refreshProjectionBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            generatePlanProjection();
+        });
+    }
+    if (planProjectionInput) {
+        planProjectionInput.addEventListener('keyup', (e) => {
+            if (e.key === 'Enter') generatePlanProjection();
+        });
+    }
+    // Chamar quando despesas carregam pela primeira vez
     const originalFetchAndRenderExpenses = fetchAndRenderExpenses;
     fetchAndRenderExpenses = async function() {
         await originalFetchAndRenderExpenses();
-        const match = filterPlanInput?.value.match(/\d+/);
-        if (match) renderPlanProjectionChart(match[0]);
+        // Auto-gerar se input já preenchido
+        if (planProjectionInput && planProjectionInput.value.trim()) {
+            generatePlanProjection();
+        }
     };
 
     function getToken() {
@@ -12222,3 +12276,57 @@ document.addEventListener('DOMContentLoaded', function() {
     safeInit();
 
 }); // Fim do DOMContentLoaded
+// === Extensão: Projeção avançada (valor, regressão, export) ===
+// Evita conflito: se já definimos versão básica, vamos sobrescrever aqui.
+(function(){
+    if(typeof renderPlanProjectionChart==='function' && !window.__advancedPlanProjection){
+        window.__advancedPlanProjection = true;
+        function linearRegression(values){ const n=values.length; if(!n) return {a:0,b:0}; const sumX=(n-1)*n/2; const sumY=values.reduce((s,v)=>s+v,0); const sumXY=values.reduce((s,v,i)=>s+i*v,0); const sumX2=(n-1)*n*(2*n-1)/6; const denom=(n*sumX2 - sumX*sumX)||1; const a=(n*sumXY - sumX*sumY)/denom; const b=(sumY - a*sumX)/n; return {a,b}; }
+        async function fetchAggregatedPlanHistory(planId, monthsWindow){ try { const now=new Date(); const endYear=now.getFullYear(); const endMonth=now.getMonth()+1; const start=new Date(now.getFullYear(), now.getMonth()-(monthsWindow-1),1); const startYear=start.getFullYear(); const startMonth=start.getMonth()+1; const params=new URLSearchParams({startYear,startMonth,endYear,endMonth,plan:planId,aggregate:'true'}); const resp= await authenticatedFetch(`${API_BASE_URL}/api/expenses/history?${params.toString()}`); if(resp.ok) return resp.json(); } catch(e){ console.warn('Histórico agregado indisponível', e.message);} return null; }
+        function computeValueProjection(data){ if(!data||!data.months) return null; const months=data.months; if(!months.length) return null; const last3=months.slice(-3); const avg= last3.length? last3.reduce((s,m)=>s+m.total,0)/last3.length:0; const {a,b}=linearRegression(months.map(m=>m.total)); const lastKey=months[months.length-1].month; let [y,m]=lastKey.split('-').map(Number); const projections=[]; const base=months.length; for(let i=1;i<=3;i++){ m++; if(m>12){m=1;y++;} const idx=base-1+i; const v=a*idx+b; projections.push({month:`${y}-${String(m).padStart(2,'0')}`, projected:Math.max(0,v)});} return {planId:data.plan||'', history: months.map(m=>({month:m.month,value:m.total})), projections, average:avg, regression:{a,b}}; }
+        const oldCountFn = computePlanCountProjection; // já existe
+        window.renderPlanProjectionChart = function(planId, mode='count', override=null){
+            const canvas=document.getElementById('plan-projection-chart'); const emptyEl=document.getElementById('plan-projection-empty'); if(!canvas) return;
+            const parsed=String(planId||'').trim(); if(!parsed){ if(emptyEl){emptyEl.classList.remove('hidden'); emptyEl.textContent='Informe um plano.';} destroyChart('planProjectionChart'); return; }
+            if(!isChartJsLoaded()){ if(emptyEl){emptyEl.classList.remove('hidden'); emptyEl.textContent='Biblioteca de gráficos não carregada.';} return; }
+            let result = mode==='value'? override : oldCountFn(parsed);
+            if(!result || !result.history || !result.history.length){ if(emptyEl){emptyEl.classList.remove('hidden'); emptyEl.textContent='Sem dados históricos suficientes.';} destroyChart('planProjectionChart'); return; }
+            if(emptyEl) emptyEl.classList.add('hidden');
+            const labels=[...result.history.map(h=>h.month), ...result.projections.map(p=>p.month)];
+            const historyVals= mode==='value'? result.history.map(h=>h.value) : result.history.map(h=>h.count);
+            const projVals = result.projections.map(p=>p.projected);
+            const dataCombined=[...historyVals, ...projVals]; const historyLen=historyVals.length;
+            destroyChart('planProjectionChart');
+            chartRegistry.planProjectionChart = new Chart(canvas.getContext('2d'), {
+                type:'bar',
+                data:{ labels, datasets:[
+                    { label: mode==='value'?'Valores Históricos (R$)':'Lançamentos Históricos', data:dataCombined, backgroundColor:labels.map((_,i)=> i<historyLen?'rgba(59,130,246,0.7)':'rgba(16,185,129,0.4)'), borderColor:labels.map((_,i)=> i<historyLen?'rgba(59,130,246,1)':'rgba(16,185,129,0.9)'), borderWidth:2, borderRadius:6, showValues:true, valueColor:CHART_CONFIG.valueColor, valueFont:'bold 10px Arial' },
+                    { type:'line', label:'Média (3m)', data:labels.map((_,i)=> i<historyLen? null : result.average), borderColor:'#10b981', backgroundColor:'rgba(16,185,129,0.15)', tension:0.3, pointRadius:4, pointBackgroundColor:'#10b981', yAxisID:'y' },
+                    ...(mode==='value' && result.regression ? [{ type:'line', label:'Tendência (Regressão)', data:labels.map((_,i)=> result.regression.a*i + result.regression.b), borderColor:'#f59e0b', borderDash:[6,4], tension:0, pointRadius:0, yAxisID:'y' }] : [])
+                ]},
+                options: mergeChartOptions({ plugins:{ title:{display:true, text: mode==='value'?`🔮 Projeção de Valores - Plano ${result.planId}`:`🔮 Projeção de Lançamentos - Plano ${result.planId}`}, subtitle:{display:true, text:`Média (3m): ${(result.average||0).toFixed(2)}${mode==='value'?' R$':''} • Próximos 3 meses estimados`, font:{size:11}}, legend:{position:'bottom'} }, scales:{ x:{stacked:false}, y:{beginAtZero:true, title:{display:true, text: mode==='value'?'Valor (R$)':'Qtd. Lançamentos'}} } })
+            });
+        };
+        async function generatePlanProjection(){
+            const planId=document.getElementById('plan-projection-input')?.value.trim();
+            const mode=document.getElementById('plan-projection-mode')?.value || 'count';
+            const monthsWindow=parseInt(document.getElementById('plan-projection-months')?.value||'6');
+            if(!planId){ renderPlanProjectionChart(null, mode); return; }
+            if(mode==='value'){
+                const agg = await fetchAggregatedPlanHistory(planId, monthsWindow);
+                if(agg){ const proj=computeValueProjection(agg); if(proj){ proj.planId = planId; renderPlanProjectionChart(planId,'value',proj); return;} }
+                renderPlanProjectionChart(planId,'value');
+            } else {
+                // Reusa função original de quantidade via cache existente
+                const historyExpenses = await (async ()=>{ const now=new Date(); const endYear=now.getFullYear(); const endMonth=now.getMonth()+1; const start=new Date(now.getFullYear(), now.getMonth()-(monthsWindow-1),1); const startYear=start.getFullYear(); const startMonth=start.getMonth()+1; const params=new URLSearchParams({startYear,startMonth,endYear,endMonth,plan:planId}); try{ const resp= await authenticatedFetch(`${API_BASE_URL}/api/expenses/history?${params.toString()}`); if(resp.ok){ const json= await resp.json(); return Array.isArray(json)? json : (json.expenses||[]);} } catch(e){ } return allExpensesCache.filter(e=> String(e.account_plan_code||'')=== String(planId)); })();
+                if(historyExpenses.length){ const original = allExpensesCache; try { const merged=[...original.filter(e=> String(e.account_plan_code||'')!==String(planId)), ...historyExpenses]; allExpensesCache=merged; renderPlanProjectionChart(planId,'count'); } finally { allExpensesCache=original; } } else { renderPlanProjectionChart(planId,'count'); }
+            }
+        }
+        // Eventos de exportação
+        const btnGen=document.getElementById('load-plan-projection-btn'); if(btnGen) btnGen.addEventListener('click', e=>{e.preventDefault(); generatePlanProjection();});
+        const btnRef=document.getElementById('refresh-plan-projection-btn'); if(btnRef) btnRef.addEventListener('click', e=>{e.preventDefault(); generatePlanProjection();});
+        const inp=document.getElementById('plan-projection-input'); if(inp) inp.addEventListener('keyup', e=>{ if(e.key==='Enter') generatePlanProjection(); });
+        const btnPNG=document.getElementById('export-plan-projection-png'); if(btnPNG) btnPNG.addEventListener('click', e=>{ e.preventDefault(); const canvas=document.getElementById('plan-projection-chart'); if(!canvas) return; const a=document.createElement('a'); a.download='projecao-plano.png'; a.href=canvas.toDataURL('image/png',1.0); a.click(); });
+        const btnPDF=document.getElementById('export-plan-projection-pdf'); if(btnPDF) btnPDF.addEventListener('click', e=>{ e.preventDefault(); const canvas=document.getElementById('plan-projection-chart'); if(!canvas) return; const {jsPDF}=window.jspdf||{}; if(!jsPDF){ showNotification('jsPDF não carregado','error'); return;} const pdf=new jsPDF('landscape','pt','a4'); const img=canvas.toDataURL('image/png',1.0); const w=pdf.internal.pageSize.getWidth(); const h=pdf.internal.pageSize.getHeight(); const imgW=w-40; const imgH=canvas.height*(imgW/canvas.width); pdf.text('Projeção de Plano',40,30); pdf.addImage(img,'PNG',20,40,imgW,Math.min(imgH,h-80)); pdf.save('projecao-plano.pdf'); });
+    }
+})();

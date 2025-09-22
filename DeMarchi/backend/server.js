@@ -439,6 +439,66 @@ app.get('/api/expenses', authenticateToken, async (req, res) => {
     }
 });
 
+// Histórico multi-mês de despesas para projeções
+// Parâmetros: startYear, startMonth, endYear, endMonth, plan (opcional), aggregate=true|false
+// Retorna lista de despesas ou (se aggregate=true) agregação mensal por quantidade e valor
+app.get('/api/expenses/history', authenticateToken, async (req, res) => {
+    const userId = req.user.id;
+    let { startYear, startMonth, endYear, endMonth, plan, aggregate } = req.query;
+    try {
+        const now = new Date();
+        startYear = parseInt(startYear) || now.getFullYear();
+        startMonth = parseInt(startMonth) || (now.getMonth() + 1) - 5; // padrão 6 meses
+        endYear = parseInt(endYear) || now.getFullYear();
+        endMonth = parseInt(endMonth) || (now.getMonth() + 1);
+        if (startMonth < 1) { startMonth = 1; }
+        if (startMonth > 12) { startMonth = 12; }
+        if (endMonth < 1) { endMonth = 1; }
+        if (endMonth > 12) { endMonth = 12; }
+
+        // Construir data inicial e final
+        const startDate = new Date(startYear, startMonth - 1, 1);
+        const endDate = new Date(endYear, endMonth, 0); // último dia do mês fim
+
+        let sql = `SELECT id, transaction_date, amount, account_plan_code, account, description 
+                   FROM expenses 
+                   WHERE user_id = ? AND transaction_date BETWEEN ? AND ?`;
+        const params = [userId, startDate.toISOString().slice(0,10), endDate.toISOString().slice(0,10)];
+        if (plan) {
+            sql += ' AND account_plan_code = ?';
+            params.push(plan);
+        }
+        sql += ' ORDER BY transaction_date ASC';
+
+        const [rows] = await pool.query(sql, params);
+
+        if (aggregate === 'true') {
+            const aggregation = {};
+            rows.forEach(r => {
+                const d = new Date(r.transaction_date);
+                const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+                if (!aggregation[key]) {
+                    aggregation[key] = { month: key, count: 0, total: 0 };
+                }
+                aggregation[key].count += 1;
+                aggregation[key].total += parseFloat(r.amount) || 0;
+            });
+            const result = Object.values(aggregation).sort((a,b)=> a.month.localeCompare(b.month));
+            return res.json({
+                plan: plan || null,
+                start: startDate.toISOString().slice(0,10),
+                end: endDate.toISOString().slice(0,10),
+                months: result
+            });
+        }
+
+        res.json(rows);
+    } catch (error) {
+        console.error('Erro ao buscar histórico de despesas:', error);
+        res.status(500).json({ message: 'Erro ao buscar histórico de despesas', error: error.message });
+    }
+});
+
 // Rota para buscar uma despesa específica
 app.get('/api/expenses/:id', authenticateToken, async (req, res) => {
     const { id } = req.params;
