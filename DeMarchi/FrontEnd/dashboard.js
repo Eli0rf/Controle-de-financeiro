@@ -7230,7 +7230,25 @@ document.addEventListener('DOMContentLoaded', function() {
         };
 
         const period = biData.period || {};
-        const results = Array.isArray(biData.expenses) ? biData.expenses : [];
+        let results = Array.isArray(biData.expenses) ? biData.expenses : [];
+        // === Filtro customizado ===
+        // Objetivo: Para a seção PIX/Boleto, restringimos a análise à conta PIX/BOLETO (incluindo variações 'PIX', 'BOLETO', 'PIX-BOLETO').
+        // Além disso, se existirem lançamentos categorizados como "Alimentação" (substring 'aliment'), priorizamos somente esses.
+        // Caso não haja registros de Alimentação, mantemos todos os registros de contas PIX/BOLETO para não zerar a visualização.
+        try {
+            const isPixLike = acc => {
+                const a = (acc||'').toString().toUpperCase();
+                return a === 'PIX/BOLETO' || a === 'PIX' || a === 'BOLETO' || a === 'PIX-BOLETO';
+            };
+            const onlyPix = results.filter(r => isPixLike(r.account || r.accountName || r.conta));
+            // Preferir apenas categoria Alimentação (case insensitive) se houver pelo menos um registro
+            const alimentaçãoSet = onlyPix.filter(r => (r.category || r.categoria || '').toString().toLowerCase().includes('aliment'));
+            if (alimentaçãoSet.length > 0) {
+                results = alimentaçãoSet;
+            } else {
+                results = onlyPix; // fallback: mantém só pix/boleto
+            }
+        } catch (e) { console.warn('Filtro PIX/BOLETO Alimentação falhou:', e.message); }
         const summaryRaw = biData.summary || {};
 
         // KPIs
@@ -7516,6 +7534,16 @@ document.addEventListener('DOMContentLoaded', function() {
                 all = Array.isArray(list) ? list : [];
                 console.log('🔧 Despesas PIX/Boleto da rota genérica:', all.length);
             }
+
+            // Filtrar apenas categoria Alimentação se houver pelo menos um registro dessa categoria
+            try {
+                // Se existirem despesas categorizadas como Alimentação, restringimos o fallback somente a elas.
+                // Isso mantém consistência com a regra aplicada na função de normalização principal.
+                const alimentacao = all.filter(e => (e.category || e.categoria || '').toString().toLowerCase().includes('aliment'));
+                if (alimentacao.length > 0) {
+                    all = alimentacao;
+                }
+            } catch (e) { console.warn('Filtro Alimentação fallback falhou:', e.message); }
 
             // Determinar período base
             const baseYear = Number(period?.year) || new Date().getFullYear();
@@ -12318,34 +12346,24 @@ document.addEventListener('DOMContentLoaded', function() {
             // Totais
             const totalHistorico = historyVals.reduce((s,v)=>s+(Number(v)||0),0);
             const totalProjetado = projVals.reduce((s,v)=>s+(Number(v)||0),0);
-            const media3m = result.average || 0;
-            // Atualiza subtítulo
-            const subtitleParts = [];
-            if(mode==='count'){
-                subtitleParts.push(`Média (3m): ${media3m.toFixed(1)}`);
-                subtitleParts.push(`Histórico: ${totalHistorico}`);
-                subtitleParts.push(`Proj(3m): ${totalProjetado.toFixed(0)}`);
-            } else {
-                subtitleParts.push(`Média (3m): ${formatCurrency(media3m)}`);
-                subtitleParts.push(`Histórico: ${formatCurrency(totalHistorico)}`);
-                subtitleParts.push(`Proj(3m): ${formatCurrency(totalProjetado)}`);
-            }
-            const subtitleText = subtitleParts.join(' • ');
+            // Subtítulo: apenas totais
+            const subtitleText = mode==='count'
+                ? `Histórico: ${totalHistorico} • Proj(3m): ${totalProjetado.toFixed(0)} • Total: ${(totalHistorico+totalProjetado).toFixed(0)}`
+                : `Histórico: ${formatCurrency(totalHistorico)} • Proj(3m): ${formatCurrency(totalProjetado)} • Total: ${formatCurrency(totalHistorico+totalProjetado)}`;
             // Popular resumo
             if(summaryEl){
                 summaryEl.classList.remove('hidden');
                 if(mode==='count'){
-                    summaryEl.innerHTML = `<strong>Resumo:</strong> Histórico Total: <span class="font-semibold">${totalHistorico}</span> lançamentos • Projeção próximos 3 meses: <span class="font-semibold">${totalProjetado.toFixed(0)}</span>`;
+                    summaryEl.innerHTML = `<strong>Resumo:</strong> Histórico: <span class="font-semibold">${totalHistorico}</span> • Proj(3m): <span class="font-semibold">${totalProjetado.toFixed(0)}</span> • Total: <span class=\"font-semibold\">${(totalHistorico+totalProjetado).toFixed(0)}</span>`;
                 } else {
-                    summaryEl.innerHTML = `<strong>Resumo:</strong> Soma Histórica: <span class="font-semibold">${formatCurrency(totalHistorico)}</span> • Projeção (3m): <span class="font-semibold">${formatCurrency(totalProjetado)}</span> • Total Combinado: <span class="font-semibold">${formatCurrency(totalHistorico+totalProjetado)}</span>`;
+                    summaryEl.innerHTML = `<strong>Resumo:</strong> Histórico: <span class="font-semibold">${formatCurrency(totalHistorico)}</span> • Proj(3m): <span class="font-semibold">${formatCurrency(totalProjetado)}</span> • Total: <span class="font-semibold">${formatCurrency(totalHistorico+totalProjetado)}</span>`;
                 }
             }
             destroyChart('planProjectionChart');
             chartRegistry.planProjectionChart = new Chart(canvas.getContext('2d'), {
                 type:'bar',
                 data:{ labels, datasets:[
-                    { label: mode==='value'?'Valores Históricos (R$)':'Lançamentos Históricos', data:dataCombined, backgroundColor:labels.map((_,i)=> i<historyLen?'rgba(59,130,246,0.7)':'rgba(16,185,129,0.4)'), borderColor:labels.map((_,i)=> i<historyLen?'rgba(59,130,246,1)':'rgba(16,185,129,0.9)'), borderWidth:2, borderRadius:6, showValues:true, valueColor:CHART_CONFIG.valueColor, valueFont:'bold 10px Arial' },
-                    { type:'line', label:'Média (3m)', data:labels.map((_,i)=> i<historyLen? null : result.average), borderColor:'#10b981', backgroundColor:'rgba(16,185,129,0.15)', tension:0.3, pointRadius:4, pointBackgroundColor:'#10b981', yAxisID:'y' },
+                    { label: mode==='value'?'Valores (Hist + Proj)':'Lançamentos (Hist + Proj)', data:dataCombined, backgroundColor:labels.map((_,i)=> i<historyLen?'rgba(59,130,246,0.7)':'rgba(16,185,129,0.4)'), borderColor:labels.map((_,i)=> i<historyLen?'rgba(59,130,246,1)':'rgba(16,185,129,0.9)'), borderWidth:2, borderRadius:6, showValues:true, valueColor:CHART_CONFIG.valueColor, valueFont:'bold 10px Arial' },
                     ...(mode==='value' && result.regression ? [{ type:'line', label:'Tendência (Regressão)', data:labels.map((_,i)=> result.regression.a*i + result.regression.b), borderColor:'#f59e0b', borderDash:[6,4], tension:0, pointRadius:0, yAxisID:'y' }] : [])
                 ]},
                 options: mergeChartOptions({ plugins:{ title:{display:true, text: mode==='value'?`🔮 Projeção de Valores - Plano ${result.planId}`:`🔮 Projeção de Lançamentos - Plano ${result.planId}`}, subtitle:{display:true, text:subtitleText, font:{size:11}}, legend:{position:'bottom'}, tooltip:{ callbacks:{ label: function(ctx){ const raw=ctx.raw; if(mode==='value'){ return `${ctx.dataset.label}: ${formatCurrency(raw)}`; } return `${ctx.dataset.label}: ${raw}`; } } } }, scales:{ x:{stacked:false}, y:{beginAtZero:true, title:{display:true, text: mode==='value'?'Valor (R$)':'Qtd. Lançamentos'}, ticks:{ callback:function(value){ return mode==='value'? formatCurrency(value): value; } } } } })
