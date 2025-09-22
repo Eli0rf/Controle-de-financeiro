@@ -7374,8 +7374,11 @@ document.addEventListener('DOMContentLoaded', function() {
                     renderRecurringCategoryChart(fb.categoryBreakdown);
                     // Tendências e projeções básicas
                     updateTrendsAnalysis(fb.trendsSummary);
-                    updateProjections(fb.projections);
-                    // Tabela (minimamente preenchida)
+                    // Garantir que projections existe antes de chamar updateProjections
+                    const safeProjections = fb.projections || { nextMonth: 0, threeMonths: 0, yearEnd: 0 };
+                    console.log('📊 Projeções do fallback:', safeProjections);
+                    updateProjections(safeProjections);
+                    // Tabela (minimalmente preenchida)
                     renderRecurringExpensesTable(fb.expenses);
                     showNotification('Exibindo dados PIX/Boleto via fallback', 'warning');
                     return;
@@ -7393,8 +7396,10 @@ document.addEventListener('DOMContentLoaded', function() {
             // Atualizar análise de tendências
             updateTrendsAnalysis(biData.trendsSummary);
             
-            // Atualizar projeções
-            updateProjections(biData.projections);
+            // Atualizar projeções (com verificação de segurança)
+            const safeProjections = biData.projections || { nextMonth: 0, threeMonths: 0, yearEnd: 0 };
+            console.log('📊 Projeções dos dados BI:', safeProjections);
+            updateProjections(safeProjections);
             
             // Renderizar tabela inteligente
             renderRecurringExpensesTable(biData.expenses);
@@ -7417,7 +7422,10 @@ document.addEventListener('DOMContentLoaded', function() {
                     renderRecurringVariationChart(fb.monthlyHistory);
                     renderRecurringCategoryChart(fb.categoryBreakdown);
                     updateTrendsAnalysis(fb.trendsSummary);
-                    updateProjections(fb.projections);
+                    // Garantir que projections existe no fallback de emergência
+                    const safeProjections = fb.projections || { nextMonth: 0, threeMonths: 0, yearEnd: 0 };
+                    console.log('📊 Projeções do fallback de emergência:', safeProjections);
+                    updateProjections(safeProjections);
                     renderRecurringExpensesTable(fb.expenses);
                     showNotification('Exibindo dados PIX/Boleto via fallback de emergência', 'warning');
                     return;
@@ -7850,15 +7858,46 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Atualizar projeções
     function updateProjections(projections) {
-        if (!projections) return;
+        console.log('🎯 updateProjections chamada com dados:', projections);
+        
+        if (!projections) {
+            console.warn('⚠️ updateProjections: projections é null/undefined');
+            return;
+        }
 
         const nextMonthEl = document.getElementById('projection-next-month');
         const threeMonthsEl = document.getElementById('projection-3-months');
         const yearEndEl = document.getElementById('projection-year-end');
 
-        if (nextMonthEl) nextMonthEl.textContent = formatCurrency(projections.nextMonth || 0);
-        if (threeMonthsEl) threeMonthsEl.textContent = formatCurrency(projections.threeMonths || 0);
-        if (yearEndEl) yearEndEl.textContent = formatCurrency(projections.yearEnd || 0);
+        console.log('🎯 Elementos encontrados:', {
+            nextMonth: !!nextMonthEl,
+            threeMonths: !!threeMonthsEl,
+            yearEnd: !!yearEndEl
+        });
+
+        if (nextMonthEl) {
+            const value = formatCurrency(projections.nextMonth || 0);
+            console.log('🎯 Atualizando próximo mês:', value);
+            nextMonthEl.textContent = value;
+        } else {
+            console.error('❌ Elemento projection-next-month não encontrado');
+        }
+        
+        if (threeMonthsEl) {
+            const value = formatCurrency(projections.threeMonths || 0);
+            console.log('🎯 Atualizando 3 meses:', value);
+            threeMonthsEl.textContent = value;
+        } else {
+            console.error('❌ Elemento projection-3-months não encontrado');
+        }
+        
+        if (yearEndEl) {
+            const value = formatCurrency(projections.yearEnd || 0);
+            console.log('🎯 Atualizando fim do ano:', value);
+            yearEndEl.textContent = value;
+        } else {
+            console.error('❌ Elemento projection-year-end não encontrado');
+        }
     }
 
     // Renderizar tabela inteligente de gastos recorrentes
@@ -8045,7 +8084,8 @@ document.addEventListener('DOMContentLoaded', function() {
                     renderRecurringVariationChart(fb.monthlyHistory);
                     renderRecurringCategoryChart(fb.categoryBreakdown);
                     updateTrendsAnalysis(fb.trendsSummary);
-                    updateProjections(fb.projections);
+                    const safeProjections = fb.projections || { nextMonth: 0, threeMonths: 0, yearEnd: 0 };
+                    updateProjections(safeProjections);
                     renderRecurringExpensesTable(fb.expenses);
                     showNotification('Filtros aplicados (fallback)', 'warning');
                     return;
@@ -8058,7 +8098,8 @@ document.addEventListener('DOMContentLoaded', function() {
             renderRecurringVariationChart(biData.monthlyHistory);
             renderRecurringCategoryChart(biData.categoryBreakdown);
             updateTrendsAnalysis(biData.trendsSummary);
-            updateProjections(biData.projections);
+            const safeProjections = biData.projections || { nextMonth: 0, threeMonths: 0, yearEnd: 0 };
+            updateProjections(safeProjections);
             renderRecurringExpensesTable(biData.expenses);
 
             showNotification('Filtros aplicados com sucesso!', 'success');
@@ -8074,7 +8115,8 @@ document.addEventListener('DOMContentLoaded', function() {
                     renderRecurringVariationChart(fb.monthlyHistory);
                     renderRecurringCategoryChart(fb.categoryBreakdown);
                     updateTrendsAnalysis(fb.trendsSummary);
-                    updateProjections(fb.projections);
+                    const safeProjections = fb.projections || { nextMonth: 0, threeMonths: 0, yearEnd: 0 };
+                    updateProjections(safeProjections);
                     renderRecurringExpensesTable(fb.expenses);
                     showNotification('Filtros aplicados via fallback', 'warning');
                     return;
