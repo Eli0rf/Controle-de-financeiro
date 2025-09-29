@@ -6,10 +6,28 @@ const mysql = require('mysql2/promise');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const multer = require('multer');
-const { ChartJSNodeCanvas } = require('chartjs-node-canvas');
+
+// Imports com tratamento robusto de erro para Railway
+let ChartJSNodeCanvas;
+try {
+    ({ ChartJSNodeCanvas } = require('chartjs-node-canvas'));
+    console.log('✅ ChartJS carregado com sucesso');
+} catch(e) {
+    console.warn('⚠️ ChartJS não disponível:', e.message);
+    ChartJSNodeCanvas = null;
+}
+
 const pdfkit = require('pdfkit');
+
 // Emoji suporte via twemoji (converte para imagem PNG)
-let twemoji; try { twemoji = require('twemoji'); } catch(e) { twemoji = null; }
+let twemoji;
+try {
+    twemoji = require('twemoji');
+    console.log('✅ Twemoji carregado com sucesso');
+} catch(e) {
+    console.warn('⚠️ Twemoji não disponível:', e.message);
+    twemoji = null;
+}
 const https = require('https');
 const { createWriteStream, existsSync, mkdirSync } = require('fs');
 const path = require('path');
@@ -1092,6 +1110,12 @@ async function generateChartsForPDF(porPlano, porConta, expenses, chartJSNodeCan
     const charts = {};
     
     try {
+        // Verificar se chartJSNodeCanvas está disponível
+        if (!chartJSNodeCanvas) {
+            console.log('⚠️ ChartJS não disponível - retornando charts vazios');
+            return charts;
+        }
+        
         // 1. Gráfico de pizza aprimorado - Distribuição por Plano de Conta
         const planLabels = Object.keys(porPlano);
         const planValues = Object.values(porPlano);
@@ -1588,19 +1612,25 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
             // Criar PDF simples para período sem gastos
             const doc = new pdfkit();
             
-            // Tentar registrar fonte com fallback
+            // Tentar registrar fonte com fallback robusto para Railway
             try {
                 const fontPath = path.join(__dirname, 'fonts', 'NotoSans-Regular.ttf');
                 if (fs.existsSync(fontPath)) {
                     doc.registerFont('NotoSans', fontPath);
                     doc.font('NotoSans');
+                    console.log('✅ Fonte NotoSans carregada para PDF vazio');
                 } else {
-                    console.log('⚠️ Fonte NotoSans não encontrada, usando fonte padrão');
+                    console.log('⚠️ Fonte NotoSans não encontrada no Railway para PDF vazio, usando Helvetica');
                     doc.font('Helvetica');
                 }
-            } catch (error) {
-                console.log('⚠️ Erro ao carregar fonte, usando padrão:', error.message);
-                doc.font('Helvetica');
+            } catch (fontError) {
+                console.warn('⚠️ Erro ao carregar fonte para PDF vazio:', fontError.message);
+                try {
+                    doc.font('Helvetica');
+                } catch (fallbackError) {
+                    console.warn('⚠️ Erro com Helvetica para PDF vazio, usando Times-Roman');
+                    doc.font('Times-Roman');
+                }
             }
 
             // Capa colorida para período sem gastos
@@ -1666,22 +1696,26 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
         const maiorGasto = maiores[0];
         const menorGasto = maiores[maiores.length - 1];
 
-        // 🎨 GERAR GRÁFICOS
-        console.log('📊 Gerando gráficos para o PDF...');
-        const chartJSNodeCanvas = new ChartJSNodeCanvas({ 
-            width: 800, 
-            height: 500, 
-            backgroundColour: 'white'
-        });
-
-        let chartImages;
-        try {
-            chartImages = await generateChartsForPDF(porPlano, porConta, expenses, chartJSNodeCanvas);
-            console.log('✅ Gráficos gerados com sucesso!');
-        } catch (chartError) {
-            console.error('❌ Erro ao gerar gráficos:', chartError);
-            // Continuar sem gráficos se falhar
-            chartImages = {};
+        // 🎨 GERAR GRÁFICOS (se ChartJS disponível)
+        let chartImages = {};
+        if (ChartJSNodeCanvas) {
+            try {
+                console.log('📊 Gerando gráficos para o PDF...');
+                const chartJSNodeCanvas = new ChartJSNodeCanvas({ 
+                    width: 800, 
+                    height: 500, 
+                    backgroundColour: 'white'
+                });
+                chartImages = await generateChartsForPDF(porPlano, porConta, expenses, chartJSNodeCanvas);
+                console.log('✅ Gráficos gerados com sucesso!');
+            } catch (chartError) {
+                console.error('❌ Erro ao gerar gráficos:', chartError);
+                console.error('Stack trace gráficos:', chartError.stack);
+                // Continuar sem gráficos se falhar
+                chartImages = {};
+            }
+        } else {
+            console.log('⚠️ Gráficos desabilitados - ChartJS não disponível no Railway');
         }
 
         // 📊 AGRUPAR DESPESAS POR PLANO DE CONTAS PARA MELHOR ORGANIZAÇÃO
@@ -1712,19 +1746,26 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
         console.log('🎨 Iniciando criação do PDF...');
         const doc = new pdfkit();
         
-        // Tentar registrar fonte com fallback
+        // Tentar registrar fonte com fallback robusto para Railway
         try {
             const fontPath = path.join(__dirname, 'fonts', 'NotoSans-Regular.ttf');
             if (fs.existsSync(fontPath)) {
                 doc.registerFont('NotoSans', fontPath);
                 doc.font('NotoSans');
+                console.log('✅ Fonte NotoSans carregada com sucesso');
             } else {
-                console.log('⚠️ Fonte NotoSans não encontrada, usando fonte padrão');
+                console.log('⚠️ Fonte NotoSans não encontrada no Railway, usando fonte padrão Helvetica');
                 doc.font('Helvetica');
             }
-        } catch (error) {
-            console.log('⚠️ Erro ao carregar fonte, usando padrão:', error.message);
-            doc.font('Helvetica');
+        } catch (fontError) {
+            console.warn('⚠️ Erro ao carregar fonte NotoSans no Railway:', fontError.message);
+            try {
+                doc.font('Helvetica');
+                console.log('✅ Usando fonte padrão Helvetica');
+            } catch (fallbackError) {
+                console.warn('⚠️ Erro com fonte Helvetica, usando Times-Roman:', fallbackError.message);
+                doc.font('Times-Roman');
+            }
         }
         
         // Registro opcional de fontes de emoji (se presentes na pasta fonts)
@@ -2585,21 +2626,94 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
     } catch (error) {
         console.error('❌ Erro ao gerar relatório mensal:', error);
         console.error('Stack trace completo:', error.stack);
+        console.error('Detalhes do ambiente:', {
+            nodeVersion: process.version,
+            platform: process.platform,
+            arch: process.arch,
+            memoryUsage: process.memoryUsage()
+        });
         
         // Resposta de erro mais detalhada
         const errorResponse = { 
             message: 'Erro ao gerar relatório mensal.', 
             details: error.message,
             errorType: error.name,
-            timestamp: new Date().toISOString()
+            timestamp: new Date().toISOString(),
+            environment: 'Railway'
         };
         
         // Se o error tem mais informações específicas, incluir
         if (error.code) errorResponse.code = error.code;
         if (error.errno) errorResponse.errno = error.errno;
+        if (error.syscall) errorResponse.syscall = error.syscall;
         
         res.status(500).json(errorResponse);
     }
+});
+
+// Rota de diagnóstico para verificar dependências do Railway
+app.get('/api/health/pdf-dependencies', (req, res) => {
+    const diagnostics = {
+        timestamp: new Date().toISOString(),
+        environment: 'Railway',
+        dependencies: {}
+    };
+
+    // Verificar ChartJS
+    try {
+        diagnostics.dependencies.chartjs = {
+            available: !!ChartJSNodeCanvas,
+            version: ChartJSNodeCanvas ? 'loaded' : 'not available',
+            canCreateInstance: false
+        };
+        
+        if (ChartJSNodeCanvas) {
+            const testCanvas = new ChartJSNodeCanvas({ width: 100, height: 100 });
+            diagnostics.dependencies.chartjs.canCreateInstance = !!testCanvas;
+        }
+    } catch (error) {
+        diagnostics.dependencies.chartjs = {
+            available: false,
+            error: error.message
+        };
+    }
+
+    // Verificar PDFKit
+    try {
+        const testDoc = new pdfkit();
+        diagnostics.dependencies.pdfkit = {
+            available: true,
+            canCreateDocument: !!testDoc
+        };
+    } catch (error) {
+        diagnostics.dependencies.pdfkit = {
+            available: false,
+            error: error.message
+        };
+    }
+
+    // Verificar Twemoji
+    diagnostics.dependencies.twemoji = {
+        available: !!twemoji,
+        version: twemoji ? 'loaded' : 'not available'
+    };
+
+    // Verificar fontes
+    const fontPath = path.join(__dirname, 'fonts', 'NotoSans-Regular.ttf');
+    diagnostics.dependencies.fonts = {
+        notoSansExists: fs.existsSync(fontPath),
+        fontPath: fontPath
+    };
+
+    // Verificar memória
+    diagnostics.system = {
+        nodeVersion: process.version,
+        platform: process.platform,
+        arch: process.arch,
+        memoryUsage: process.memoryUsage()
+    };
+
+    res.json(diagnostics);
 });
 
 // --- 8.2. ROTAS PARA GASTOS RECORRENTES MENSAIS ---

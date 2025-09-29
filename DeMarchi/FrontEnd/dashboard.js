@@ -842,7 +842,8 @@ document.addEventListener('DOMContentLoaded', function() {
         filterYear.innerHTML = '';
         filterMonth.innerHTML = '';
         const currentYear = new Date().getFullYear();
-        for (let i = currentYear; i >= currentYear - 5; i--) filterYear.add(new Option(i, i));
+        // Incluir anos futuros até 2027 (currentYear + 2)
+        for (let i = currentYear + 2; i >= currentYear - 5; i--) filterYear.add(new Option(i, i));
         const months = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
         months.forEach((month, index) => filterMonth.add(new Option(month, index + 1)));
         filterYear.value = currentYear;
@@ -3968,10 +3969,26 @@ document.addEventListener('DOMContentLoaded', function() {
                 try {
                     const errorData = await response.json();
                     console.error('Erro detalhado do servidor:', errorData);
-                    errorMessage = `Erro ${response.status}: ${errorData.details || errorData.message || errorMessage}`;
+                    
+                    // Mensagens mais amigáveis baseadas no tipo de erro
+                    if (errorData.environment === 'Railway') {
+                        if (errorData.details?.includes('canvas') || errorData.details?.includes('ChartJS')) {
+                            errorMessage = `Erro no Railway: Problema com geração de gráficos. O PDF será gerado sem gráficos. Detalhes: ${errorData.details}`;
+                        } else if (errorData.details?.includes('font')) {
+                            errorMessage = `Erro no Railway: Problema com fontes. Detalhes: ${errorData.details}`;
+                        } else {
+                            errorMessage = `Erro ${response.status} no Railway: ${errorData.details || errorData.message || errorMessage}`;
+                        }
+                    } else {
+                        errorMessage = `Erro ${response.status}: ${errorData.details || errorData.message || errorMessage}`;
+                    }
                 } catch (parseError) {
                     console.error('Erro ao parsear resposta de erro:', parseError);
-                    errorMessage = `Erro ${response.status}: ${response.statusText}`;
+                    if (response.status === 500) {
+                        errorMessage = `Erro interno do servidor (${response.status}). Possível problema com dependências no Railway. Tente novamente em alguns minutos.`;
+                    } else {
+                        errorMessage = `Erro ${response.status}: ${response.statusText}`;
+                    }
                 }
                 throw new Error(errorMessage);
             }
@@ -3985,7 +4002,39 @@ document.addEventListener('DOMContentLoaded', function() {
             window.URL.revokeObjectURL(url);
             closeReportModal();
         } catch (error) {
-            showNotification(`Erro: ${error.message}`, 'error');
+            let errorMsg = error.message;
+            
+            // Se erro 500, oferecer diagnóstico
+            if (error.message.includes('500') || error.message.includes('interno do servidor')) {
+                errorMsg += '\n\n🔍 Executando diagnóstico...';
+                showNotification(errorMsg, 'error');
+                
+                // Tentar diagnóstico das dependências
+                try {
+                    const diagResponse = await authenticatedFetch(`${API_BASE_URL}/api/health/pdf-dependencies`);
+                    if (diagResponse.ok) {
+                        const diagData = await diagResponse.json();
+                        console.log('📊 Diagnóstico das dependências:', diagData);
+                        
+                        let diagMsg = '\n\n📊 Diagnóstico:\n';
+                        if (!diagData.dependencies.chartjs?.available) {
+                            diagMsg += '• ❌ ChartJS não disponível (gráficos desabilitados)\n';
+                        }
+                        if (!diagData.dependencies.fonts?.notoSansExists) {
+                            diagMsg += '• ⚠️ Fonte personalizada não encontrada\n';
+                        }
+                        if (diagData.system?.memoryUsage?.heapUsed > 100000000) {
+                            diagMsg += '• ⚠️ Alto uso de memória detectado\n';
+                        }
+                        
+                        showNotification(errorMsg + diagMsg, 'error');
+                    }
+                } catch (diagError) {
+                    console.error('Erro no diagnóstico:', diagError);
+                }
+            } else {
+                showNotification(`Erro: ${errorMsg}`, 'error');
+            }
         } finally {
             if(reportGenerateText) reportGenerateText.classList.remove('hidden');
             if(reportLoadingText) reportLoadingText.classList.add('hidden');
@@ -4001,8 +4050,8 @@ document.addEventListener('DOMContentLoaded', function() {
             const currentYear = new Date().getFullYear();
             yearSelect.innerHTML = '';
             
-            // Adicionar anos (atual e próximos 2 anos, e 3 anos anteriores)
-            for (let year = currentYear - 3; year <= currentYear + 2; year++) {
+            // Adicionar anos (atual e próximos 2 anos até 2027, e 3 anos anteriores)
+            for (let year = currentYear - 3; year <= currentYear + 3; year++) {
                 const option = document.createElement('option');
                 option.value = year;
                 option.textContent = year;
@@ -5524,10 +5573,10 @@ document.addEventListener('DOMContentLoaded', function() {
             const yearSelect = document.getElementById('yearly-chart-year');
             const currentYear = new Date().getFullYear();
             
-            // Preencher opções de ano
+            // Preencher opções de ano (incluindo anos futuros até 2027)
             if (yearSelect) {
                 yearSelect.innerHTML = '';
-                for (let year = currentYear; year >= currentYear - 5; year--) {
+                for (let year = currentYear + 3; year >= currentYear - 5; year--) {
                     const option = document.createElement('option');
                     option.value = year;
                     option.textContent = year;
@@ -8028,7 +8077,8 @@ document.addEventListener('DOMContentLoaded', function() {
         const currentYear = new Date().getFullYear();
         yearSelect.innerHTML = '';
 
-        for (let year = currentYear; year >= currentYear - 3; year--) {
+        // Incluir anos futuros até 2027
+        for (let year = currentYear + 3; year >= currentYear - 3; year--) {
             const option = document.createElement('option');
             option.value = year;
             option.textContent = year;
@@ -10710,13 +10760,13 @@ document.addEventListener('DOMContentLoaded', function() {
     // ========== SISTEMA DE ALERTAS DE ORÇAMENTO POR PLANO DE CONTAS ==========
     
     function initializeBudgetFilters() {
-        // Preencher anos (últimos 3 anos + próximo ano)
+        // Preencher anos (últimos 3 anos + próximos anos até 2027)
         const currentYear = new Date().getFullYear();
         const currentMonth = new Date().getMonth() + 1;
         
         if (budgetYear) {
             budgetYear.innerHTML = '';
-            for (let year = currentYear - 2; year <= currentYear + 1; year++) {
+            for (let year = currentYear - 2; year <= currentYear + 3; year++) {
                 const option = document.createElement('option');
                 option.value = year;
                 option.textContent = year;
