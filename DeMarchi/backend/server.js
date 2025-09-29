@@ -139,6 +139,25 @@ app.post('/test-cors', (req, res) => {
 // Cria/atualiza view de snapshots para BI externo
 async function ensureKpiView(){
     try {
+        // Primeiro, garante que a tabela existe
+        await pool.query(`CREATE TABLE IF NOT EXISTS monthly_snapshots (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            user_id INT NOT NULL,
+            year INT NOT NULL,
+            month INT NOT NULL,
+            total DECIMAL(12,2) NOT NULL,
+            total_business DECIMAL(12,2) NOT NULL,
+            total_personal DECIMAL(12,2) NOT NULL,
+            by_plan JSON,
+            by_account JSON,
+            projection DECIMAL(12,2) DEFAULT 0,
+            hhi DECIMAL(10,5) DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            UNIQUE KEY uniq_user_month (user_id, year, month)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;`);
+        
+        // Depois cria a view
         await pool.query(`CREATE OR REPLACE VIEW monthly_kpi_view AS 
             SELECT ms.user_id, u.username, ms.year, ms.month, ms.total, ms.total_business, ms.total_personal,
                          ms.projection, ms.hhi, ms.created_at, ms.updated_at
@@ -194,23 +213,7 @@ app.get('/api/kpis/snapshots', authenticateToken, async (req,res)=>{
     try {
         const userId = parseInt(req.user?.id || 0);
         const year = parseInt(req.query.year) || new Date().getFullYear();
-        // Garante existência da tabela (primeiro uso em ambiente limpo)
-        await pool.query(`CREATE TABLE IF NOT EXISTS monthly_snapshots (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            user_id INT NOT NULL,
-            year INT NOT NULL,
-            month INT NOT NULL,
-            total DECIMAL(12,2) NOT NULL,
-            total_business DECIMAL(12,2) NOT NULL,
-            total_personal DECIMAL(12,2) NOT NULL,
-            by_plan JSON,
-            by_account JSON,
-            projection DECIMAL(12,2) DEFAULT 0,
-            hhi DECIMAL(10,5) DEFAULT 0,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-            UNIQUE KEY uniq_user_month (user_id, year, month)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;`);
+        
         const [rows] = await pool.query(`SELECT year, month, total, total_business, total_personal, projection, hhi, created_at FROM monthly_snapshots WHERE user_id=? AND year=? ORDER BY year DESC, month DESC`, [userId, year]);
         res.json({ year, snapshots: rows });
     } catch(e){
@@ -1628,16 +1631,21 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
         return res.status(400).json({ message: 'Ano e mês são obrigatórios.' });
     }
 
+    // Declarar variáveis que podem ser usadas no fallback (escopo da função)
+    let expenses = [];
+    let total = 0;
+    let totalEmpresarial = 0;
+    let totalPessoal = 0;
+    let startDate, endDate;
+    let contaNome = account || 'Todas as Contas';
+    let empresariais = [];
+    let pessoais = [];
+    let pessoaisFiltrados = [];
+
     try {
         console.log(`📊 [STEP 1] Iniciando processamento de dados...`);
 
-        // Declarar variáveis que podem ser usadas no fallback
-        let expenses = [];
-        let total = 0;
-        let startDate, endDate;
-        let contaNome = account || 'Todas as Contas';
-
-        // Determina período vigente se for por conta
+        // Determina período vigente se por conta
         console.log(`📅 [STEP 2] Calculando período...`);
         
         if (account && billingPeriods[account]) {
@@ -1745,17 +1753,17 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
             // Análise dos dados
             // Classificação mais robusta: prioridade flags explícitas
             console.log(`📊 [STEP 6.1] Classificando despesas empresariais/pessoais...`);
-            const empresariais = expenses.filter(e => e.is_business_expense === 1 || e.is_business_expense === true || e.is_personal === 0);
-            const pessoais = expenses.filter(e => (e.is_personal === 1 || e.is_personal === true) || (e.is_business_expense === 0 || e.is_business_expense === false) );
+            empresariais = expenses.filter(e => e.is_business_expense === 1 || e.is_business_expense === true || e.is_personal === 0);
+            pessoais = expenses.filter(e => (e.is_personal === 1 || e.is_personal === true) || (e.is_business_expense === 0 || e.is_business_expense === false) );
             // Evitar sobreposição duplicada caso flags inconsistentes
             const empresarialIds = new Set(empresariais.map(e=>e.id));
-            const pessoaisFiltrados = pessoais.filter(e => !empresarialIds.has(e.id));
+            pessoaisFiltrados = pessoais.filter(e => !empresarialIds.has(e.id));
             
             console.log(`📊 [STEP 6.2] Calculando totais - Empresariais: ${empresariais.length}, Pessoais: ${pessoaisFiltrados.length}`);
                 
             total = expenses.reduce((sum, e) => sum + parseFloat(e.amount || 0), 0);
-            const totalEmpresarial = empresariais.reduce((sum, e) => sum + parseFloat(e.amount || 0), 0);
-            const totalPessoal = pessoaisFiltrados.reduce((sum, e) => sum + parseFloat(e.amount || 0), 0);
+            totalEmpresarial = empresariais.reduce((sum, e) => sum + parseFloat(e.amount || 0), 0);
+            totalPessoal = pessoaisFiltrados.reduce((sum, e) => sum + parseFloat(e.amount || 0), 0);
 
             console.log(`💰 [STEP 6.3] Totais calculados - Total: R$ ${total.toFixed(2)}, Empresarial: R$ ${totalEmpresarial.toFixed(2)}, Pessoal: R$ ${totalPessoal.toFixed(2)}`);
         } catch (dataProcessError) {
@@ -2760,8 +2768,10 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
         
         try {
             // Verificar se temos os dados mínimos necessários
-            if (expenses && expenses.length > 0 && total !== undefined) {
-                console.log('📊 [FALLBACK] Dados disponíveis, gerando PDF simplificado...');
+            console.log(`🔍 [FALLBACK] Verificando dados disponíveis - expenses: ${expenses?.length || 0}, total: ${total}, startDate: ${startDate}, endDate: ${endDate}`);
+            
+            if (expenses && Array.isArray(expenses) && expenses.length > 0 && total !== undefined && startDate && endDate) {
+                console.log('📊 [FALLBACK] Dados suficientes disponíveis, gerando PDF simplificado...');
                 
                 const simpleDoc = generateSimplePDF(expenses, total, startDate, endDate, contaNome, year, month);
                 
@@ -2773,8 +2783,32 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
                 console.log('✅ [FALLBACK] PDF simplificado gerado com sucesso!');
                 return;
                 
+            } else if (startDate && endDate) {
+                console.log('📄 [FALLBACK] Dados limitados, gerando PDF vazio...');
+                
+                // Gerar PDF vazio se não há despesas mas temos as datas
+                const emptyDoc = new pdfkit();
+                try { emptyDoc.font('Helvetica'); } catch { emptyDoc.font('Times-Roman'); }
+                
+                emptyDoc.fontSize(20).text('RELATÓRIO FINANCEIRO MENSAL', { align: 'center' });
+                emptyDoc.moveDown();
+                emptyDoc.fontSize(14).text(`Período: ${startDate.toLocaleDateString('pt-BR')} a ${endDate.toLocaleDateString('pt-BR')}`, { align: 'center' });
+                emptyDoc.text(`Conta: ${contaNome}`, { align: 'center' });
+                emptyDoc.moveDown(2);
+                emptyDoc.fontSize(16).text('Nenhuma despesa encontrada para este período.', { align: 'center' });
+                emptyDoc.moveDown();
+                emptyDoc.fontSize(12).text('Relatório gerado em modo de recuperação.', { align: 'center' });
+                
+                emptyDoc.end();
+                res.setHeader('Content-Type', 'application/pdf');
+                res.setHeader('Content-Disposition', `attachment; filename=relatorio-fallback-${year}-${month}.pdf`);
+                emptyDoc.pipe(res);
+                
+                console.log('✅ [FALLBACK] PDF vazio gerado com sucesso!');
+                return;
+                
             } else {
-                console.log('❌ [FALLBACK] Dados insuficientes para PDF simplificado');
+                console.log('❌ [FALLBACK] Dados insuficientes para qualquer tipo de PDF');
             }
         } catch (fallbackError) {
             console.error('❌ [FALLBACK] Erro até no PDF simplificado:', fallbackError);
