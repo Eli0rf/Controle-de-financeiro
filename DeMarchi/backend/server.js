@@ -1563,22 +1563,85 @@ async function generateChartsForPDF(porPlano, porConta, expenses, chartJSNodeCan
     return charts;
 }
 
+// Função auxiliar para gerar PDF simplificado em caso de erro
+function generateSimplePDF(expenses, total, startDate, endDate, contaNome, year, month) {
+    console.log(`🆘 [FALLBACK] Gerando PDF simplificado...`);
+    
+    try {
+        const doc = new pdfkit();
+        
+        // Fonte mais simples
+        try {
+            doc.font('Helvetica');
+        } catch {
+            doc.font('Times-Roman');
+        }
+        
+        // Cabeçalho simples
+        doc.fontSize(20).text('RELATÓRIO FINANCEIRO MENSAL', { align: 'center' });
+        doc.moveDown();
+        doc.fontSize(14).text(`Período: ${startDate.toLocaleDateString('pt-BR')} a ${endDate.toLocaleDateString('pt-BR')}`, { align: 'center' });
+        doc.text(`Conta: ${contaNome}`, { align: 'center' });
+        doc.moveDown(2);
+        
+        // Total principal
+        doc.fontSize(18).text(`TOTAL GERAL: R$ ${total.toFixed(2)}`, { align: 'center' });
+        doc.moveDown(2);
+        
+        // Lista simples de despesas (máximo 20)
+        doc.fontSize(12).text('RESUMO DAS DESPESAS:', { underline: true });
+        doc.moveDown();
+        
+        const displayExpenses = expenses.slice(0, 20);
+        displayExpenses.forEach((expense, index) => {
+            const date = new Date(expense.transaction_date).toLocaleDateString('pt-BR');
+            const amount = parseFloat(expense.amount || 0).toFixed(2);
+            const description = (expense.description || 'Sem descrição').substring(0, 40);
+            
+            doc.text(`${index + 1}. ${date} - R$ ${amount} - ${description}`);
+        });
+        
+        if (expenses.length > 20) {
+            doc.moveDown();
+            doc.text(`... e mais ${expenses.length - 20} despesas.`);
+        }
+        
+        // Rodapé
+        doc.moveDown(2);
+        doc.fontSize(10).text('Relatório gerado em modo simplificado devido a limitações técnicas.', { align: 'center' });
+        
+        return doc;
+    } catch (simplePdfError) {
+        console.error(`❌ [ERRO] Falha até no PDF simplificado:`, simplePdfError);
+        throw new Error(`Erro crítico na geração de PDF: ${simplePdfError.message}`);
+    }
+}
+
 app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
     const userId = req.user.id;
     const { year, month, account } = req.body;
 
+    console.log(`🎯 [INÍCIO] Relatório mensal - User: ${userId}, Ano: ${year}, Mês: ${month}, Conta: ${account || 'Todas'}`);
+
     if (!year || !month) {
+        console.log(`❌ [ERRO] Parâmetros inválidos - Ano: ${year}, Mês: ${month}`);
         return res.status(400).json({ message: 'Ano e mês são obrigatórios.' });
     }
 
     try {
-        console.log(`🎯 Iniciando geração de relatório mensal - User: ${userId}, Ano: ${year}, Mês: ${month}, Conta: ${account || 'Todas'}`);
+        console.log(`📊 [STEP 1] Iniciando processamento de dados...`);
 
-        // Determina período vigente se for por conta
+        // Declarar variáveis que podem ser usadas no fallback
+        let expenses = [];
+        let total = 0;
         let startDate, endDate;
         let contaNome = account || 'Todas as Contas';
+
+        // Determina período vigente se for por conta
+        console.log(`📅 [STEP 2] Calculando período...`);
         
         if (account && billingPeriods[account]) {
+            console.log(`📊 [STEP 2.1] Usando período personalizado para conta: ${account}`);
             const { startDay, endDay } = billingPeriods[account];
             startDate = new Date(year, month - 1, startDay);
             let endMonth = Number(month);
@@ -1589,11 +1652,15 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
             }
             endDate = new Date(endYear, endMonth - 1, endDay);
         } else {
+            console.log(`📊 [STEP 2.2] Usando período padrão mensal`);
             startDate = new Date(year, month - 1, 1);
             endDate = new Date(year, month, 0);
         }
 
+        console.log(`📅 [STEP 2.3] Período calculado: ${startDate.toISOString().slice(0,10)} até ${endDate.toISOString().slice(0,10)}`);
+
         // Busca despesas do período - incluindo PIX e Boleto
+        console.log(`🔍 [STEP 3] Consultando banco de dados...`);
         let sql = `SELECT * FROM expenses WHERE user_id = ? AND transaction_date >= ? AND transaction_date <= ?`;
         let params = [userId, startDate.toISOString().slice(0,10), endDate.toISOString().slice(0,10)];
         
@@ -1601,29 +1668,42 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
         if (account && account !== 'ALL') {
             sql += ' AND account = ?';
             params.push(account);
+            console.log(`🏦 [STEP 3.1] Filtrando por conta: ${account}`);
         }
         
         sql += ' ORDER BY transaction_date';
-        const [expenses] = await pool.query(sql, params);
+        console.log(`📊 [STEP 3.2] Executando SQL: ${sql}`);
+        console.log(`📊 [STEP 3.3] Parâmetros: ${JSON.stringify(params)}`);
+        
+        try {
+            expenses = (await pool.query(sql, params))[0];
+            console.log(`✅ [STEP 3.4] Consulta executada com sucesso`);
+        } catch (dbError) {
+            console.error(`❌ [ERRO] Falha na consulta ao banco:`, dbError);
+            throw new Error(`Erro ao consultar despesas: ${dbError.message}`);
+        }
 
-        console.log(`📊 Encontradas ${expenses.length} despesas para o período`);
+        console.log(`📊 [STEP 4] Encontradas ${expenses.length} despesas para o período`);
 
         if (expenses.length === 0) {
-            // Criar PDF simples para período sem gastos
-            const doc = new pdfkit();
+            console.log(`📄 [STEP 5] Gerando PDF vazio (sem despesas)...`);
             
-            // Tentar registrar fonte com fallback robusto para Railway
             try {
-                const fontPath = path.join(__dirname, 'fonts', 'NotoSans-Regular.ttf');
-                if (fs.existsSync(fontPath)) {
-                    doc.registerFont('NotoSans', fontPath);
-                    doc.font('NotoSans');
-                    console.log('✅ Fonte NotoSans carregada para PDF vazio');
-                } else {
-                    console.log('⚠️ Fonte NotoSans não encontrada no Railway para PDF vazio, usando Helvetica');
-                    doc.font('Helvetica');
-                }
-            } catch (fontError) {
+                // Criar PDF simples para período sem gastos
+                const doc = new pdfkit();
+                
+                // Tentar registrar fonte com fallback robusto para Railway
+                try {
+                    const fontPath = path.join(__dirname, 'fonts', 'NotoSans-Regular.ttf');
+                    if (fs.existsSync(fontPath)) {
+                        doc.registerFont('NotoSans', fontPath);
+                        doc.font('NotoSans');
+                        console.log('✅ [STEP 5.1] Fonte NotoSans carregada para PDF vazio');
+                    } else {
+                        console.log('⚠️ [STEP 5.1] Fonte NotoSans não encontrada no Railway para PDF vazio, usando Helvetica');
+                        doc.font('Helvetica');
+                    }
+                } catch (fontError) {
                 console.warn('⚠️ Erro ao carregar fonte para PDF vazio:', fontError.message);
                 try {
                     doc.font('Helvetica');
@@ -1645,24 +1725,43 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
             doc.moveDown(0.5);
             doc.fontSize(12).fillColor('#065F46').text(`Conta: ${contaNome}`, { align: 'center' });
             
+            console.log(`✅ [STEP 5.2] PDF vazio criado com sucesso`);
+            
             doc.end();
             res.setHeader('Content-Type', 'application/pdf');
             res.setHeader('Content-Disposition', `attachment; filename=relatorio-vazio-${year}-${month}.pdf`);
             doc.pipe(res);
             return;
+            
+            } catch (emptyPdfError) {
+                console.error(`❌ [ERRO] Falha ao gerar PDF vazio:`, emptyPdfError);
+                throw new Error(`Erro ao gerar PDF vazio: ${emptyPdfError.message}`);
+            }
         }
 
-        // Análise dos dados
-    // Classificação mais robusta: prioridade flags explícitas
-    const empresariais = expenses.filter(e => e.is_business_expense === 1 || e.is_business_expense === true || e.is_personal === 0);
-    const pessoais = expenses.filter(e => (e.is_personal === 1 || e.is_personal === true) || (e.is_business_expense === 0 || e.is_business_expense === false) );
-    // Evitar sobreposição duplicada caso flags inconsistentes
-    const empresarialIds = new Set(empresariais.map(e=>e.id));
-    const pessoaisFiltrados = pessoais.filter(e => !empresarialIds.has(e.id));
+        console.log(`📊 [STEP 6] Iniciando análise dos dados...`);
         
-        const total = expenses.reduce((sum, e) => sum + parseFloat(e.amount), 0);
-    const totalEmpresarial = empresariais.reduce((sum, e) => sum + parseFloat(e.amount), 0);
-    const totalPessoal = pessoaisFiltrados.reduce((sum, e) => sum + parseFloat(e.amount), 0);
+        try {
+            // Análise dos dados
+            // Classificação mais robusta: prioridade flags explícitas
+            console.log(`📊 [STEP 6.1] Classificando despesas empresariais/pessoais...`);
+            const empresariais = expenses.filter(e => e.is_business_expense === 1 || e.is_business_expense === true || e.is_personal === 0);
+            const pessoais = expenses.filter(e => (e.is_personal === 1 || e.is_personal === true) || (e.is_business_expense === 0 || e.is_business_expense === false) );
+            // Evitar sobreposição duplicada caso flags inconsistentes
+            const empresarialIds = new Set(empresariais.map(e=>e.id));
+            const pessoaisFiltrados = pessoais.filter(e => !empresarialIds.has(e.id));
+            
+            console.log(`📊 [STEP 6.2] Calculando totais - Empresariais: ${empresariais.length}, Pessoais: ${pessoaisFiltrados.length}`);
+                
+            total = expenses.reduce((sum, e) => sum + parseFloat(e.amount || 0), 0);
+            const totalEmpresarial = empresariais.reduce((sum, e) => sum + parseFloat(e.amount || 0), 0);
+            const totalPessoal = pessoaisFiltrados.reduce((sum, e) => sum + parseFloat(e.amount || 0), 0);
+
+            console.log(`💰 [STEP 6.3] Totais calculados - Total: R$ ${total.toFixed(2)}, Empresarial: R$ ${totalEmpresarial.toFixed(2)}, Pessoal: R$ ${totalPessoal.toFixed(2)}`);
+        } catch (dataProcessError) {
+            console.error(`❌ [ERRO] Falha no processamento dos dados:`, dataProcessError);
+            throw new Error(`Erro ao processar dados das despesas: ${dataProcessError.message}`);
+        }
 
         // ===== Dados do mês anterior para comparativo =====
     // Agrupamentos para gráficos (definir antes de usar comparativos)
@@ -1675,24 +1774,37 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
             const conta = e.account || 'Sem Conta';
             const dia = new Date(e.transaction_date).getDate();
             
-            porPlano[plano] = (porPlano[plano] || 0) + parseFloat(e.amount);
-            porConta[conta] = (porConta[conta] || 0) + parseFloat(e.amount);
-            porDia[dia] = (porDia[dia] || 0) + parseFloat(e.amount);
+            porPlano[plano] = (porPlano[plano] || 0) + parseFloat(e.amount || 0);
+            porConta[conta] = (porConta[conta] || 0) + parseFloat(e.amount || 0);
+            porDia[dia] = (porDia[dia] || 0) + parseFloat(e.amount || 0);
         });
 
-    // Após popular porPlano podemos calcular comparativo mês anterior
-    const prevMonth = month === 1 ? 12 : month - 1;
-    const prevYear = month === 1 ? year - 1 : year;
-    const prevStart = new Date(prevYear, prevMonth - 1, 1);
-    const prevEnd = new Date(prevYear, prevMonth, 0);
-    let prevSql = `SELECT id, amount, account_plan_code, is_business_expense, transaction_date FROM expenses WHERE user_id = ? AND transaction_date >= ? AND transaction_date <= ?`;
-    const [prevExpenses] = await pool.query(prevSql, [userId, prevStart.toISOString().slice(0,10), prevEnd.toISOString().slice(0,10)]);
-    const prevByPlan = {};
-    prevExpenses.forEach(e => { const plano = e.account_plan_code || 'Sem Plano'; prevByPlan[plano] = (prevByPlan[plano] || 0) + parseFloat(e.amount); });
-    const currByPlan = {}; Object.entries(porPlano).forEach(([p,v])=> currByPlan[p]=v);
+        console.log(`📊 [STEP 7] Preparando dados comparativos...`);
 
-    // Maior gasto e menor gasto
-        const maiores = expenses.sort((a, b) => parseFloat(b.amount) - parseFloat(a.amount));
+        // Após popular porPlano podemos calcular comparativo mês anterior
+        try {
+            const prevMonth = month === 1 ? 12 : month - 1;
+            const prevYear = month === 1 ? year - 1 : year;
+            const prevStart = new Date(prevYear, prevMonth - 1, 1);
+            const prevEnd = new Date(prevYear, prevMonth, 0);
+            let prevSql = `SELECT id, amount, account_plan_code, is_business_expense, transaction_date FROM expenses WHERE user_id = ? AND transaction_date >= ? AND transaction_date <= ?`;
+            
+            console.log(`📊 [STEP 7.1] Consultando dados do mês anterior...`);
+            const [prevExpenses] = await pool.query(prevSql, [userId, prevStart.toISOString().slice(0,10), prevEnd.toISOString().slice(0,10)]);
+            const prevByPlan = {};
+            prevExpenses.forEach(e => { const plano = e.account_plan_code || 'Sem Plano'; prevByPlan[plano] = (prevByPlan[plano] || 0) + parseFloat(e.amount || 0); });
+            const currByPlan = {}; Object.entries(porPlano).forEach(([p,v])=> currByPlan[p]=v);
+            
+            console.log(`📊 [STEP 7.2] Dados comparativos processados`);
+        } catch (prevDataError) {
+            console.error(`⚠️ [AVISO] Erro ao buscar dados do mês anterior:`, prevDataError);
+            // Continuar sem comparativo
+        }
+
+        console.log(`📊 [STEP 8] Identificando maiores e menores gastos...`);
+        
+        // Maior gasto e menor gasto
+        const maiores = expenses.sort((a, b) => parseFloat(b.amount || 0) - parseFloat(a.amount || 0));
         const maiorGasto = maiores[0];
         const menorGasto = maiores[maiores.length - 1];
 
@@ -1721,6 +1833,8 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
         // 📊 AGRUPAR DESPESAS POR PLANO DE CONTAS PARA MELHOR ORGANIZAÇÃO
         console.log('📊 Agrupando despesas por plano de contas...');
         const expensesByPlan = {};
+        console.log(`📊 [STEP 10] Agrupando despesas por plano de contas...`);
+        
         expenses.forEach(expense => {
             const planCode = expense.account_plan_code || 'Sem Plano';
             if (!expensesByPlan[planCode]) {
@@ -1731,7 +1845,7 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
                     expenses: []
                 };
             }
-            expensesByPlan[planCode].total += parseFloat(expense.amount);
+            expensesByPlan[planCode].total += parseFloat(expense.amount || 0);
             expensesByPlan[planCode].count++;
             expensesByPlan[planCode].expenses.push(expense);
         });
@@ -1740,25 +1854,33 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
         const sortedPlanGroups = Object.values(expensesByPlan)
             .sort((a, b) => b.total - a.total);
 
-        console.log(`📋 Despesas agrupadas em ${sortedPlanGroups.length} planos de contas`);
+        console.log(`📋 [STEP 10.1] Despesas agrupadas em ${sortedPlanGroups.length} planos de contas`);
 
-        // Gera PDF estilizado
-        console.log('🎨 Iniciando criação do PDF...');
-        const doc = new pdfkit();
+        console.log(`🎨 [STEP 11] Iniciando criação do PDF...`);
+        
+        let doc;
+        try {
+            doc = new pdfkit();
+            console.log(`✅ [STEP 11.1] Instância PDFKit criada com sucesso`);
+        } catch (pdfCreateError) {
+            console.error(`❌ [ERRO] Falha ao criar instância PDFKit:`, pdfCreateError);
+            throw new Error(`Erro ao criar documento PDF: ${pdfCreateError.message}`);
+        }
         
         // Tentar registrar fonte com fallback robusto para Railway
         try {
+            console.log(`🔤 [STEP 11.2] Configurando fontes...`);
             const fontPath = path.join(__dirname, 'fonts', 'NotoSans-Regular.ttf');
             if (fs.existsSync(fontPath)) {
                 doc.registerFont('NotoSans', fontPath);
                 doc.font('NotoSans');
-                console.log('✅ Fonte NotoSans carregada com sucesso');
+                console.log('✅ [STEP 11.2] Fonte NotoSans carregada com sucesso');
             } else {
-                console.log('⚠️ Fonte NotoSans não encontrada no Railway, usando fonte padrão Helvetica');
+                console.log('⚠️ [STEP 11.2] Fonte NotoSans não encontrada no Railway, usando fonte padrão Helvetica');
                 doc.font('Helvetica');
             }
         } catch (fontError) {
-            console.warn('⚠️ Erro ao carregar fonte NotoSans no Railway:', fontError.message);
+            console.warn('⚠️ [STEP 11.2] Erro ao carregar fonte NotoSans no Railway:', fontError.message);
             try {
                 doc.font('Helvetica');
                 console.log('✅ Usando fonte padrão Helvetica');
@@ -2624,7 +2746,7 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
         doc.pipe(res);
 
     } catch (error) {
-        console.error('❌ Erro ao gerar relatório mensal:', error);
+        console.error('❌ [ERRO PRINCIPAL] Erro ao gerar relatório mensal:', error);
         console.error('Stack trace completo:', error.stack);
         console.error('Detalhes do ambiente:', {
             nodeVersion: process.version,
@@ -2633,13 +2755,39 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
             memoryUsage: process.memoryUsage()
         });
         
-        // Resposta de erro mais detalhada
+        // TENTAR GERAR PDF SIMPLIFICADO COMO FALLBACK
+        console.log('🆘 [FALLBACK] Tentando gerar relatório simplificado...');
+        
+        try {
+            // Verificar se temos os dados mínimos necessários
+            if (expenses && expenses.length > 0 && total !== undefined) {
+                console.log('📊 [FALLBACK] Dados disponíveis, gerando PDF simplificado...');
+                
+                const simpleDoc = generateSimplePDF(expenses, total, startDate, endDate, contaNome, year, month);
+                
+                simpleDoc.end();
+                res.setHeader('Content-Type', 'application/pdf');
+                res.setHeader('Content-Disposition', `attachment; filename=relatorio-simplificado-${year}-${month}${account ? '-' + account : ''}.pdf`);
+                simpleDoc.pipe(res);
+                
+                console.log('✅ [FALLBACK] PDF simplificado gerado com sucesso!');
+                return;
+                
+            } else {
+                console.log('❌ [FALLBACK] Dados insuficientes para PDF simplificado');
+            }
+        } catch (fallbackError) {
+            console.error('❌ [FALLBACK] Erro até no PDF simplificado:', fallbackError);
+        }
+        
+        // Se chegou até aqui, responder com erro JSON
         const errorResponse = { 
             message: 'Erro ao gerar relatório mensal.', 
             details: error.message,
             errorType: error.name,
             timestamp: new Date().toISOString(),
-            environment: 'Railway'
+            environment: 'Railway',
+            fallbackAttempted: true
         };
         
         // Se o error tem mais informações específicas, incluir
