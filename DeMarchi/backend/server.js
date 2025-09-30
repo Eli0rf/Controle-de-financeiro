@@ -2574,6 +2574,7 @@ function generateComparativeAnalysis(expenses, total, totalPessoal, totalEmpresa
 }
 
 // Função auxiliar para gerar PDF simplificado em caso de erro
+async function generateFallbackPDF(expenses, total, startDate, endDate, contaNome) {
     console.log(`🆘 [FALLBACK] Gerando PDF simplificado...`);
     
     try {
