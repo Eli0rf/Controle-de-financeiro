@@ -179,7 +179,7 @@ app.use((err, req, res, next) => {
     res.status(500).json({ error: 'INTERNAL_ERROR', message: err.message });
 });
 // ====== API KPIs Mensais (JSON) ======
-const { computeMonthlyKPIs, saveMonthlySnapshot } = require('./reporting/monthlyKpis');
+const { computeMonthlyKPIs, saveMonthlySnapshot, computeTrendAnalysis, computeComparativeAnalysis, generateExecutiveReport } = require('./reporting/monthlyKpis');
 const { getRedis } = require('./utils/redisClient');
 const { authenticateToken } = require('./middleware/authMiddleware');
 const { detectAnomalies } = require('./analytics/anomalyDetector');
@@ -272,6 +272,504 @@ app.get('/api/kpis/anomaly', authenticateToken, async (req,res)=>{
     } catch(e){ console.error('Erro anomaly', e); res.status(500).json({ error:'Erro ao detectar anomalias'}); }
 });
 
+// ====== ROTAS DE BUSINESS INTELLIGENCE ======
+
+// 1. Análise de Tendências - múltiplos meses
+app.get('/api/bi/trends', authenticateToken, async (req, res) => {
+    try {
+        const userId = parseInt(req.user?.id || 0);
+        const months = parseInt(req.query.months) || 12;
+        const redis = getRedis();
+        const cacheKey = `bi_trends:${userId}:${months}`;
+        
+        if (redis) {
+            const cached = await redis.get(cacheKey);
+            if (cached) return res.json({ cached: true, ...JSON.parse(cached) });
+        }
+
+        const currentDate = new Date();
+        const trends = [];
+
+        for (let i = months - 1; i >= 0; i--) {
+            const date = new Date(currentDate.getFullYear(), currentDate.getMonth() - i, 1);
+            const year = date.getFullYear();
+            const month = date.getMonth() + 1;
+
+            try {
+                const kpis = await computeMonthlyKPIs({ pool, userId, year, month, account: 'ALL' });
+                
+                if (kpis && kpis.totals) {
+                    trends.push({
+                        period: `${year}-${month.toString().padStart(2, '0')}`,
+                        year,
+                        month,
+                        total: kpis.totals.total || 0,
+                        business: kpis.totals.totalEmpresarial || 0,
+                        personal: kpis.totals.totalPessoal || 0,
+                        transactions: kpis.totals.despesas || 0,
+                        projection: kpis.projecao?.projecao || 0,
+                        hhi: kpis.concentracao?.hhi || 0,
+                        averageTicket: kpis.eficiencia?.ticketMedioEmp || 0
+                    });
+                }
+            } catch (monthError) {
+                console.warn(`Erro ao processar mês ${year}-${month}:`, monthError.message);
+            }
+        }
+
+        // Calcular variações percentuais
+        for (let i = 1; i < trends.length; i++) {
+            const current = trends[i];
+            const previous = trends[i - 1];
+            
+            current.totalChange = previous.total > 0 ? 
+                ((current.total - previous.total) / previous.total * 100) : 0;
+            current.businessChange = previous.business > 0 ? 
+                ((current.business - previous.business) / previous.business * 100) : 0;
+            current.personalChange = previous.personal > 0 ? 
+                ((current.personal - previous.personal) / previous.personal * 100) : 0;
+        }
+
+        const result = { trends, generatedAt: new Date().toISOString() };
+        
+        if (redis) await redis.setex(cacheKey, 1800, JSON.stringify(result)); // 30 min cache
+        res.json(result);
+
+    } catch (error) {
+        console.error('Erro BI trends:', error);
+        res.status(500).json({ error: 'Erro ao gerar análise de tendências', details: error.message });
+    }
+});
+
+// 2. Análise de Concentração (Pareto) com insights
+app.get('/api/bi/concentration', authenticateToken, async (req, res) => {
+    try {
+        const userId = parseInt(req.user?.id || 0);
+        const year = parseInt(req.query.year) || new Date().getFullYear();
+        const month = parseInt(req.query.month) || (new Date().getMonth() + 1);
+        
+        const kpis = await computeMonthlyKPIs({ pool, userId, year, month, account: 'ALL' });
+        
+        if (!kpis.distrib?.porPlano) {
+            return res.status(400).json({ error: 'Dados insuficientes para análise de concentração' });
+        }
+
+        // Análise por plano de contas
+        const planData = Object.entries(kpis.distrib.porPlano)
+            .map(([plan, amount]) => ({ plan, amount: parseFloat(amount) }))
+            .sort((a, b) => b.amount - a.amount);
+
+        const total = planData.reduce((sum, item) => sum + item.amount, 0);
+        let cumulative = 0;
+
+        const analysis = planData.map((item, index) => {
+            cumulative += item.amount;
+            const percentage = total > 0 ? (item.amount / total * 100) : 0;
+            const cumulativePercentage = total > 0 ? (cumulative / total * 100) : 0;
+            
+            return {
+                rank: index + 1,
+                plan: item.plan,
+                amount: item.amount,
+                percentage: percentage,
+                cumulativePercentage: cumulativePercentage,
+                isPareto80: cumulativePercentage <= 80
+            };
+        });
+
+        // Análise por conta
+        const accountData = Object.entries(kpis.distrib.porConta || {})
+            .map(([account, amount]) => ({ account, amount: parseFloat(amount) }))
+            .sort((a, b) => b.amount - a.amount);
+
+        const pareto80Count = analysis.filter(item => item.isPareto80).length;
+        
+        const result = {
+            period: { year, month },
+            total,
+            planAnalysis: {
+                planCount: planData.length,
+                pareto80Count,
+                pareto80Percentage: planData.length > 0 ? (pareto80Count / planData.length * 100) : 0,
+                hhi: kpis.concentracao?.hhi || 0,
+                hhiScaled: kpis.concentracao?.hhiScaled || 0,
+                details: analysis
+            },
+            accountAnalysis: {
+                accountCount: accountData.length,
+                details: accountData.slice(0, 10) // Top 10 contas
+            },
+            insights: {
+                concentrationLevel: kpis.concentracao?.hhi > 0.25 ? 'ALTA' : kpis.concentracao?.hhi > 0.15 ? 'MÉDIA' : 'BAIXA',
+                diversificationNeed: pareto80Count <= 3 ? 'ALTA' : pareto80Count <= 5 ? 'MÉDIA' : 'BAIXA',
+                topCategory: planData[0]?.plan || 'N/A',
+                topCategoryShare: planData.length > 0 ? (planData[0].amount / total * 100) : 0
+            }
+        };
+
+        res.json(result);
+
+    } catch (error) {
+        console.error('Erro BI concentration:', error);
+        res.status(500).json({ error: 'Erro ao gerar análise de concentração', details: error.message });
+    }
+});
+
+// 3. Dashboard Executivo Consolidado
+app.get('/api/bi/executive-dashboard', authenticateToken, async (req, res) => {
+    try {
+        const userId = parseInt(req.user?.id || 0);
+        const year = parseInt(req.query.year) || new Date().getFullYear();
+        const month = parseInt(req.query.month) || (new Date().getMonth() + 1);
+        const redis = getRedis();
+        const cacheKey = `bi_executive:${userId}:${year}:${month}`;
+        
+        if (redis) {
+            const cached = await redis.get(cacheKey);
+            if (cached) return res.json({ cached: true, ...JSON.parse(cached) });
+        }
+
+        // Buscar dados em paralelo
+        const [currentKpis, previousKpis, anomalies] = await Promise.all([
+            computeMonthlyKPIs({ pool, userId, year, month, account: 'ALL' }),
+            computeMonthlyKPIs({ 
+                pool, 
+                userId, 
+                year: month === 1 ? year - 1 : year, 
+                month: month === 1 ? 12 : month - 1, 
+                account: 'ALL' 
+            }),
+            detectAnomalies({ pool, userId, year, month }).catch(() => ({ anomalies: [] }))
+        ]);
+
+        // Calcular variações
+        const totalChange = previousKpis.totals?.total > 0 ? 
+            ((currentKpis.totals.total - previousKpis.totals.total) / previousKpis.totals.total * 100) : 0;
+        
+        const businessChange = previousKpis.totals?.totalEmpresarial > 0 ? 
+            ((currentKpis.totals.totalEmpresarial - previousKpis.totals.totalEmpresarial) / previousKpis.totals.totalEmpresarial * 100) : 0;
+
+        // Análise de risco
+        const riskLevel = anomalies.anomalies?.length > 5 ? 'ALTO' : 
+                         anomalies.anomalies?.length > 2 ? 'MÉDIO' : 'BAIXO';
+
+        // Análise de eficiência
+        const efficiency = {
+            costPerBusinessDay: currentKpis.eficiencia?.custoMedioDiaUtil || 0,
+            averageTicket: currentKpis.eficiencia?.ticketMedioEmp || 0,
+            transactionCount: currentKpis.totals?.despesas || 0
+        };
+
+        // Insights e alertas
+        const insights = [];
+        const alerts = [];
+
+        if (Math.abs(totalChange) > 20) {
+            alerts.push({
+                type: 'WARNING',
+                category: 'VARIAÇÃO_ALTA',
+                message: `Variação de ${totalChange.toFixed(1)}% em relação ao mês anterior`,
+                impact: 'HIGH'
+            });
+        }
+
+        if (currentKpis.concentracao?.hhi > 0.25) {
+            insights.push({
+                type: 'CONCENTRATION',
+                message: 'Alta concentração de gastos detectada',
+                recommendation: 'Considere diversificar as categorias de despesas'
+            });
+        }
+
+        if (currentKpis.projecao?.crescimentoProj > 15) {
+            alerts.push({
+                type: 'PROJECTION',
+                category: 'CRESCIMENTO_PROJETADO',
+                message: 'Projeção indica crescimento significativo até fim do mês',
+                impact: 'MEDIUM'
+            });
+        }
+
+        const dashboard = {
+            period: { year, month },
+            summary: {
+                totalSpent: currentKpis.totals?.total || 0,
+                businessSpent: currentKpis.totals?.totalEmpresarial || 0,
+                personalSpent: currentKpis.totals?.totalPessoal || 0,
+                projection: currentKpis.projecao?.projecao || 0,
+                monthlyChange: totalChange,
+                businessChange: businessChange,
+                transactionCount: currentKpis.totals?.despesas || 0
+            },
+            keyMetrics: {
+                concentration: {
+                    hhi: currentKpis.concentracao?.hhi || 0,
+                    level: currentKpis.concentracao?.hhi > 0.25 ? 'ALTA' : 'BAIXA'
+                },
+                efficiency,
+                riskLevel,
+                anomalyCount: anomalies.anomalies?.length || 0
+            },
+            insights,
+            alerts,
+            generatedAt: new Date().toISOString()
+        };
+
+        if (redis) await redis.setex(cacheKey, 900, JSON.stringify(dashboard)); // 15 min cache
+        res.json(dashboard);
+
+    } catch (error) {
+        console.error('Erro BI executive dashboard:', error);
+        res.status(500).json({ error: 'Erro ao gerar dashboard executivo', details: error.message });
+    }
+});
+
+// 4. Relatório de Performance vs Metas
+app.get('/api/bi/performance', authenticateToken, async (req, res) => {
+    try {
+        const userId = parseInt(req.user?.id || 0);
+        const year = parseInt(req.query.year) || new Date().getFullYear();
+        const month = parseInt(req.query.month) || (new Date().getMonth() + 1);
+
+        // Buscar KPIs e metas
+        const [kpis, goalsResult] = await Promise.all([
+            computeMonthlyKPIs({ pool, userId, year, month, account: 'ALL' }),
+            pool.query(`SELECT total_goal, business_goal, personal_goal FROM expense_goals WHERE user_id = ? ORDER BY created_at DESC LIMIT 1`, [userId])
+        ]);
+
+        const goals = goalsResult[0]?.[0] || {};
+
+        const performance = {
+            period: { year, month },
+            actual: {
+                total: kpis.totals?.total || 0,
+                business: kpis.totals?.totalEmpresarial || 0,
+                personal: kpis.totals?.totalPessoal || 0
+            },
+            goals: {
+                total: goals.total_goal || 0,
+                business: goals.business_goal || 0,
+                personal: goals.personal_goal || 0
+            },
+            variance: {},
+            projection: {
+                estimated: kpis.projecao?.projecao || 0,
+                growth: kpis.projecao?.crescimentoProj || 0
+            },
+            status: 'NO_GOALS'
+        };
+
+        // Calcular variâncias se há metas
+        if (goals.total_goal > 0) {
+            performance.variance.total = performance.actual.total - goals.total_goal;
+            performance.variance.totalPercent = (performance.variance.total / goals.total_goal) * 100;
+            performance.status = performance.variance.totalPercent <= 0 ? 'WITHIN_BUDGET' : 'OVER_BUDGET';
+        }
+
+        if (goals.business_goal > 0) {
+            performance.variance.business = performance.actual.business - goals.business_goal;
+            performance.variance.businessPercent = (performance.variance.business / goals.business_goal) * 100;
+        }
+
+        if (goals.personal_goal > 0) {
+            performance.variance.personal = performance.actual.personal - goals.personal_goal;
+            performance.variance.personalPercent = (performance.variance.personal / goals.personal_goal) * 100;
+        }
+
+        // Análise de projeção vs meta
+        if (goals.total_goal > 0 && performance.projection.estimated > 0) {
+            performance.projection.riskLevel = performance.projection.estimated > goals.total_goal ? 'HIGH' : 'LOW';
+            performance.projection.variance = performance.projection.estimated - goals.total_goal;
+            performance.projection.variancePercent = (performance.projection.variance / goals.total_goal) * 100;
+        }
+
+        res.json(performance);
+
+    } catch (error) {
+        console.error('Erro BI performance:', error);
+        res.status(500).json({ error: 'Erro ao gerar análise de performance', details: error.message });
+    }
+});
+
+// 5. Relatório Completo de BI (export/download)
+app.get('/api/bi/full-report', authenticateToken, async (req, res) => {
+    try {
+        const userId = parseInt(req.user?.id || 0);
+        const year = parseInt(req.query.year) || new Date().getFullYear();
+        const month = parseInt(req.query.month) || (new Date().getMonth() + 1);
+        const format = req.query.format || 'json'; // json, pdf (futuro)
+
+        // Coletar todos os dados em paralelo
+        const [trends, concentration, dashboard, performance, anomalies] = await Promise.all([
+            // Trends dos últimos 6 meses
+            (async () => {
+                const trendsData = [];
+                for (let i = 5; i >= 0; i--) {
+                    const date = new Date(year, month - 1 - i, 1);
+                    const y = date.getFullYear();
+                    const m = date.getMonth() + 1;
+                    try {
+                        const kpis = await computeMonthlyKPIs({ pool, userId, year: y, month: m, account: 'ALL' });
+                        if (kpis.totals) {
+                            trendsData.push({
+                                period: `${y}-${m.toString().padStart(2, '0')}`,
+                                total: kpis.totals.total || 0,
+                                business: kpis.totals.totalEmpresarial || 0,
+                                personal: kpis.totals.totalPessoal || 0
+                            });
+                        }
+                    } catch (e) { console.warn(`Erro trend ${y}-${m}:`, e.message); }
+                }
+                return trendsData;
+            })(),
+            // Concentração do mês atual
+            (async () => {
+                const kpis = await computeMonthlyKPIs({ pool, userId, year, month, account: 'ALL' });
+                return {
+                    hhi: kpis.concentracao?.hhi || 0,
+                    planDistribution: kpis.distrib?.porPlano || {},
+                    accountDistribution: kpis.distrib?.porConta || {}
+                };
+            })(),
+            // Dashboard executivo
+            (async () => {
+                const kpis = await computeMonthlyKPIs({ pool, userId, year, month, account: 'ALL' });
+                return {
+                    summary: kpis.totals || {},
+                    efficiency: kpis.eficiencia || {},
+                    projection: kpis.projecao || {}
+                };
+            })(),
+            // Performance
+            (async () => {
+                const [kpis, goalsResult] = await Promise.all([
+                    computeMonthlyKPIs({ pool, userId, year, month, account: 'ALL' }),
+                    pool.query(`SELECT total_goal, business_goal FROM expense_goals WHERE user_id = ? ORDER BY created_at DESC LIMIT 1`, [userId])
+                ]);
+                const goals = goalsResult[0]?.[0] || {};
+                return { actual: kpis.totals || {}, goals };
+            })(),
+            // Anomalias
+            detectAnomalies({ pool, userId, year, month }).catch(() => ({ anomalies: [] }))
+        ]);
+
+        const report = {
+            metadata: {
+                generatedAt: new Date().toISOString(),
+                period: { year, month },
+                userId,
+                reportType: 'BUSINESS_INTELLIGENCE_COMPLETE'
+            },
+            executiveSummary: {
+                totalSpent: dashboard.summary.total || 0,
+                businessSpent: dashboard.summary.totalEmpresarial || 0,
+                personalSpent: dashboard.summary.totalPessoal || 0,
+                projection: dashboard.projection.projecao || 0,
+                efficiency: {
+                    costPerDay: dashboard.efficiency.custoMedioDiaUtil || 0,
+                    averageTicket: dashboard.efficiency.ticketMedioEmp || 0
+                },
+                riskFactors: {
+                    concentration: concentration.hhi > 0.25,
+                    anomalies: anomalies.anomalies?.length > 0,
+                    projection: dashboard.projection.crescimentoProj > 20
+                }
+            },
+            trends: {
+                historical: trends,
+                analysis: trends.length >= 2 ? {
+                    growth: trends[trends.length - 1].total > trends[0].total,
+                    avgGrowthRate: trends.length > 1 ? 
+                        (trends[trends.length - 1].total / trends[0].total - 1) * 100 / (trends.length - 1) : 0
+                } : {}
+            },
+            concentration,
+            performance,
+            anomalies: {
+                count: anomalies.anomalies?.length || 0,
+                details: anomalies.anomalies?.slice(0, 10) || [] // Top 10 anomalias
+            },
+            recommendations: []
+        };
+
+        // Gerar recomendações
+        if (concentration.hhi > 0.25) {
+            report.recommendations.push({
+                category: 'DIVERSIFICATION',
+                priority: 'HIGH',
+                message: 'Alta concentração de gastos detectada',
+                action: 'Redistribuir orçamento entre mais categorias'
+            });
+        }
+
+        if (trends.length >= 2 && trends[trends.length - 1].total > trends[trends.length - 2].total * 1.15) {
+            report.recommendations.push({
+                category: 'COST_CONTROL',
+                priority: 'MEDIUM',
+                message: 'Crescimento acelerado de gastos',
+                action: 'Revisar processos de aprovação'
+            });
+        }
+
+        if (anomalies.anomalies?.length > 0) {
+            report.recommendations.push({
+                category: 'GOVERNANCE',
+                priority: 'HIGH',
+                message: `${anomalies.anomalies.length} anomalia(s) detectada(s)`,
+                action: 'Investigar transações anômalas'
+            });
+        }
+
+        res.json(report);
+
+    } catch (error) {
+        console.error('Erro BI full report:', error);
+        res.status(500).json({ error: 'Erro ao gerar relatório completo de BI', details: error.message });
+    }
+});
+
+// 6. Relatório Executivo Integrado (KPIs + BI)
+app.get('/api/bi/executive-report', authenticateToken, async (req, res) => {
+    try {
+        const userId = parseInt(req.user?.id || 0);
+        const year = parseInt(req.query.year) || new Date().getFullYear();
+        const month = parseInt(req.query.month) || (new Date().getMonth() + 1);
+        const redis = getRedis();
+        const cacheKey = `bi_executive_report:${userId}:${year}:${month}`;
+        
+        if (redis) {
+            const cached = await redis.get(cacheKey);
+            if (cached) return res.json({ cached: true, ...JSON.parse(cached) });
+        }
+
+        const report = await generateExecutiveReport(pool, userId, year, month);
+        
+        if (redis) await redis.setex(cacheKey, 1800, JSON.stringify(report)); // 30 min cache
+        res.json(report);
+
+    } catch (error) {
+        console.error('Erro BI executive report:', error);
+        res.status(500).json({ error: 'Erro ao gerar relatório executivo', details: error.message });
+    }
+});
+
+// 7. Análise Comparativa de Períodos
+app.get('/api/bi/comparative', authenticateToken, async (req, res) => {
+    try {
+        const userId = parseInt(req.user?.id || 0);
+        const currentYear = parseInt(req.query.currentYear) || new Date().getFullYear();
+        const currentMonth = parseInt(req.query.currentMonth) || (new Date().getMonth() + 1);
+        const compareYear = parseInt(req.query.compareYear) || (currentMonth === 1 ? currentYear - 1 : currentYear);
+        const compareMonth = parseInt(req.query.compareMonth) || (currentMonth === 1 ? 12 : currentMonth - 1);
+
+        const comparison = await computeComparativeAnalysis(pool, userId, currentYear, currentMonth, compareYear, compareMonth);
+        res.json(comparison);
+
+    } catch (error) {
+        console.error('Erro BI comparative:', error);
+        res.status(500).json({ error: 'Erro ao gerar análise comparativa', details: error.message });
+    }
+});
 
 // --- 5. CONFIGURAÇÃO DO MULTER (UPLOAD DE FICHEIROS) ---
 const storage = multer.diskStorage({
@@ -1598,8 +2096,484 @@ async function generateChartsForPDF(porPlano, porConta, expenses, chartJSNodeCan
     return charts;
 }
 
+// 🤖 FUNÇÃO PRINCIPAL: RELATÓRIO BI INTELIGENTE
+async function generateIntelligentBIReport(data) {
+    const { expenses, total, totalPessoal, totalEmpresarial, startDate, endDate, contaNome, year, month, porPlano, porConta, userId } = data;
+    
+    console.log('🎯 Gerando relatório BI inteligente...');
+    
+    // CRIAR DOCUMENTO PDF
+    const doc = new pdfkit({ margin: 30, size: 'A4' });
+    
+    // Configurar fonte com fallback para Railway
+    try {
+        const fontPath = path.join(__dirname, 'fonts', 'NotoSans-Regular.ttf');
+        if (fs.existsSync(fontPath)) {
+            doc.registerFont('NotoSans', fontPath);
+            doc.font('NotoSans');
+        } else {
+            doc.font('Helvetica');
+        }
+    } catch (fontError) {
+        doc.font('Helvetica');
+    }
+
+    // === 📊 PÁGINA 1: DASHBOARD EXECUTIVO ===
+    await createExecutiveDashboard(doc, data);
+    
+    // === 📈 PÁGINA 2: ANÁLISES BI E INSIGHTS ===
+    doc.addPage();
+    await createBIAnalyticsPage(doc, data);
+    
+    // === 📋 PÁGINA 3: DETALHAMENTO INTELIGENTE ===
+    doc.addPage();
+    await createIntelligentDetailPage(doc, data);
+    
+    // === 📊 PÁGINA 4: GRÁFICOS MODERNOS ===
+    doc.addPage();
+    await createModernChartsPage(doc, data);
+    
+    return doc;
+}
+
+// 📊 PÁGINA 1: DASHBOARD EXECUTIVO
+async function createExecutiveDashboard(doc, data) {
+    const { expenses, total, totalPessoal, totalEmpresarial, startDate, endDate, contaNome, year, month } = data;
+    
+    // === CABEÇALHO EXECUTIVO MODERNO ===
+    const gradient = doc.linearGradient(0, 0, doc.page.width, 100);
+    gradient.stop(0, '#667eea').stop(0.5, '#764ba2').stop(1, '#3B82F6');
+    
+    doc.rect(0, 0, doc.page.width, 100).fill(gradient);
+    
+    // Logo e título principal
+    doc.fontSize(32).fillColor('#FFFFFF').text('💼', 40, 25);
+    doc.fontSize(24).text('DASHBOARD EXECUTIVO', 90, 25, { width: 400 });
+    
+    const monthNames = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+                       'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+    doc.fontSize(14).fillColor('#E5E7EB').text(`${monthNames[month-1]} ${year} • ${contaNome}`, 90, 55);
+    
+    // Data de geração e timestamp
+    const now = new Date();
+    doc.fontSize(10).fillColor('#D1D5DB').text(
+        `Gerado em ${now.toLocaleDateString('pt-BR')} às ${now.toLocaleTimeString('pt-BR')}`, 
+        0, 75, { width: doc.page.width - 40, align: 'right' }
+    );
+
+    doc.y = 120;
+
+    // === KPIs PRINCIPAIS COM DESIGN MODERNO ===
+    doc.fontSize(20).fillColor('#1F2937').text('📊 INDICADORES-CHAVE DE PERFORMANCE', { underline: true });
+    doc.moveDown(1);
+
+    const kpiY = doc.y;
+    const kpiWidth = 160;
+    const kpiHeight = 120;
+    const spacing = 20;
+
+    // Calcular métricas inteligentes
+    const mediaDiaria = total / new Date(year, month, 0).getDate();
+    const percentualPessoal = total > 0 ? (totalPessoal / total * 100) : 0;
+    const percentualEmpresarial = total > 0 ? (totalEmpresarial / total * 100) : 0;
+    
+    // KPI 1: Total Geral
+    doc.roundedRect(40, kpiY, kpiWidth, kpiHeight, 15).fill('#3B82F6');
+    doc.fillColor('#FFFFFF').fontSize(14).text('💰 TOTAL GERAL', 50, kpiY + 20, { width: kpiWidth - 20, align: 'center' });
+    doc.fontSize(20).text(`R$ ${total.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`, 50, kpiY + 45, { width: kpiWidth - 20, align: 'center' });
+    doc.fontSize(11).text(`${expenses.length} transações`, 50, kpiY + 75, { width: kpiWidth - 20, align: 'center' });
+    doc.fontSize(10).text(`Média: R$ ${(total/expenses.length || 0).toFixed(2)}`, 50, kpiY + 90, { width: kpiWidth - 20, align: 'center' });
+
+    // KPI 2: Pessoal
+    const kpi2X = 40 + kpiWidth + spacing;
+    doc.roundedRect(kpi2X, kpiY, kpiWidth, kpiHeight, 15).fill('#10B981');
+    doc.fillColor('#FFFFFF').fontSize(14).text('🏠 PESSOAL', kpi2X + 10, kpiY + 20, { width: kpiWidth - 20, align: 'center' });
+    doc.fontSize(20).text(`R$ ${totalPessoal.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`, kpi2X + 10, kpiY + 45, { width: kpiWidth - 20, align: 'center' });
+    doc.fontSize(11).text(`${percentualPessoal.toFixed(1)}% do total`, kpi2X + 10, kpiY + 75, { width: kpiWidth - 20, align: 'center' });
+    const pessoaisCount = expenses.filter(e => !e.is_business_expense).length;
+    doc.fontSize(10).text(`${pessoaisCount} transações`, kpi2X + 10, kpiY + 90, { width: kpiWidth - 20, align: 'center' });
+
+    // KPI 3: Empresarial
+    const kpi3X = kpi2X + kpiWidth + spacing;
+    doc.roundedRect(kpi3X, kpiY, kpiWidth, kpiHeight, 15).fill('#F59E0B');
+    doc.fillColor('#FFFFFF').fontSize(14).text('💼 EMPRESARIAL', kpi3X + 10, kpiY + 20, { width: kpiWidth - 20, align: 'center' });
+    doc.fontSize(20).text(`R$ ${totalEmpresarial.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`, kpi3X + 10, kpiY + 45, { width: kpiWidth - 20, align: 'center' });
+    doc.fontSize(11).text(`${percentualEmpresarial.toFixed(1)}% do total`, kpi3X + 10, kpiY + 75, { width: kpiWidth - 20, align: 'center' });
+    const empresariaisCount = expenses.filter(e => e.is_business_expense).length;
+    doc.fontSize(10).text(`${empresariaisCount} transações`, kpi3X + 10, kpiY + 90, { width: kpiWidth - 20, align: 'center' });
+
+    doc.y = kpiY + kpiHeight + 30;
+
+    // === INSIGHTS INTELIGENTES ===
+    doc.fontSize(18).fillColor('#1F2937').text('🧠 INSIGHTS INTELIGENTES', { underline: true });
+    doc.moveDown(1);
+
+    // Análise de tendências
+    const insights = generateIntelligentInsights(expenses, total, totalPessoal, totalEmpresarial, year, month);
+    
+    insights.forEach((insight, index) => {
+        const colors = ['#EFF6FF', '#F0F9FF', '#ECFDF5', '#FFFBEB', '#FEF2F2'];
+        const textColors = ['#1E40AF', '#0C4A6E', '#065F46', '#92400E', '#DC2626'];
+        
+        doc.roundedRect(40, doc.y, doc.page.width - 80, 50, 10).fill(colors[index % colors.length]);
+        doc.fillColor(textColors[index % textColors.length]).fontSize(12)
+           .text(`${insight.icon} ${insight.title}`, 55, doc.y + 12, { width: doc.page.width - 110 });
+        doc.fontSize(10).fillColor('#374151')
+           .text(insight.description, 55, doc.y + 30, { width: doc.page.width - 110 });
+        
+        doc.y += 65;
+    });
+
+    // === ALERTAS E RECOMENDAÇÕES ===
+    doc.moveDown(1);
+    doc.fontSize(18).fillColor('#DC2626').text('⚠️ ALERTAS & RECOMENDAÇÕES', { underline: true });
+    doc.moveDown(0.5);
+
+    const alerts = generateSmartAlerts(expenses, total, totalPessoal, totalEmpresarial, year, month);
+    
+    if (alerts.length === 0) {
+        doc.roundedRect(40, doc.y, doc.page.width - 80, 40, 8).fill('#D1FAE5');
+        doc.fillColor('#065F46').fontSize(12).text('✅ Nenhum alerta crítico identificado. Ótimo controle financeiro!', 55, doc.y + 12);
+        doc.y += 50;
+    } else {
+        alerts.forEach(alert => {
+            const alertColor = alert.level === 'critico' ? '#FEF2F2' : alert.level === 'atencao' ? '#FFFBEB' : '#F0F9FF';
+            const alertTextColor = alert.level === 'critico' ? '#DC2626' : alert.level === 'atencao' ? '#D97706' : '#2563EB';
+            
+            doc.roundedRect(40, doc.y, doc.page.width - 80, 50, 8).fill(alertColor);
+            doc.fillColor(alertTextColor).fontSize(12).text(`${alert.icon} ${alert.message}`, 55, doc.y + 12, { width: doc.page.width - 110 });
+            doc.fontSize(10).fillColor('#374151').text(alert.recommendation, 55, doc.y + 30, { width: doc.page.width - 110 });
+            doc.y += 65;
+        });
+    }
+}
+
+// 📈 PÁGINA 2: ANÁLISES BI E INSIGHTS
+async function createBIAnalyticsPage(doc, data) {
+    const { expenses, total, totalPessoal, totalEmpresarial, porPlano, porConta, year, month } = data;
+    
+    // Cabeçalho da página
+    doc.rect(0, 0, doc.page.width, 80).fill('#764ba2');
+    doc.fontSize(24).fillColor('#FFFFFF').text('📈 ANÁLISES BUSINESS INTELLIGENCE', 0, 25, { align: 'center', width: doc.page.width });
+    doc.fontSize(14).fillColor('#E5E7EB').text('Insights Avançados & Análises Preditivas', 0, 50, { align: 'center', width: doc.page.width });
+    
+    doc.y = 100;
+    
+    // === ANÁLISE TEMPORAL ===
+    doc.fontSize(18).fillColor('#1F2937').text('📅 ANÁLISE TEMPORAL', { underline: true });
+    doc.moveDown(1);
+    
+    const temporalAnalysis = analyzeTemporalPatterns(expenses, year, month);
+    
+    // Gráfico de distribuição semanal
+    doc.fontSize(14).fillColor('#4B5563').text('Distribuição por Semanas do Mês:');
+    doc.moveDown(0.5);
+    
+    temporalAnalysis.weekly.forEach((week, index) => {
+        const weekWidth = (doc.page.width - 120) * (week.total / total);
+        const barColor = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6'][index];
+        
+        doc.roundedRect(60, doc.y, weekWidth, 25, 5).fill(barColor);
+        doc.fillColor('#FFFFFF').fontSize(10).text(
+            `Sem ${index + 1}: R$ ${week.total.toFixed(2)} (${week.count} trans.)`, 
+            70, doc.y + 7, { width: weekWidth - 20 }
+        );
+        doc.y += 35;
+    });
+    
+    doc.moveDown(1);
+    
+    // === ANÁLISE CATEGORÍAS TOP ===
+    doc.fontSize(18).fillColor('#1F2937').text('🏆 TOP CATEGORIAS', { underline: true });
+    doc.moveDown(1);
+    
+    const topCategories = Object.entries(porConta)
+        .sort(([,a], [,b]) => b - a)
+        .slice(0, 10);
+    
+    topCategories.forEach(([categoria, valor], index) => {
+        const percentage = (valor / total * 100).toFixed(1);
+        const barWidth = (doc.page.width - 200) * (valor / topCategories[0][1]);
+        const colors = ['#1E40AF', '#059669', '#DC2626', '#7C3AED', '#EA580C', '#0891B2', '#65A30D', '#BE185D', '#4338CA', '#0F766E'];
+        
+        doc.fontSize(11).fillColor('#374151').text(`${index + 1}. ${categoria}`, 40, doc.y);
+        doc.roundedRect(200, doc.y - 2, barWidth, 18, 3).fill(colors[index]);
+        doc.fillColor('#FFFFFF').fontSize(9).text(`R$ ${valor.toFixed(2)} (${percentage}%)`, 205, doc.y + 2);
+        doc.y += 25;
+    });
+    
+    doc.moveDown(1);
+    
+    // === ANÁLISE COMPARATIVA ===
+    doc.fontSize(18).fillColor('#1F2937').text('⚖️ ANÁLISE COMPARATIVA', { underline: true });
+    doc.moveDown(1);
+    
+    const comparative = generateComparativeAnalysis(expenses, total, totalPessoal, totalEmpresarial);
+    
+    comparative.forEach(comp => {
+        doc.roundedRect(40, doc.y, doc.page.width - 80, 60, 8).fill('#F8FAFC');
+        doc.fillColor('#1E293B').fontSize(12).text(`${comp.icon} ${comp.title}`, 55, doc.y + 12);
+        doc.fontSize(10).fillColor('#475569').text(comp.description, 55, doc.y + 30, { width: doc.page.width - 110 });
+        doc.y += 75;
+    });
+}
+
+// 📋 PÁGINA 3: DETALHAMENTO INTELIGENTE
+async function createIntelligentDetailPage(doc, data) {
+    const { expenses, porPlano, year, month } = data;
+    
+    // Cabeçalho
+    doc.rect(0, 0, doc.page.width, 80).fill('#4F46E5');
+    doc.fontSize(24).fillColor('#FFFFFF').text('📋 DETALHAMENTO INTELIGENTE', 0, 25, { align: 'center', width: doc.page.width });
+    doc.fontSize(14).fillColor('#E5E7EB').text('Análise Detalhada por Planos de Conta', 0, 50, { align: 'center', width: doc.page.width });
+    
+    doc.y = 100;
+    
+    // Agrupar por planos e analisar
+    const detailedAnalysis = Object.entries(porPlano)
+        .sort(([,a], [,b]) => b - a)
+        .slice(0, 8); // Top 8 planos
+    
+    doc.fontSize(16).fillColor('#1F2937').text('📊 ANÁLISE POR PLANO DE CONTA', { underline: true });
+    doc.moveDown(1);
+    
+    detailedAnalysis.forEach(([plano, total], index) => {
+        const planoExpenses = expenses.filter(e => e.account_plan_code === plano);
+        const avgTransaction = total / planoExpenses.length;
+        
+        const colors = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#06B6D4', '#84CC16', '#F97316'];
+        
+        doc.roundedRect(40, doc.y, doc.page.width - 80, 80, 10).fill('#F8FAFC');
+        
+        // Header do plano
+        doc.roundedRect(50, doc.y + 10, doc.page.width - 100, 25, 5).fill(colors[index]);
+        doc.fillColor('#FFFFFF').fontSize(12).text(`Plano ${plano}`, 60, doc.y + 18, { width: 200 });
+        doc.text(`R$ ${total.toFixed(2)}`, 0, doc.y + 18, { width: doc.page.width - 110, align: 'right' });
+        
+        // Detalhes
+        doc.fillColor('#374151').fontSize(10)
+           .text(`• ${planoExpenses.length} transações`, 60, doc.y + 45)
+           .text(`• Média por transação: R$ ${avgTransaction.toFixed(2)}`, 60, doc.y + 60)
+           .text(`• Percentual do total: ${(total / expenses.reduce((sum, e) => sum + parseFloat(e.amount), 0) * 100).toFixed(1)}%`, 280, doc.y + 45)
+           .text(`• Maior transação: R$ ${Math.max(...planoExpenses.map(e => parseFloat(e.amount))).toFixed(2)}`, 280, doc.y + 60);
+        
+        doc.y += 95;
+    });
+}
+// 📊 PÁGINA 4: GRÁFICOS MODERNOS
+async function createModernChartsPage(doc, data) {
+    const { expenses, porPlano, porConta } = data;
+    
+    // Cabeçalho
+    doc.rect(0, 0, doc.page.width, 80).fill('#059669');
+    doc.fontSize(24).fillColor('#FFFFFF').text('📊 VISUALIZAÇÕES AVANÇADAS', 0, 25, { align: 'center', width: doc.page.width });
+    doc.fontSize(14).fillColor('#E5E7EB').text('Gráficos Inteligentes & Dashboards Visuais', 0, 50, { align: 'center', width: doc.page.width });
+    
+    doc.y = 100;
+    
+    // Gerar gráficos se ChartJS disponível
+    if (ChartJSNodeCanvas) {
+        try {
+            const chartJSNodeCanvas = new ChartJSNodeCanvas({ 
+                width: 500, 
+                height: 300, 
+                backgroundColour: 'white'
+            });
+            const charts = await generateChartsForPDF(porPlano, porConta, expenses, chartJSNodeCanvas);
+            
+            // Inserir gráficos no PDF
+            if (charts.planChart) {
+                doc.fontSize(14).fillColor('#1F2937').text('📊 Distribuição por Plano de Conta', { underline: true });
+                doc.image(charts.planChart, 50, doc.y + 20, { width: 500, height: 300 });
+                doc.y += 340;
+            }
+            
+            if (doc.y > 600) {
+                doc.addPage();
+                doc.y = 50;
+            }
+            
+            if (charts.accountChart) {
+                doc.fontSize(14).fillColor('#1F2937').text('🏆 Top Categorias de Gastos', { underline: true });
+                doc.image(charts.accountChart, 50, doc.y + 20, { width: 500, height: 300 });
+                doc.y += 340;
+            }
+            
+        } catch (chartError) {
+            console.error('Erro ao inserir gráficos no PDF:', chartError);
+            doc.fontSize(12).fillColor('#DC2626').text('⚠️ Gráficos não disponíveis no momento', 50, doc.y);
+        }
+    } else {
+        doc.fontSize(12).fillColor('#6B7280').text('📊 Gráficos não disponíveis (ChartJS não carregado)', 50, doc.y);
+    }
+}
+
+// 🧠 GERADOR DE INSIGHTS INTELIGENTES
+function generateIntelligentInsights(expenses, total, totalPessoal, totalEmpresarial, year, month) {
+    const insights = [];
+    
+    // Insight 1: Análise de proporção
+    const proporcaoPessoal = totalPessoal / total * 100;
+    if (proporcaoPessoal > 70) {
+        insights.push({
+            icon: '🏠',
+            title: 'Foco nos Gastos Pessoais',
+            description: `${proporcaoPessoal.toFixed(1)}% dos gastos são pessoais. Considere revisar despesas pessoais para otimização.`
+        });
+    } else if (proporcaoPessoal < 30) {
+        insights.push({
+            icon: '💼',
+            title: 'Predominância Empresarial',
+            description: `${(100 - proporcaoPessoal).toFixed(1)}% dos gastos são empresariais. Boa gestão de custos pessoais.`
+        });
+    }
+    
+    // Insight 2: Análise de transações
+    const mediaTransacao = total / expenses.length;
+    if (mediaTransacao > 500) {
+        insights.push({
+            icon: '💰',
+            title: 'Transações de Alto Valor',
+            description: `Média de R$ ${mediaTransacao.toFixed(2)} por transação. Transações de grande valor dominam o período.`
+        });
+    } else if (mediaTransacao < 50) {
+        insights.push({
+            icon: '🪙',
+            title: 'Micro Transações Frequentes',
+            description: `Média baixa de R$ ${mediaTransacao.toFixed(2)} por transação. Muitas pequenas despesas do dia a dia.`
+        });
+    }
+    
+    // Insight 3: Análise temporal
+    const diasComGastos = [...new Set(expenses.map(e => new Date(e.transaction_date).getDate()))].length;
+    const diasNoMes = new Date(year, month, 0).getDate();
+    const frequenciaGastos = diasComGastos / diasNoMes * 100;
+    
+    if (frequenciaGastos > 80) {
+        insights.push({
+            icon: '📅',
+            title: 'Gastos Distribuídos',
+            description: `Gastos em ${diasComGastos} de ${diasNoMes} dias (${frequenciaGastos.toFixed(1)}%). Boa distribuição temporal.`
+        });
+    } else if (frequenciaGastos < 40) {
+        insights.push({
+            icon: '⚡',
+            title: 'Gastos Concentrados',
+            description: `Gastos concentrados em ${diasComGastos} dias. Pode indicar padrão sazonal ou pontual.`
+        });
+    }
+    
+    return insights;
+}
+
+// 🚨 GERADOR DE ALERTAS INTELIGENTES
+function generateSmartAlerts(expenses, total, totalPessoal, totalEmpresarial, year, month) {
+    const alerts = [];
+    
+    // Alerta 1: Concentração de gastos
+    const maiorGasto = Math.max(...expenses.map(e => parseFloat(e.amount)));
+    if (maiorGasto / total > 0.3) {
+        alerts.push({
+            level: 'atencao',
+            icon: '⚠️',
+            message: 'Concentração de Gastos Detectada',
+            recommendation: `Uma única transação representa ${(maiorGasto/total*100).toFixed(1)}% do total. Verifique se é um gasto recorrente ou pontual.`
+        });
+    }
+    
+    // Alerta 2: Desequilíbrio pessoal vs empresarial
+    const proporcaoPessoal = totalPessoal / total * 100;
+    if (proporcaoPessoal > 85) {
+        alerts.push({
+            level: 'atencao',
+            icon: '🏠',
+            message: 'Gastos Pessoais Dominantes',
+            recommendation: 'Gastos pessoais representam mais de 85% do total. Considere revisar estratégias de economia pessoal.'
+        });
+    }
+    
+    // Alerta 3: Volume de transações
+    const diasNoMes = new Date(year, month, 0).getDate();
+    const transacoesPorDia = expenses.length / diasNoMes;
+    if (transacoesPorDia > 10) {
+        alerts.push({
+            level: 'info',
+            icon: '📊',
+            message: 'Alto Volume de Transações',
+            recommendation: `Média de ${transacoesPorDia.toFixed(1)} transações por dia. Considere consolidar pequenas despesas.`
+        });
+    }
+    
+    return alerts;
+}
+
+// 📈 ANÁLISE TEMPORAL
+function analyzeTemporalPatterns(expenses, year, month) {
+    const weekly = [
+        { total: 0, count: 0 },
+        { total: 0, count: 0 },
+        { total: 0, count: 0 },
+        { total: 0, count: 0 },
+        { total: 0, count: 0 }
+    ];
+    
+    expenses.forEach(expense => {
+        const day = new Date(expense.transaction_date).getDate();
+        const weekIndex = Math.min(Math.floor((day - 1) / 7), 4);
+        
+        weekly[weekIndex].total += parseFloat(expense.amount);
+        weekly[weekIndex].count++;
+    });
+    
+    return { weekly };
+}
+
+// ⚖️ ANÁLISE COMPARATIVA
+function generateComparativeAnalysis(expenses, total, totalPessoal, totalEmpresarial) {
+    const analysis = [];
+    
+    // Comparação de volumes
+    if (totalPessoal > totalEmpresarial) {
+        const diferenca = totalPessoal - totalEmpresarial;
+        analysis.push({
+            icon: '🏠',
+            title: 'Gastos Pessoais Superiores',
+            description: `Gastos pessoais excedem empresariais em R$ ${diferenca.toFixed(2)}. Representam ${(totalPessoal/total*100).toFixed(1)}% do total.`
+        });
+    } else {
+        const diferenca = totalEmpresarial - totalPessoal;
+        analysis.push({
+            icon: '💼',
+            title: 'Gastos Empresariais Superiores',
+            description: `Gastos empresariais excedem pessoais em R$ ${diferenca.toFixed(2)}. Representam ${(totalEmpresarial/total*100).toFixed(1)}% do total.`
+        });
+    }
+    
+    // Análise de frequência
+    const pessoaisCount = expenses.filter(e => !e.is_business_expense).length;
+    const empresariaisCount = expenses.filter(e => e.is_business_expense).length;
+    
+    const mediaPessoal = totalPessoal / pessoaisCount || 0;
+    const mediaEmpresarial = totalEmpresarial / empresariaisCount || 0;
+    
+    if (mediaPessoal > mediaEmpresarial) {
+        analysis.push({
+            icon: '📊',
+            title: 'Transações Pessoais Maiores',
+            description: `Média pessoal: R$ ${mediaPessoal.toFixed(2)} vs empresarial: R$ ${mediaEmpresarial.toFixed(2)}. Gastos pessoais são mais concentrados.`
+        });
+    } else {
+        analysis.push({
+            icon: '📈',
+            title: 'Transações Empresariais Maiores',
+            description: `Média empresarial: R$ ${mediaEmpresarial.toFixed(2)} vs pessoal: R$ ${mediaPessoal.toFixed(2)}. Gastos empresariais são mais significativos.`
+        });
+    }
+    
+    return analysis;
+}
+
 // Função auxiliar para gerar PDF simplificado em caso de erro
-function generateSimplePDF(expenses, total, startDate, endDate, contaNome, year, month) {
     console.log(`🆘 [FALLBACK] Gerando PDF simplificado...`);
     
     try {
@@ -1896,82 +2870,44 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
 
         console.log(`📋 [STEP 10.1] Despesas agrupadas em ${sortedPlanGroups.length} planos de contas`);
 
-        console.log(`🎨 [STEP 11] Iniciando criação do PDF...`);
+        console.log(`🧠 [STEP 11] Iniciando geração do relatório BI inteligente...`);
         
-        let doc;
         try {
-            doc = new pdfkit();
-            console.log(`✅ [STEP 11.1] Instância PDFKit criada com sucesso`);
-        } catch (pdfCreateError) {
-            console.error(`❌ [ERRO] Falha ao criar instância PDFKit:`, pdfCreateError);
-            throw new Error(`Erro ao criar documento PDF: ${pdfCreateError.message}`);
+            // Gerar relatório BI completo usando a nova função
+            const biReport = await generateIntelligentBIReport(
+                expenses, 
+                total, 
+                totalEmpresarial, 
+                totalPessoal, 
+                empresariais, 
+                pessoaisFiltrados, 
+                expensesByPlan,
+                startDate,
+                endDate,
+                contaNome,
+                year,
+                month
+            );
+            
+            console.log(`✅ [STEP 11] Relatório BI inteligente gerado com sucesso!`);
+            
+            // Configurar headers de resposta
+            res.setHeader('Content-Type', 'application/pdf');
+            res.setHeader('Content-Disposition', `attachment; filename=relatorio-bi-inteligente-${year}-${month}${account ? '-' + account : ''}.pdf`);
+            
+            // Enviar o documento BI
+            biReport.pipe(res);
+            
+            console.log(`🎉 [SUCESSO] Relatório BI inteligente enviado com sucesso! 
+            📊 Dados processados: ${expenses.length} despesas totalizando R$ ${total.toFixed(2)}
+            🧠 Sistema BI: Análise inteligente com insights automatizados
+            📄 Dashboard: 4 páginas executivas com visualizações avançadas
+            ⏱️ Processamento concluído`);
+
+        } catch (biError) {
+            console.error(`❌ [ERRO] Falha na geração do relatório BI:`, biError);
+            throw new Error(`Erro ao gerar relatório BI inteligente: ${biError.message}`);
         }
-        
-        // Tentar registrar fonte com fallback robusto para Railway
-        try {
-            console.log(`🔤 [STEP 11.2] Configurando fontes...`);
-            const fontPath = path.join(__dirname, 'fonts', 'NotoSans-Regular.ttf');
-            if (fs.existsSync(fontPath)) {
-                doc.registerFont('NotoSans', fontPath);
-                doc.font('NotoSans');
-                console.log('✅ [STEP 11.2] Fonte NotoSans carregada com sucesso');
-            } else {
-                console.log('⚠️ [STEP 11.2] Fonte NotoSans não encontrada no Railway, usando fonte padrão Helvetica');
-                doc.font('Helvetica');
-            }
-        } catch (fontError) {
-            console.warn('⚠️ [STEP 11.2] Erro ao carregar fonte NotoSans no Railway:', fontError.message);
-            try {
-                doc.font('Helvetica');
-                console.log('✅ Usando fonte padrão Helvetica');
-            } catch (fallbackError) {
-                console.warn('⚠️ Erro com fonte Helvetica, usando Times-Roman:', fallbackError.message);
-                doc.font('Times-Roman');
-            }
-        }
-        
-        // Registro opcional de fontes de emoji (se presentes na pasta fonts)
-        const emojiFontCandidates = ['NotoColorEmoji.ttf','NotoEmoji-Regular.ttf','Symbola.ttf','DejaVuSans.ttf'];
-        let emojiFontFound = false;
-        for (const fname of emojiFontCandidates) {
-            const fpath = path.join(__dirname,'fonts',fname);
-            if (fs.existsSync(fpath)) {
-                try { doc.registerFont('EmojiCapable', fpath); emojiFontFound = true; break; } catch(_) {}
-            }
-        }
-        
-        // Helper simples para texto com possíveis emojis (usa fonte fallback se existir)
-        const useEmojiFont = (text) => emojiFontFound && /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u.test(text);
-        
-        // Renderização simples com fallback de fonte para emojis (sem criação de imagens).
-        const originalTextFn = doc.text.bind(doc);
-        doc.text = function(text, x, y, options = {}) {
-            return originalTextFn(text, x, y, options);
-        };
-
-        // 🎨 CAPA SUPER ESTILIZADA
-        doc.rect(0, 0, doc.page.width, doc.page.height)
-           .fill('#1E293B'); // Fundo escuro elegante
-
-        // Gradiente simulado com retângulos
-        doc.rect(0, 0, doc.page.width, 200).fill('#3B82F6');
-        doc.rect(0, 150, doc.page.width, 100).fill('#6366F1');
-        doc.rect(0, 200, doc.page.width, 50).fill('#8B5CF6');
-
-    // Título principal com emoji grande (centralizado absoluto)
-    doc.fillColor('#FFFFFF').fontSize(60).text('📊', 0, 80, { align: 'center', width: doc.page.width });
-    doc.fontSize(30).fillColor('#FFFFFF').text('RELATÓRIO FINANCEIRO', 0, 155, { align: 'center', width: doc.page.width });
-    doc.fontSize(22).fillColor('#E0E7FF').text('✨ MENSAL PREMIUM ✨', 0, 190, { align: 'center', width: doc.page.width });
-        
-        // Período em destaque
-    doc.moveDown(2.2);
-    const periodoBoxY = doc.y;
-    doc.roundedRect(70, periodoBoxY, doc.page.width - 140, 60, 18).fill('#FFFFFF');
-    doc.fillColor('#1E293B').fontSize(18).text(`🗓️ Período: ${startDate.toLocaleDateString('pt-BR')} → ${endDate.toLocaleDateString('pt-BR')}`, 0, periodoBoxY + 20, { align: 'center', width: doc.page.width });
-    doc.moveDown(3.2);
-
-        // Total em destaque gigante
-    const totalBoxY = doc.y;
     doc.roundedRect(40, totalBoxY, doc.page.width - 80, 130, 24).fill('#10B981');
     doc.fillColor('#FFFFFF').fontSize(56).text('💰', 70, totalBoxY + 32);
     doc.fontSize(28).text(`R$ ${total.toFixed(2)}`, 150, totalBoxY + 25, { width: 300, align: 'left' });
