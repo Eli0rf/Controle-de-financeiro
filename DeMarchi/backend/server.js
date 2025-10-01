@@ -2933,6 +2933,9 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
             
             // Enviar o documento BI
             biReport.pipe(res);
+            // Finaliza o documento e encerra a execução desta rota
+            try { biReport.end(); } catch(_) {}
+            return;
             
             console.log(`🎉 [SUCESSO] Relatório BI inteligente enviado com sucesso! 
             📊 Dados processados: ${expenses.length} despesas totalizando R$ ${total.toFixed(2)}
@@ -2944,6 +2947,8 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
             console.error(`❌ [ERRO] Falha na geração do relatório BI:`, biError);
             throw new Error(`Erro ao gerar relatório BI inteligente: ${biError.message}`);
         }
+    // Código legado abaixo não deve executar quando usamos o relatório BI acima
+    // Mantido apenas como referência; retornamos antes.
     doc.roundedRect(40, totalBoxY, doc.page.width - 80, 130, 24).fill('#10B981');
     doc.fillColor('#FFFFFF').fontSize(56).text('💰', 70, totalBoxY + 32);
     doc.fontSize(28).text(`R$ ${total.toFixed(2)}`, 150, totalBoxY + 25, { width: 300, align: 'left' });
