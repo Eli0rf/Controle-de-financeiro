@@ -14,8 +14,10 @@ const tetos = {
 };
 
 function computeBudgetControlFromDistribution(porPlano = {}) {
-  // Ensure all plans appear, even with zero spent
-  const plans = Array.from(new Set([...Object.keys(tetos).map(String), ...Object.keys(porPlano)]))
+  // Ensure all plans 1-45 appear, even with zero spent
+  const allPlanNumbers = Array.from({length: 45}, (_, i) => String(i + 1));
+  const plansWithData = Object.keys(porPlano).map(String);
+  const plans = Array.from(new Set([...allPlanNumbers, ...plansWithData]))
     .sort((a, b) => parseInt(a) - parseInt(b));
 
   const perPlan = {};
