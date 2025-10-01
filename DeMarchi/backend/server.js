@@ -619,7 +619,7 @@ app.get('/api/bi/full-report', authenticateToken, async (req, res) => {
         const format = req.query.format || 'json'; // json, pdf (futuro)
 
         // Coletar todos os dados em paralelo
-        const [trends, concentration, dashboard, performance, anomalies] = await Promise.all([
+    const [trends, concentration, dashboard, performance, anomalies] = await Promise.all([
             // Trends dos últimos 6 meses
             (async () => {
                 const trendsData = [];
@@ -672,6 +672,18 @@ app.get('/api/bi/full-report', authenticateToken, async (req, res) => {
             detectAnomalies({ pool, userId, year, month }).catch(() => ({ anomalies: [] }))
         ]);
 
+        // Compute budget control for decision support
+        let budgetControl = null;
+        try {
+            const { computeBudgetControlFromDistribution, tetos } = require('./config/budgets');
+            budgetControl = {
+                ceilings: tetos,
+                ...computeBudgetControlFromDistribution(concentration.planDistribution || {})
+            };
+        } catch (e) {
+            console.warn('⚠️ Erro ao calcular budgetControl:', e.message);
+        }
+
         const report = {
             metadata: {
                 generatedAt: new Date().toISOString(),
@@ -708,7 +720,8 @@ app.get('/api/bi/full-report', authenticateToken, async (req, res) => {
                 count: anomalies.anomalies?.length || 0,
                 details: anomalies.anomalies?.slice(0, 10) || [] // Top 10 anomalias
             },
-            recommendations: []
+            recommendations: [],
+            budgetControl
         };
 
         // Gerar recomendações
@@ -1346,20 +1359,8 @@ app.get('/api/dashboard', authenticateToken, async (req, res) => {
 });
 
 // --- 8.1. ROTA DE TETOS POR PLANO DE CONTAS (ALERTAS) ---
-// Tetos de gastos por plano de contas - baseado na planilha atualizada
-// Observação: estendido até o plano 47. Caso não haja teto definido, permanece 0.00.
-const tetos = {
-    1: 1000.00, 2: 2782.47, 3: 2431.67, 4: 350.00, 5: 2100.00,
-    6: 550.00, 7: 270.00, 8: 1200.00, 9: 1200.00, 10: 270.00,
-    11: 1895.40, 12: 2627.60, 13: 270.00, 14: 55.00, 15: 129.90,
-    16: 59.90, 17: 4100.00, 18: 1570.00, 19: 500.00, 20: 500.00,
-    21: 150.00, 22: 1134.00, 23: 500.00, 24: 1000.00, 25: 350.00,
-    26: 1000.00, 27: 500.00, 28: 450.00, 29: 285.00, 30: 700.00,
-    31: 200.00, 32: 450.00, 33: 100.00, 34: 54.80, 35: 0.00,
-    36: 0.00, 37: 0.00, 38: 0.00, 39: 400.00, 40: 0.00,
-    41: 0.00, 42: 0.00, 43: 210.00, 44: 0.00, 45: 12700.00,
-    46: 1000.00, 47: 1000.00
-};
+// Centraliza tetos em config/budgets.js para reuso em BI e PDF
+const { tetos, computeBudgetControlFromDistribution } = require('./config/budgets');
 
 // Rota protegida para tetos por plano de contas
 app.get('/api/expenses-goals', authenticateToken, async (req, res) => {
@@ -1457,6 +1458,30 @@ app.get('/api/expenses-goals', authenticateToken, async (req, res) => {
     } catch (error) {
         console.error('Erro ao buscar tetos:', error);
         res.status(500).json({ message: 'Erro ao buscar tetos.' });
+    }
+});
+
+// 8.2. BI - Controle de planos vs tetos para tomada de decisão
+app.get('/api/bi/budget-control', authenticateToken, async (req, res) => {
+    try {
+        const userId = parseInt(req.user?.id || 0);
+        const year = parseInt(req.query.year) || new Date().getFullYear();
+        const month = parseInt(req.query.month) || (new Date().getMonth() + 1);
+        const account = req.query.account || 'ALL';
+
+        const kpis = await computeMonthlyKPIs({ pool, userId, year, month, account });
+        const control = computeBudgetControlFromDistribution(kpis.distrib?.porPlano || {});
+
+        res.json({
+            period: { year, month, account },
+            totals: kpis.totals || {},
+            distribution: kpis.distrib?.porPlano || {},
+            ceilings: tetos,
+            control
+        });
+    } catch (error) {
+        console.error('Erro BI budget-control:', error);
+        res.status(500).json({ error: 'Erro ao gerar controle de tetos', details: error.message });
     }
 });
 
@@ -2151,6 +2176,7 @@ async function generateIntelligentBIReport(data) {
     // === 📊 PÁGINA 4: GRÁFICOS MODERNOS ===
     doc.addPage();
     await createModernChartsPage(doc, data);
+    await createBudgetControlPage(doc, data);
     
     return doc;
 }
@@ -2468,6 +2494,80 @@ async function createModernChartsPage(doc, data) {
         }
     } else {
         doc.fontSize(12).fillColor('#6B7280').text('📊 Gráficos não disponíveis (ChartJS não carregado)', 50, doc.y);
+    }
+}
+
+// New: Budget Control Page (Plan ceilings vs spent) for decision support
+async function createBudgetControlPage(doc, data) {
+    try {
+        const { porPlano = {}, year, month } = data;
+        const { computeBudgetControlFromDistribution, tetos } = require('./config/budgets');
+        const control = computeBudgetControlFromDistribution(porPlano);
+
+        doc.addPage({ margin: 40, size: 'A4' });
+        // Header
+        doc.rect(0, 0, doc.page.width, 70).fill('#0F172A');
+        doc.fillColor('#FFFFFF').fontSize(20).text('📏 Controle de Tetos por Plano', 40, 25);
+        doc.fontSize(12).fillColor('#E5E7EB').text(`${monthNames[month-1]} ${year}`, 40, 50);
+
+        doc.moveDown(1);
+        doc.fillColor('#111827').fontSize(12).text('Resumo de status:', 40, 90);
+        const s = control.summary || {};
+        doc.fontSize(11)
+           .text(`• Acima do teto: ${s.overBudget || 0}`)
+           .text(`• Em risco (≥90%): ${s.atRisk || 0}`)
+           .text(`• Dentro do orçamento: ${s.withinBudget || 0}`)
+           .text(`• Sem teto definido: ${s.zeroCeiling || 0}`);
+
+        // Table header
+        doc.moveDown(1);
+        const tableTop = doc.y + 10;
+        const colX = [40, 120, 240, 360, 460];
+        doc.fontSize(11).fillColor('#374151');
+        doc.text('Plano', colX[0], tableTop);
+        doc.text('Gasto (R$)', colX[1], tableTop);
+        doc.text('Teto (R$)', colX[2], tableTop);
+        doc.text('% do Teto', colX[3], tableTop);
+        doc.text('Status', colX[4], tableTop);
+        doc.moveTo(40, tableTop + 14).lineTo(doc.page.width - 40, tableTop + 14).stroke('#E5E7EB');
+
+        // Rows
+        const rows = Object.values(control.perPlan || {}).sort((a,b)=> b.percent - a.percent).slice(0, 18);
+        let y = tableTop + 20;
+        rows.forEach((row, idx) => {
+            const bg = idx % 2 === 0 ? '#F9FAFB' : '#FFFFFF';
+            doc.rect(40, y - 4, doc.page.width - 80, 18).fill(bg);
+            doc.fillColor('#111827').fontSize(10);
+            doc.text(String(row.plan), colX[0], y);
+            doc.text((row.spent || 0).toFixed(2), colX[1], y);
+            doc.text((row.ceiling || 0).toFixed(2), colX[2], y);
+            doc.text(`${(row.percent || 0).toFixed(1)}%`, colX[3], y);
+
+            let color = '#065F46', status = row.status || 'OK';
+            if (status === 'OVER_BUDGET') color = '#B91C1C';
+            else if (status.startsWith('AT_RISK')) color = '#92400E';
+            else if (status.startsWith('WATCH')) color = '#2563EB';
+
+            doc.fillColor(color).text(status.replace('_', ' '), colX[4], y);
+            y += 20;
+        });
+
+        // Insights / Recommendations
+        doc.moveDown(1);
+        const insights = control.insights || {};
+        if (insights.topRisks && insights.topRisks.length) {
+            doc.fillColor('#111827').fontSize(12).text('Recomendações de ação prioritária:', 40, y + 10);
+            insights.topRisks.forEach((r, i) => {
+                doc.fontSize(10).fillColor('#111827')
+                   .text(`• Plano ${r.plan}: ${(r.percent || 0).toFixed(1)}% do teto — ${r.recommendation || 'Revisar gastos.'}`);
+            });
+        }
+
+        // Legend
+        doc.moveDown(1);
+        doc.fontSize(9).fillColor('#6B7280').text('Legenda: OVER_BUDGET >100% • AT_RISK ≥90% • WATCH 70–89% • OK <70%');
+    } catch (err) {
+        console.warn('⚠️ Erro ao gerar página de tetos:', err.message);
     }
 }
 
@@ -2944,6 +3044,18 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
         
         try {
             // Gerar relatório BI completo usando a nova função (objeto de dados)
+            // Compute budget control for the PDF
+            let budgetControl = null;
+            try {
+                const { computeBudgetControlFromDistribution, tetos } = require('./config/budgets');
+                budgetControl = {
+                    ceilings: tetos,
+                    ...computeBudgetControlFromDistribution(porPlano)
+                };
+            } catch (e) {
+                console.warn('⚠️ Erro ao calcular budgetControl para PDF:', e.message);
+            }
+
             const biReport = await generateIntelligentBIReport({
                 expenses,
                 total,
@@ -2956,6 +3068,7 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
                 month,
                 porPlano,
                 porConta,
+                budgetControl,
                 userId
             });
             
