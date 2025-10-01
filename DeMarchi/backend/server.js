@@ -2155,6 +2155,46 @@ async function generateChartsForPDF(porPlano, porConta, expenses, chartJSNodeCan
 // 🤖 FUNÇÃO PRINCIPAL: RELATÓRIO BI INTELIGENTE
 async function generateIntelligentBIReport(data) {
     const { expenses, total, totalPessoal, totalEmpresarial, startDate, endDate, contaNome, year, month, porPlano, porConta, userId } = data;
+
+    // Tema/estilo do relatório (ex.: 'modern' padrão, 'nubank' inspirado no anexo)
+    function resolveTheme(theme) {
+        if ((theme || '').toLowerCase() === 'nubank') {
+            return {
+                name: 'nubank',
+                headerGradient: ['#8A05BE', '#C572E0'],
+                headerSolid: '#8A05BE',
+                headerText: '#FFFFFF',
+                kpiBg: ['#FFFFFF', '#FFFFFF', '#FFFFFF'],
+                kpiText: '#0F172A',
+                kpiBorder: '#E5E7EB',
+                barPalette: ['#8A05BE', '#A13DC7', '#BE7DE1', '#C2410C', '#0E7490'],
+                barBorder: '#E5E7EB',
+                zebra1: '#FAF5FF',
+                zebra2: '#FFFFFF',
+                accent: '#8A05BE',
+                darkText: '#0F172A',
+                lightText: '#FFFFFF'
+            };
+        }
+        return {
+            name: 'modern',
+            headerGradient: ['#667eea', '#764ba2', '#3B82F6'],
+            headerSolid: '#0F172A',
+            headerText: '#FFFFFF',
+            kpiBg: ['#E5F3FF', '#E6FFFA', '#FFF7ED'],
+            kpiText: '#0F172A',
+            kpiBorder: '#E5E7EB',
+            barPalette: ['#2563EB', '#059669', '#EA580C', '#DC2626', '#7C3AED'],
+            barBorder: '#94A3B8',
+            zebra1: '#F9FAFB',
+            zebra2: '#FFFFFF',
+            accent: '#2563EB',
+            darkText: '#0F172A',
+            lightText: '#FFFFFF'
+        };
+    }
+    const themeCfg = resolveTheme(data.theme);
+    data.themeCfg = themeCfg;
     
     console.log('🎯 Gerando relatório BI inteligente...');
     
@@ -2177,6 +2217,12 @@ async function generateIntelligentBIReport(data) {
     // === 📊 PÁGINA 1: DASHBOARD EXECUTIVO ===
     await createExecutiveDashboard(doc, data);
     
+    // === 🧾 (Opcional) PÁGINA DE EXTRATO ESTILO CONTA/NUBANK ===
+    if (themeCfg.name === 'nubank') {
+        doc.addPage();
+        await createStatementStylePage(doc, data);
+    }
+    
     // === 📈 PÁGINA 2: ANÁLISES BI E INSIGHTS ===
     doc.addPage();
     await createBIAnalyticsPage(doc, data);
@@ -2195,11 +2241,15 @@ async function generateIntelligentBIReport(data) {
 
 // 📊 PÁGINA 1: DASHBOARD EXECUTIVO
 async function createExecutiveDashboard(doc, data) {
-    const { expenses, total, totalPessoal, totalEmpresarial, startDate, endDate, contaNome, year, month } = data;
+    const { expenses, total, totalPessoal, totalEmpresarial, startDate, endDate, contaNome, year, month, themeCfg } = data;
     
     // === CABEÇALHO EXECUTIVO MODERNO ===
     const gradient = doc.linearGradient(0, 0, doc.page.width, 100);
-    gradient.stop(0, '#667eea').stop(0.5, '#764ba2').stop(1, '#3B82F6');
+    const headerStops = themeCfg?.headerGradient || ['#667eea', '#764ba2', '#3B82F6'];
+    const stopsCount = headerStops.length;
+    headerStops.forEach((col, idx) => {
+        gradient.stop(idx / Math.max(1, stopsCount - 1), col);
+    });
     
     doc.rect(0, 0, doc.page.width, 100).fill(gradient);
     
@@ -2234,17 +2284,20 @@ async function createExecutiveDashboard(doc, data) {
     const percentualPessoal = total > 0 ? (totalPessoal / total * 100) : 0;
     const percentualEmpresarial = total > 0 ? (totalEmpresarial / total * 100) : 0;
     
-    // KPI 1: Total Geral (light background, dark text)
-    doc.roundedRect(40, kpiY, kpiWidth, kpiHeight, 15).fill('#E5F3FF');
-    doc.fillColor('#0F172A').fontSize(14).text('💰 TOTAL GERAL', 50, kpiY + 20, { width: kpiWidth - 20, align: 'center' });
+    // KPI 1: Total Geral (usa paleta de tema)
+    const kpiBg1 = themeCfg?.kpiBg?.[0] || '#E5F3FF';
+    const kpiFg = themeCfg?.kpiText || '#0F172A';
+    doc.roundedRect(40, kpiY, kpiWidth, kpiHeight, 15).fill(kpiBg1).stroke(themeCfg?.kpiBorder || '#E5E7EB');
+    doc.fillColor(kpiFg).fontSize(14).text('💰 TOTAL GERAL', 50, kpiY + 20, { width: kpiWidth - 20, align: 'center' });
     doc.fontSize(20).text(`R$ ${(total || 0).toLocaleString('pt-BR', {minimumFractionDigits: 2})}`, 50, kpiY + 45, { width: kpiWidth - 20, align: 'center' });
     doc.fontSize(11).text(`${expenses.length} transações`, 50, kpiY + 75, { width: kpiWidth - 20, align: 'center' });
     doc.fontSize(10).text(`Média: R$ ${(total/expenses.length || 0).toFixed(2)}`, 50, kpiY + 90, { width: kpiWidth - 20, align: 'center' });
 
     // KPI 2: Pessoal
     const kpi2X = 40 + kpiWidth + spacing;
-    doc.roundedRect(kpi2X, kpiY, kpiWidth, kpiHeight, 15).fill('#E6FFFA');
-    doc.fillColor('#0F172A').fontSize(14).text('🏠 PESSOAL', kpi2X + 10, kpiY + 20, { width: kpiWidth - 20, align: 'center' });
+    const kpiBg2 = themeCfg?.kpiBg?.[1] || '#E6FFFA';
+    doc.roundedRect(kpi2X, kpiY, kpiWidth, kpiHeight, 15).fill(kpiBg2).stroke(themeCfg?.kpiBorder || '#E5E7EB');
+    doc.fillColor(kpiFg).fontSize(14).text('🏠 PESSOAL', kpi2X + 10, kpiY + 20, { width: kpiWidth - 20, align: 'center' });
     doc.fontSize(20).text(`R$ ${(totalPessoal || 0).toLocaleString('pt-BR', {minimumFractionDigits: 2})}`, kpi2X + 10, kpiY + 45, { width: kpiWidth - 20, align: 'center' });
     doc.fontSize(11).text(`${percentualPessoal.toFixed(1)}% do total`, kpi2X + 10, kpiY + 75, { width: kpiWidth - 20, align: 'center' });
     const pessoaisCount = expenses.filter(e => !e.is_business_expense).length;
@@ -2252,8 +2305,9 @@ async function createExecutiveDashboard(doc, data) {
 
     // KPI 3: Empresarial
     const kpi3X = kpi2X + kpiWidth + spacing;
-    doc.roundedRect(kpi3X, kpiY, kpiWidth, kpiHeight, 15).fill('#FFF7ED');
-    doc.fillColor('#0F172A').fontSize(14).text('💼 EMPRESARIAL', kpi3X + 10, kpiY + 20, { width: kpiWidth - 20, align: 'center' });
+    const kpiBg3 = themeCfg?.kpiBg?.[2] || '#FFF7ED';
+    doc.roundedRect(kpi3X, kpiY, kpiWidth, kpiHeight, 15).fill(kpiBg3).stroke(themeCfg?.kpiBorder || '#E5E7EB');
+    doc.fillColor(kpiFg).fontSize(14).text('💼 EMPRESARIAL', kpi3X + 10, kpiY + 20, { width: kpiWidth - 20, align: 'center' });
     doc.fontSize(20).text(`R$ ${(totalEmpresarial || 0).toLocaleString('pt-BR', {minimumFractionDigits: 2})}`, kpi3X + 10, kpiY + 45, { width: kpiWidth - 20, align: 'center' });
     doc.fontSize(11).text(`${percentualEmpresarial.toFixed(1)}% do total`, kpi3X + 10, kpiY + 75, { width: kpiWidth - 20, align: 'center' });
     const empresariaisCount = expenses.filter(e => e.is_business_expense).length;
@@ -2538,10 +2592,56 @@ async function createModernChartsPage(doc, data) {
     }
 }
 
+// 🧾 Página estilo extrato bancário (inspirado no anexo)
+async function createStatementStylePage(doc, data) {
+    const { expenses = [], contaNome, startDate, endDate, themeCfg } = data;
+    try {
+        // Header sólido com a cor principal do tema
+        const headerColor = (themeCfg && themeCfg.headerSolid) || '#8A05BE';
+        doc.rect(0, 0, doc.page.width, 70).fill(headerColor);
+        doc.fillColor('#FFFFFF').fontSize(18).text('Extrato do Período', 40, 20);
+        const periodText = `${new Date(startDate).toLocaleDateString('pt-BR')} a ${new Date(endDate).toLocaleDateString('pt-BR')}`;
+        doc.fontSize(12).fillColor('#F3E8FF').text(`${contaNome} • ${periodText}`, 40, 45);
+
+        // Tabela
+        const startY = 90;
+        const colX = [40, 120, 320, 430, 520]; // Data, Descrição, Conta, Tipo, Valor
+        doc.fillColor('#111827').fontSize(11).text('Data', colX[0], startY);
+        doc.text('Descrição', colX[1], startY);
+        doc.text('Conta', colX[2], startY);
+        doc.text('Tipo', colX[3], startY);
+        doc.text('Valor (R$)', colX[4], startY);
+        doc.moveTo(40, startY + 14).lineTo(doc.page.width - 40, startY + 14).stroke('#E5E7EB');
+
+        // Linhas com zebra
+        let y = startY + 20;
+        const rows = expenses
+            .slice()
+            .sort((a, b) => new Date(a.transaction_date) - new Date(b.transaction_date))
+            .slice(0, 28); // cabe em 1 página
+        rows.forEach((e, idx) => {
+            const bg = idx % 2 === 0 ? (themeCfg?.zebra1 || '#FAF5FF') : (themeCfg?.zebra2 || '#FFFFFF');
+            doc.rect(40, y - 4, doc.page.width - 80, 18).fill(bg);
+            doc.fillColor('#111827').fontSize(10);
+            doc.text(new Date(e.transaction_date).toLocaleDateString('pt-BR'), colX[0], y);
+            const descricao = (e.description || '').slice(0, 32);
+            doc.text(descricao, colX[1], y, { width: colX[2] - colX[1] - 10 });
+            doc.text(e.account || '-', colX[2], y, { width: colX[3] - colX[2] - 10 });
+            doc.text(e.is_business_expense ? 'Empresarial' : 'Pessoal', colX[3], y);
+            const valStr = (parseFloat(e.amount || 0)).toFixed(2);
+            doc.text(valStr, colX[4], y, { width: 60, align: 'right' });
+            y += 20;
+        });
+    } catch (err) {
+        console.warn('⚠️ Erro ao gerar página estilo extrato:', err.message);
+    }
+}
+
 // New: Budget Control Page (Plan ceilings vs spent) for decision support
 async function createBudgetControlPage(doc, data) {
     try {
         const { porPlano = {}, year, month } = data;
+        const monthNames = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
         const { computeBudgetControlFromDistribution, tetos } = require('./config/budgets');
         const control = computeBudgetControlFromDistribution(porPlano);
 
@@ -2833,7 +2933,7 @@ async function generateFallbackPDF(expenses, total, startDate, endDate, contaNom
 
 app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
     const userId = req.user.id;
-    const { year, month, account } = req.body;
+    const { year, month, account, theme } = req.body;
 
     console.log(`🎯 [INÍCIO] Relatório mensal - User: ${userId}, Ano: ${year}, Mês: ${month}, Conta: ${account || 'Todas'}`);
 
@@ -3109,6 +3209,7 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
                 month,
                 porPlano,
                 porConta,
+                theme: theme || 'modern',
                 budgetControl,
                 userId
             });
