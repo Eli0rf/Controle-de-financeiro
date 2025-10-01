@@ -2234,17 +2234,17 @@ async function createExecutiveDashboard(doc, data) {
     const percentualPessoal = total > 0 ? (totalPessoal / total * 100) : 0;
     const percentualEmpresarial = total > 0 ? (totalEmpresarial / total * 100) : 0;
     
-    // KPI 1: Total Geral
-    doc.roundedRect(40, kpiY, kpiWidth, kpiHeight, 15).fill('#3B82F6');
-    doc.fillColor('#FFFFFF').fontSize(14).text('💰 TOTAL GERAL', 50, kpiY + 20, { width: kpiWidth - 20, align: 'center' });
+    // KPI 1: Total Geral (light background, dark text)
+    doc.roundedRect(40, kpiY, kpiWidth, kpiHeight, 15).fill('#E5F3FF');
+    doc.fillColor('#0F172A').fontSize(14).text('💰 TOTAL GERAL', 50, kpiY + 20, { width: kpiWidth - 20, align: 'center' });
     doc.fontSize(20).text(`R$ ${(total || 0).toLocaleString('pt-BR', {minimumFractionDigits: 2})}`, 50, kpiY + 45, { width: kpiWidth - 20, align: 'center' });
     doc.fontSize(11).text(`${expenses.length} transações`, 50, kpiY + 75, { width: kpiWidth - 20, align: 'center' });
     doc.fontSize(10).text(`Média: R$ ${(total/expenses.length || 0).toFixed(2)}`, 50, kpiY + 90, { width: kpiWidth - 20, align: 'center' });
 
     // KPI 2: Pessoal
     const kpi2X = 40 + kpiWidth + spacing;
-    doc.roundedRect(kpi2X, kpiY, kpiWidth, kpiHeight, 15).fill('#10B981');
-    doc.fillColor('#FFFFFF').fontSize(14).text('🏠 PESSOAL', kpi2X + 10, kpiY + 20, { width: kpiWidth - 20, align: 'center' });
+    doc.roundedRect(kpi2X, kpiY, kpiWidth, kpiHeight, 15).fill('#E6FFFA');
+    doc.fillColor('#0F172A').fontSize(14).text('🏠 PESSOAL', kpi2X + 10, kpiY + 20, { width: kpiWidth - 20, align: 'center' });
     doc.fontSize(20).text(`R$ ${(totalPessoal || 0).toLocaleString('pt-BR', {minimumFractionDigits: 2})}`, kpi2X + 10, kpiY + 45, { width: kpiWidth - 20, align: 'center' });
     doc.fontSize(11).text(`${percentualPessoal.toFixed(1)}% do total`, kpi2X + 10, kpiY + 75, { width: kpiWidth - 20, align: 'center' });
     const pessoaisCount = expenses.filter(e => !e.is_business_expense).length;
@@ -2252,8 +2252,8 @@ async function createExecutiveDashboard(doc, data) {
 
     // KPI 3: Empresarial
     const kpi3X = kpi2X + kpiWidth + spacing;
-    doc.roundedRect(kpi3X, kpiY, kpiWidth, kpiHeight, 15).fill('#F59E0B');
-    doc.fillColor('#FFFFFF').fontSize(14).text('💼 EMPRESARIAL', kpi3X + 10, kpiY + 20, { width: kpiWidth - 20, align: 'center' });
+    doc.roundedRect(kpi3X, kpiY, kpiWidth, kpiHeight, 15).fill('#FFF7ED');
+    doc.fillColor('#0F172A').fontSize(14).text('💼 EMPRESARIAL', kpi3X + 10, kpiY + 20, { width: kpiWidth - 20, align: 'center' });
     doc.fontSize(20).text(`R$ ${(totalEmpresarial || 0).toLocaleString('pt-BR', {minimumFractionDigits: 2})}`, kpi3X + 10, kpiY + 45, { width: kpiWidth - 20, align: 'center' });
     doc.fontSize(11).text(`${percentualEmpresarial.toFixed(1)}% do total`, kpi3X + 10, kpiY + 75, { width: kpiWidth - 20, align: 'center' });
     const empresariaisCount = expenses.filter(e => e.is_business_expense).length;
@@ -2318,6 +2318,29 @@ async function createBIAnalyticsPage(doc, data) {
         month
     } = data;
     
+    // Utilitários de contraste de cor para melhorar legibilidade
+    function hexToRgb(hex) {
+        try {
+            let c = (hex || '').replace('#', '');
+            if (c.length === 3) c = c.split('').map(ch => ch + ch).join('');
+            const num = parseInt(c, 16);
+            return { r: (num >> 16) & 255, g: (num >> 8) & 255, b: num & 255 };
+        } catch { return { r: 0, g: 0, b: 0 }; }
+    }
+    function relativeLuminance({ r, g, b }) {
+        const srgb = [r, g, b].map(v => {
+            v /= 255;
+            return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+        });
+        return 0.2126 * srgb[0] + 0.7152 * srgb[1] + 0.0722 * srgb[2];
+    }
+    function textColorForBg(hex) {
+        try {
+            const lum = relativeLuminance(hexToRgb(hex));
+            return lum > 0.5 ? '#111827' : '#FFFFFF';
+        } catch { return '#FFFFFF'; }
+    }
+
     // Cabeçalho da página
     doc.rect(0, 0, doc.page.width, 80).fill('#764ba2');
     doc.fontSize(24).fillColor('#FFFFFF').text('📈 ANÁLISES BUSINESS INTELLIGENCE', 0, 25, { align: 'center', width: doc.page.width });
@@ -2337,19 +2360,22 @@ async function createBIAnalyticsPage(doc, data) {
     
     temporalAnalysis.weekly.forEach((week, index) => {
         const weekWidth = (doc.page.width - 120) * (total > 0 ? (week.total / total) : 0);
-        const barColor = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6'][index];
+        const barColor = ['#2563EB', '#059669', '#EA580C', '#DC2626', '#7C3AED'][index];
         const barY = doc.y;
 
         // Desenha a barra (mínimo visual de 2px quando houver valor)
         const effectiveWidth = week.total > 0 ? Math.max(2, weekWidth) : 0;
         if (effectiveWidth > 0) {
+            // Fill com borda fina para contraste
             doc.roundedRect(60, barY, effectiveWidth, 25, 5).fill(barColor);
+            doc.roundedRect(60, barY, effectiveWidth, 25, 5).stroke('#94A3B8');
         }
 
         const label = `Sem ${index + 1}: R$ ${week.total.toFixed(2)} (${week.count} trans.)`;
         if (effectiveWidth >= 120) {
-            // Texto dentro da barra em branco
-            doc.fillColor('#FFFFFF').fontSize(10).text(label, 70, barY + 7, { width: effectiveWidth - 20 });
+            // Texto dentro da barra com contraste automático
+            const insideColor = textColorForBg(barColor);
+            doc.fillColor(insideColor).fontSize(10).text(label, 70, barY + 7, { width: effectiveWidth - 20 });
         } else {
             // Texto fora da barra em cor escura
             const textX = 60 + effectiveWidth + 10;
@@ -2375,7 +2401,7 @@ async function createBIAnalyticsPage(doc, data) {
         const share = totalTop > 0 ? (valor / totalTop) : 0;
         const percentage = total > 0 ? (valor / total * 100).toFixed(1) : '0.0';
         const barWidth = (doc.page.width - 220) * share;
-        const colors = ['#1E40AF', '#059669', '#DC2626', '#7C3AED', '#EA580C', '#0891B2', '#65A30D', '#BE185D', '#4338CA', '#0F766E'];
+        const colors = ['#1E40AF', '#047857', '#B91C1C', '#6D28D9', '#C2410C', '#0E7490', '#3F6212', '#9D174D', '#3730A3', '#115E59'];
 
         // Nome da categoria
         doc.fontSize(11).fillColor('#374151').text(`${index + 1}. ${categoria}`, 40, doc.y);
@@ -2385,13 +2411,16 @@ async function createBIAnalyticsPage(doc, data) {
         const baseY = doc.y - 2;
         const effectiveBar = valor > 0 ? Math.max(2, barWidth) : 0;
         if (effectiveBar > 0) {
-            doc.roundedRect(baseX, baseY, effectiveBar, 18, 3).fill(colors[index]);
+            const barCol = colors[index];
+            doc.roundedRect(baseX, baseY, effectiveBar, 18, 3).fill(barCol);
+            doc.roundedRect(baseX, baseY, effectiveBar, 18, 3).stroke('#CBD5E1');
         }
 
         const valueLabel = `R$ ${valor.toFixed(2)} (${percentage}%)`;
         if (effectiveBar >= 100) {
-            // Texto dentro da barra
-            doc.fillColor('#FFFFFF').fontSize(9).text(valueLabel, baseX + 5, doc.y + 2, { width: effectiveBar - 10 });
+            // Texto dentro da barra com contraste automático
+            const insideColor = textColorForBg(colors[index]);
+            doc.fillColor(insideColor).fontSize(9).text(valueLabel, baseX + 5, doc.y + 2, { width: effectiveBar - 10 });
         } else {
             // Texto fora da barra em cor escura
             const labelX = baseX + effectiveBar + 8;
