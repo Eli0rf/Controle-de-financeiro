@@ -92,6 +92,15 @@ app.use((req, res, next) => {
 const { pool, testConnection } = require('./config/database');
 const { createDatabase } = require('./migrations/migrate');
 
+// Definição dos períodos de faturamento por conta
+const billingPeriods = {
+    'Nu Bank Ketlyn': { startDay: 2, endDay: 1 },
+    'Nu Vainer': { startDay: 2, endDay: 1 },
+    'Ourocard Ketlyn': { startDay: 17, endDay: 16 },
+    'PicPay Vainer': { startDay: 1, endDay: 30 },
+    'PIX/Boleto': { startDay: 1, endDay: 30, isRecurring: true }
+};
+
 // --- 3. MIDDLEWARES ---
 app.use(express.json());
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
@@ -2698,6 +2707,12 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
             throw new Error(`Erro ao consultar despesas: ${dbError.message}`);
         }
 
+        // Garantir que expenses seja um array válido
+        if (!expenses || !Array.isArray(expenses)) {
+            console.log(`⚠️ [STEP 3.5] Expenses não é um array válido, inicializando array vazio`);
+            expenses = [];
+        }
+
         console.log(`📊 [STEP 4] Encontradas ${expenses.length} despesas para o período`);
 
         if (expenses.length === 0) {
@@ -4062,14 +4077,6 @@ app.listen(PORT, HOST, async () => {
         process.exit(1);
     }
 });
-
-const billingPeriods = {
-    'Nu Bank Ketlyn': { startDay: 2, endDay: 1 },
-    'Nu Vainer': { startDay: 2, endDay: 1 },
-    'Ourocard Ketlyn': { startDay: 17, endDay: 16 },
-    'PicPay Vainer': { startDay: 1, endDay: 30 },
-    'PIX/Boleto': { startDay: 1, endDay: 30, isRecurring: true }
-};
 
 // Função de unificação retroativa de contas PIX e Boleto para PIX/Boleto
 async function ensurePixBoletoUnification() {
