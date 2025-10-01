@@ -2189,7 +2189,7 @@ async function createExecutiveDashboard(doc, data) {
     // KPI 1: Total Geral
     doc.roundedRect(40, kpiY, kpiWidth, kpiHeight, 15).fill('#3B82F6');
     doc.fillColor('#FFFFFF').fontSize(14).text('💰 TOTAL GERAL', 50, kpiY + 20, { width: kpiWidth - 20, align: 'center' });
-    doc.fontSize(20).text(`R$ ${total.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`, 50, kpiY + 45, { width: kpiWidth - 20, align: 'center' });
+    doc.fontSize(20).text(`R$ ${(total || 0).toLocaleString('pt-BR', {minimumFractionDigits: 2})}`, 50, kpiY + 45, { width: kpiWidth - 20, align: 'center' });
     doc.fontSize(11).text(`${expenses.length} transações`, 50, kpiY + 75, { width: kpiWidth - 20, align: 'center' });
     doc.fontSize(10).text(`Média: R$ ${(total/expenses.length || 0).toFixed(2)}`, 50, kpiY + 90, { width: kpiWidth - 20, align: 'center' });
 
@@ -2197,7 +2197,7 @@ async function createExecutiveDashboard(doc, data) {
     const kpi2X = 40 + kpiWidth + spacing;
     doc.roundedRect(kpi2X, kpiY, kpiWidth, kpiHeight, 15).fill('#10B981');
     doc.fillColor('#FFFFFF').fontSize(14).text('🏠 PESSOAL', kpi2X + 10, kpiY + 20, { width: kpiWidth - 20, align: 'center' });
-    doc.fontSize(20).text(`R$ ${totalPessoal.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`, kpi2X + 10, kpiY + 45, { width: kpiWidth - 20, align: 'center' });
+    doc.fontSize(20).text(`R$ ${(totalPessoal || 0).toLocaleString('pt-BR', {minimumFractionDigits: 2})}`, kpi2X + 10, kpiY + 45, { width: kpiWidth - 20, align: 'center' });
     doc.fontSize(11).text(`${percentualPessoal.toFixed(1)}% do total`, kpi2X + 10, kpiY + 75, { width: kpiWidth - 20, align: 'center' });
     const pessoaisCount = expenses.filter(e => !e.is_business_expense).length;
     doc.fontSize(10).text(`${pessoaisCount} transações`, kpi2X + 10, kpiY + 90, { width: kpiWidth - 20, align: 'center' });
@@ -2206,7 +2206,7 @@ async function createExecutiveDashboard(doc, data) {
     const kpi3X = kpi2X + kpiWidth + spacing;
     doc.roundedRect(kpi3X, kpiY, kpiWidth, kpiHeight, 15).fill('#F59E0B');
     doc.fillColor('#FFFFFF').fontSize(14).text('💼 EMPRESARIAL', kpi3X + 10, kpiY + 20, { width: kpiWidth - 20, align: 'center' });
-    doc.fontSize(20).text(`R$ ${totalEmpresarial.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`, kpi3X + 10, kpiY + 45, { width: kpiWidth - 20, align: 'center' });
+    doc.fontSize(20).text(`R$ ${(totalEmpresarial || 0).toLocaleString('pt-BR', {minimumFractionDigits: 2})}`, kpi3X + 10, kpiY + 45, { width: kpiWidth - 20, align: 'center' });
     doc.fontSize(11).text(`${percentualEmpresarial.toFixed(1)}% do total`, kpi3X + 10, kpiY + 75, { width: kpiWidth - 20, align: 'center' });
     const empresariaisCount = expenses.filter(e => e.is_business_expense).length;
     doc.fontSize(10).text(`${empresariaisCount} transações`, kpi3X + 10, kpiY + 90, { width: kpiWidth - 20, align: 'center' });
@@ -2599,7 +2599,7 @@ async function generateFallbackPDF(expenses, total, startDate, endDate, contaNom
         // Cabeçalho simples
         doc.fontSize(20).text('RELATÓRIO FINANCEIRO MENSAL', { align: 'center' });
         doc.moveDown();
-        doc.fontSize(14).text(`Período: ${startDate.toLocaleDateString('pt-BR')} a ${endDate.toLocaleDateString('pt-BR')}`, { align: 'center' });
+        doc.fontSize(14).text(`Período: ${(startDate || new Date()).toLocaleDateString('pt-BR')} a ${(endDate || new Date()).toLocaleDateString('pt-BR')}`, { align: 'center' });
         doc.text(`Conta: ${contaNome}`, { align: 'center' });
         doc.moveDown(2);
         
@@ -2751,7 +2751,7 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
             doc.moveDown(1);
             doc.fontSize(16).fillColor('#047857').text('Nenhum gasto registrado neste período', { align: 'center' });
             doc.moveDown(0.5);
-            doc.fontSize(14).fillColor('#059669').text(`Período: ${startDate.toLocaleDateString('pt-BR')} a ${endDate.toLocaleDateString('pt-BR')}`, { align: 'center' });
+            doc.fontSize(14).fillColor('#059669').text(`Período: ${(startDate || new Date()).toLocaleDateString('pt-BR')} a ${(endDate || new Date()).toLocaleDateString('pt-BR')}`, { align: 'center' });
             doc.moveDown(0.5);
             doc.fontSize(12).fillColor('#065F46').text(`Conta: ${contaNome}`, { align: 'center' });
             
@@ -3776,7 +3776,7 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
                 
                 emptyDoc.fontSize(20).text('RELATÓRIO FINANCEIRO MENSAL', { align: 'center' });
                 emptyDoc.moveDown();
-                emptyDoc.fontSize(14).text(`Período: ${startDate.toLocaleDateString('pt-BR')} a ${endDate.toLocaleDateString('pt-BR')}`, { align: 'center' });
+                emptyDoc.fontSize(14).text(`Período: ${(startDate || new Date()).toLocaleDateString('pt-BR')} a ${(endDate || new Date()).toLocaleDateString('pt-BR')}`, { align: 'center' });
                 emptyDoc.text(`Conta: ${contaNome}`, { align: 'center' });
                 emptyDoc.moveDown(2);
                 emptyDoc.fontSize(16).text('Nenhuma despesa encontrada para este período.', { align: 'center' });

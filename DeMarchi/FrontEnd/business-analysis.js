@@ -983,4 +983,37 @@ window.showComparativeAnalysis = async function() {
     }
 };
 
+// Função de teste para verificar se o endpoint está funcionando
+window.testMonthlyReportEndpoint = async function() {
+    try {
+        console.log('🧪 Testando endpoint de relatório mensal...');
+        
+        const response = await fetch(`${window.biAnalytics.apiBaseUrl}/api/reports/monthly`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${localStorage.getItem('jwtToken')}`
+            },
+            body: JSON.stringify({ year: 2025, month: 10, account: '' })
+        });
+
+        console.log(`📊 Status da resposta: ${response.status}`);
+        
+        if (response.ok) {
+            console.log('✅ Endpoint funcionando corretamente!');
+            window.biAnalytics.showNotification('✅ Teste do endpoint bem-sucedido!', 'success');
+        } else {
+            const errorText = await response.text();
+            console.error('❌ Erro no endpoint:', errorText);
+            window.biAnalytics.showNotification(`❌ Erro ${response.status}: ${errorText}`, 'error');
+        }
+        
+        return response.ok;
+    } catch (error) {
+        console.error('❌ Erro no teste:', error);
+        window.biAnalytics.showNotification(`❌ Erro de conexão: ${error.message}`, 'error');
+        return false;
+    }
+};
+
 console.log('📊 Business Analytics v2.0 - Sistema de relatórios mensais integrado com BI');
