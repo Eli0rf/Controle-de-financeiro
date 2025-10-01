@@ -161,10 +161,20 @@ async function ensureKpiView(){
             by_account JSON,
             projection DECIMAL(12,2) DEFAULT 0,
             hhi DECIMAL(10,5) DEFAULT 0,
+            bi_insights JSON,
+            recommendations JSON,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             UNIQUE KEY uniq_user_month (user_id, year, month)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;`);
+        // Tenta alinhar colunas caso a tabela já exista sem os novos campos
+        try {
+            await pool.query("ALTER TABLE monthly_snapshots ADD COLUMN IF NOT EXISTS bi_insights JSON, ADD COLUMN IF NOT EXISTS recommendations JSON");
+        } catch (e) {
+            // Ignora se o banco não suportar IF NOT EXISTS; tenta individualmente
+            try { await pool.query("ALTER TABLE monthly_snapshots ADD COLUMN bi_insights JSON"); } catch(_) {}
+            try { await pool.query("ALTER TABLE monthly_snapshots ADD COLUMN recommendations JSON"); } catch(_) {}
+        }
         
         // Depois cria a view
         await pool.query(`CREATE OR REPLACE VIEW monthly_kpi_view AS 
@@ -4191,27 +4201,43 @@ app.get('/api/account-plans', authenticateToken, async (req, res) => {
 });
 
 // --- ROTAS PARA RELATÓRIOS ---
+// Relatório Mensal (JSON detalhado, compatível com Railway)
 app.get('/api/reports/monthly', authenticateToken, async (req, res) => {
     try {
-        const userId = req.user.id;
-        const { year, month } = req.query;
-        
-        const [rows] = await pool.query(`
-            SELECT 
-                account,
-                SUM(CASE WHEN is_business_expense = 0 THEN amount ELSE 0 END) as personal_total,
-                SUM(CASE WHEN is_business_expense = 1 THEN amount ELSE 0 END) as business_total,
-                COUNT(*) as transaction_count
-            FROM expenses 
-            WHERE user_id = ? AND YEAR(transaction_date) = ? AND MONTH(transaction_date) = ?
-            GROUP BY account
-            ORDER BY (personal_total + business_total) DESC
-        `, [userId, year, month]);
-        
-        res.json(rows);
+        const userId = parseInt(req.user.id);
+        const year = parseInt(req.query.year) || new Date().getFullYear();
+        const month = parseInt(req.query.month) || (new Date().getMonth() + 1);
+        const account = req.query.account || 'ALL';
+
+        // Usa a engine de KPIs para compor um resumo mensal robusto sem dependências nativas
+        const kpis = await computeMonthlyKPIs({ pool, userId, year, month, account });
+
+        // Complementa com um pequeno resumo agregador para facilitar consumo no frontend
+        const summary = {
+            period: kpis.period,
+            totals: kpis.totals,
+            distribution: {
+                byPlan: kpis.distrib?.porPlano || {},
+                byAccount: kpis.distrib?.porConta || {},
+                byDay: kpis.distrib?.porDia || {}
+            },
+            comparison: kpis.comparativo || [],
+            efficiency: kpis.eficiencia || {},
+            outliers: kpis.outliers || { top: [] },
+            projection: kpis.projecao || {},
+            concentration: kpis.concentracao || {},
+            bi: kpis.businessIntelligence || {}
+        };
+
+        return res.json({
+            source: 'monthly-summary',
+            userId,
+            account,
+            ...summary
+        });
     } catch (error) {
-        console.error('Erro ao buscar relatório mensal:', error);
-        res.status(500).json({ message: 'Erro ao buscar relatório mensal.' });
+        console.error('Erro ao buscar relatório mensal (JSON):', error);
+        res.status(500).json({ message: 'Erro ao buscar relatório mensal.', details: error.message });
     }
 });
 

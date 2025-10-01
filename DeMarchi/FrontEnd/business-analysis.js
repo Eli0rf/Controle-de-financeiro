@@ -1001,11 +1001,30 @@ window.testMonthlyReportEndpoint = async function() {
         
         if (response.ok) {
             console.log('✅ Endpoint funcionando corretamente!');
-            window.biAnalytics.showNotification('✅ Teste do endpoint bem-sucedido!', 'success');
+            window.biAnalytics.showNotification('✅ Teste do endpoint bem-sucedido! PDF seria baixado.', 'success');
+            
+            // Se é um PDF, mostrar informações sobre o conteúdo
+            const contentType = response.headers.get('content-type');
+            if (contentType && contentType.includes('application/pdf')) {
+                console.log('📄 Resposta é um PDF válido');
+                const blob = await response.blob();
+                console.log(`📦 Tamanho do PDF: ${blob.size} bytes`);
+                window.biAnalytics.showNotification(`✅ PDF gerado com sucesso! Tamanho: ${(blob.size / 1024).toFixed(2)} KB`, 'success');
+            }
         } else {
             const errorText = await response.text();
             console.error('❌ Erro no endpoint:', errorText);
-            window.biAnalytics.showNotification(`❌ Erro ${response.status}: ${errorText}`, 'error');
+            
+            try {
+                const errorData = JSON.parse(errorText);
+                let errorMsg = `❌ Erro ${response.status}: ${errorData.message || errorText}`;
+                if (errorData.details) {
+                    errorMsg += `\n📋 Detalhes: ${errorData.details}`;
+                }
+                window.biAnalytics.showNotification(errorMsg, 'error');
+            } catch {
+                window.biAnalytics.showNotification(`❌ Erro ${response.status}: ${errorText}`, 'error');
+            }
         }
         
         return response.ok;

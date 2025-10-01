@@ -126,11 +126,11 @@ const computeMonthlyKPIs = async ({ pool, userId, year, month, account }) => {
     });
   }
 
-  if (outliers.top.length > 0) {
+  if (outliers.length > 0) {
     recommendations.push({
       type: 'OUTLIER_REVIEW',
       priority: 'MEDIUM',
-      message: `${outliers.top.length} transação(ões) atípica(s) detectada(s)`,
+      message: `${outliers.length} transação(ões) atípica(s) detectada(s)`,
       action: 'Revisar gastos excepcionais'
     });
   }
@@ -152,7 +152,7 @@ const computeMonthlyKPIs = async ({ pool, userId, year, month, account }) => {
         activeSpendingDays: diasComGasto,
         concentrationRisk: hhi > 0.25,
         projectionRisk: crescimentoProj > 15,
-        outlierCount: outliers.top.length
+        outlierCount: outliers.length
       }
     },
     meta: { comentario: 'KPIs with integrated Business Intelligence analysis' }
@@ -180,21 +180,49 @@ const saveMonthlySnapshot = async (pool, userId, year, month, kpis) => {
     UNIQUE KEY uniq_user_month (user_id, year, month)
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;`;
   await pool.query(createSQL);
-  const insertSQL = `INSERT INTO monthly_snapshots (user_id, year, month, total, total_business, total_personal, by_plan, by_account, projection, hhi, bi_insights, recommendations)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ON DUPLICATE KEY UPDATE total=VALUES(total), total_business=VALUES(total_business), total_personal=VALUES(total_personal), by_plan=VALUES(by_plan), by_account=VALUES(by_account), projection=VALUES(projection), hhi=VALUES(hhi), bi_insights=VALUES(bi_insights), recommendations=VALUES(recommendations);`;
-  await pool.query(insertSQL, [
-    userId, year, month, 
-    kpis.totals.total, 
-    kpis.totals.totalEmpresarial, 
-    kpis.totals.totalPessoal, 
-    JSON.stringify(kpis.distrib.porPlano), 
-    JSON.stringify(kpis.distrib.porConta), 
-    kpis.projecao.projecao, 
-    kpis.concentracao.hhi,
-    JSON.stringify(kpis.businessIntelligence?.insights || {}),
-    JSON.stringify(kpis.businessIntelligence?.recommendations || [])
-  ]);
+  // Garante colunas adicionais em ambientes já provisionados
+  try {
+    await pool.query("ALTER TABLE monthly_snapshots ADD COLUMN IF NOT EXISTS bi_insights JSON");
+  } catch (e) {
+    try { await pool.query("ALTER TABLE monthly_snapshots ADD COLUMN bi_insights JSON"); } catch(_) {}
+  }
+  try {
+    await pool.query("ALTER TABLE monthly_snapshots ADD COLUMN IF NOT EXISTS recommendations JSON");
+  } catch (e) {
+    try { await pool.query("ALTER TABLE monthly_snapshots ADD COLUMN recommendations JSON"); } catch(_) {}
+  }
+  // Descobre colunas existentes para montar SQL compatível
+  let cols = new Set();
+  try {
+    const [colRows] = await pool.query("SHOW COLUMNS FROM monthly_snapshots");
+    cols = new Set(colRows.map(r => r.Field));
+  } catch (_) {}
+
+  const baseCols = ['user_id','year','month','total','total_business','total_personal','by_plan','by_account','projection','hhi'];
+  const optionalCols = [];
+  if (cols.has('bi_insights')) optionalCols.push('bi_insights');
+  if (cols.has('recommendations')) optionalCols.push('recommendations');
+
+  const allCols = [...baseCols, ...optionalCols];
+  const placeholders = allCols.map(() => '?').join(', ');
+  const updates = ['total','total_business','total_personal','by_plan','by_account','projection','hhi', ...optionalCols]
+    .map(c => `${c}=VALUES(${c})`).join(', ');
+
+  const insertSQL = `INSERT INTO monthly_snapshots (${allCols.join(', ')}) VALUES (${placeholders}) ON DUPLICATE KEY UPDATE ${updates}`;
+  const values = [
+    userId, year, month,
+    kpis.totals.total,
+    kpis.totals.totalEmpresarial,
+    kpis.totals.totalPessoal,
+    JSON.stringify(kpis.distrib.porPlano),
+    JSON.stringify(kpis.distrib.porConta),
+    kpis.projecao.projecao,
+    kpis.concentracao.hhi
+  ];
+  if (optionalCols.includes('bi_insights')) values.push(JSON.stringify(kpis.businessIntelligence?.insights || {}));
+  if (optionalCols.includes('recommendations')) values.push(JSON.stringify(kpis.businessIntelligence?.recommendations || []));
+
+  await pool.query(insertSQL, values);
 };
 
 // ====== FUNÇÕES DE BUSINESS INTELLIGENCE PARA RELATÓRIOS ======
