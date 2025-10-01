@@ -2409,6 +2409,124 @@ async function createBIAnalyticsPage(doc, data) {
     
     doc.y = 100;
     
+    // === COMPARATIVO EMPRESARIAL VS PESSOAL ===
+    doc.fontSize(18).fillColor('#1F2937').text('💼 COMPARATIVO: EMPRESARIAL VS PESSOAL', { underline: true });
+    doc.moveDown(1);
+    
+    const propEmpresarial = total > 0 ? (totalEmpresarial / total * 100) : 0;
+    const propPessoal = total > 0 ? (totalPessoal / total * 100) : 0;
+    
+    // Gráfico de barras horizontais comparativo
+    const barWidth = 400;
+    const barHeight = 30;
+    const startX = 80;
+    let currentY = doc.y;
+    
+    // Barra Empresarial
+    doc.fillColor('#E5E7EB').rect(startX, currentY, barWidth, barHeight).fill();
+    const empWidth = (barWidth * propEmpresarial) / 100;
+    doc.fillColor('#3B82F6').rect(startX, currentY, empWidth, barHeight).fill();
+    doc.fillColor('#FFFFFF').fontSize(12).text('💼 EMPRESARIAL', startX + 10, currentY + 8);
+    doc.fillColor('#1F2937').text(`R$ ${totalEmpresarial.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} (${propEmpresarial.toFixed(1)}%)`, startX + barWidth + 20, currentY + 8);
+    
+    currentY += barHeight + 20;
+    
+    // Barra Pessoal
+    doc.fillColor('#E5E7EB').rect(startX, currentY, barWidth, barHeight).fill();
+    const pesWidth = (barWidth * propPessoal) / 100;
+    doc.fillColor('#EF4444').rect(startX, currentY, pesWidth, barHeight).fill();
+    doc.fillColor('#FFFFFF').fontSize(12).text('🏠 PESSOAL', startX + 10, currentY + 8);
+    doc.fillColor('#1F2937').text(`R$ ${totalPessoal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} (${propPessoal.toFixed(1)}%)`, startX + barWidth + 20, currentY + 8);
+    
+    doc.y = currentY + 50;
+    
+    // === GRÁFICO DE UTILIZAÇÃO POR PLANO DE CONTA ===
+    doc.fontSize(18).fillColor('#1F2937').text('📊 UTILIZAÇÃO POR PLANO DE CONTA', { underline: true });
+    doc.moveDown(1);
+    
+    // Obter dados dos planos com utilização
+    const budgetConfig = require('./config/budgets');
+    const planosComGastos = [];
+    
+    for (let planId = 1; planId <= 47; planId++) {
+        const planData = porPlano[planId];
+        const ceiling = budgetConfig.tetos[planId] || 0;
+        const spent = planData ? planData.total : 0;
+        
+        if (spent > 0 || ceiling > 0) {
+            const percent = ceiling > 0 ? (spent / ceiling * 100) : 0;
+            planosComGastos.push({
+                plan: planId,
+                spent: spent,
+                ceiling: ceiling,
+                percent: Math.min(percent, 150) // Cap at 150% for visualization
+            });
+        }
+    }
+    
+    // Ordenar por maior utilização
+    planosComGastos.sort((a, b) => b.percent - a.percent);
+    
+    // Mostrar top 15 planos com maior utilização
+    const topPlanos = planosComGastos.slice(0, 15);
+    
+    if (topPlanos.length > 0) {
+        doc.fontSize(12).fillColor('#6B7280').text('Top 15 Planos por Utilização do Teto:');
+        doc.moveDown(0.5);
+        
+        const chartStartY = doc.y;
+        const chartHeight = 300;
+        const chartWidth = 500;
+        const chartX = 60;
+        
+        // Background do gráfico
+        doc.rect(chartX, chartStartY, chartWidth, chartHeight).stroke('#E5E7EB');
+        
+        // Barras do gráfico
+        const barSpacing = chartHeight / topPlanos.length;
+        const maxBarWidth = chartWidth - 100;
+        
+        topPlanos.forEach((plano, index) => {
+            const y = chartStartY + (index * barSpacing) + 5;
+            const barWidth = (plano.percent / 150) * maxBarWidth; // Scale to 150%
+            
+            // Cor baseada na utilização
+            let color = '#10B981'; // Verde para OK
+            if (plano.percent >= 100) color = '#EF4444'; // Vermelho para over budget
+            else if (plano.percent >= 90) color = '#F59E0B'; // Amarelo para at risk
+            else if (plano.percent >= 70) color = '#3B82F6'; // Azul para watch
+            
+            // Barra de fundo
+            doc.fillColor('#F3F4F6').rect(chartX + 80, y, maxBarWidth, barSpacing - 8).fill();
+            
+            // Barra de progresso
+            doc.fillColor(color).rect(chartX + 80, y, Math.max(2, barWidth), barSpacing - 8).fill();
+            
+            // Label do plano
+            doc.fillColor('#374151').fontSize(10).text(`Plano ${plano.plan}`, chartX + 5, y + 3, { width: 70 });
+            
+            // Percentual
+            doc.fillColor('#1F2937').text(`${plano.percent.toFixed(1)}%`, chartX + 85 + Math.min(barWidth + 5, maxBarWidth - 50), y + 3);
+        });
+        
+        // Legenda
+        doc.y = chartStartY + chartHeight + 20;
+        doc.fontSize(10).fillColor('#6B7280');
+        const legendItems = [
+            { color: '#10B981', text: '■ OK (<70%)' },
+            { color: '#3B82F6', text: '■ ATENÇÃO (70-89%)' },
+            { color: '#F59E0B', text: '■ RISCO (90-99%)' },
+            { color: '#EF4444', text: '■ EXCEDIDO (≥100%)' }
+        ];
+        
+        legendItems.forEach((item, index) => {
+            const x = 80 + (index * 120);
+            doc.fillColor(item.color).text(item.text, x, doc.y);
+        });
+        
+        doc.moveDown(2);
+    }
+    
     // === ANÁLISE TEMPORAL ===
     doc.fontSize(18).fillColor('#1F2937').text('📅 ANÁLISE TEMPORAL', { underline: true });
     doc.moveDown(1);
@@ -2864,15 +2982,15 @@ async function createBudgetControlPage(doc, data) {
         doc.moveDown(1);
         doc.fontSize(10).fillColor('#374151').text('Legenda: OVER_BUDGET >100% • AT_RISK ≥90% • WATCH 70–89% • OK <70%');
         
-        // Add detailed expense listing
+        // Add detailed expense listing with improved styling
         doc.addPage({ margin: 40, size: 'A4' });
         
         // Header for expense listing
-        doc.rect(0, 0, doc.page.width, 50).fill('#0F172A');
-        doc.fillColor('#FFFFFF').fontSize(18).text('📊 Listagem Detalhada de Gastos', 40, 15);
-        doc.fontSize(10).fillColor('#E5E7EB').text(`${monthNames[month - 1]} ${year}`, 40, 35);
+        doc.rect(0, 0, doc.page.width, 60).fill('#1E293B');
+        doc.fillColor('#FFFFFF').fontSize(20).text('� DETALHAMENTO POR PLANO DE CONTA', 40, 15);
+        doc.fontSize(12).fillColor('#CBD5E1').text(`Análise detalhada dos gastos - ${monthNames[month - 1]} ${year}`, 40, 40);
         
-        let currentY = 70;
+        let currentY = 80;
         
         // Group expenses by plan
         const expensesByPlan = {};
@@ -2901,39 +3019,82 @@ async function createBudgetControlPage(doc, data) {
             const planData = expensesByPlan[planId];
             
             // Check if we need a new page
-            if (currentY > doc.page.height - 100) {
+            if (currentY > doc.page.height - 120) {
                 doc.addPage({ margin: 40, size: 'A4' });
-                currentY = 40;
+                // Mini header for continuation
+                doc.rect(40, 20, doc.page.width - 80, 35).fill('#F8FAFC');
+                doc.fillColor('#1E293B').fontSize(14).text('📋 Detalhamento (continuação)', 50, 32);
+                currentY = 70;
             }
             
-            // Plan header
-            doc.rect(40, currentY, doc.page.width - 80, 25).fill('#F1F5F9');
-            doc.fillColor('#1E293B').fontSize(12).font('Helvetica-Bold')
-               .text(`Plano ${planId} - Total: R$ ${planData.total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, 
-                     45, currentY + 8);
-            currentY += 30;
+            // Plan header with modern styling
+            const headerHeight = 40;
+            const gradient = doc.linearGradient(40, currentY, doc.page.width - 40, currentY + headerHeight);
+            gradient.stop(0, '#3B82F6').stop(1, '#1E40AF');
+            doc.rect(40, currentY, doc.page.width - 80, headerHeight).fill(gradient);
             
-            // Expense items
-            planData.expenses.forEach(expense => {
-                if (currentY > doc.page.height - 60) {
+            // Plan info in header
+            doc.fillColor('#FFFFFF').fontSize(14).font('Helvetica-Bold')
+               .text(`📊 PLANO ${planId}`, 50, currentY + 8);
+            doc.fontSize(12).font('Helvetica')
+               .text(`Total: R$ ${planData.total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, 50, currentY + 25);
+            
+            // Expense count
+            doc.text(`${planData.expenses.length} ${planData.expenses.length === 1 ? 'lançamento' : 'lançamentos'}`, 
+                     doc.page.width - 180, currentY + 25, { width: 120, align: 'right' });
+            
+            currentY += headerHeight + 10;
+            
+            // Expense items with alternating background
+            planData.expenses.forEach((expense, idx) => {
+                if (currentY > doc.page.height - 80) {
                     doc.addPage({ margin: 40, size: 'A4' });
-                    currentY = 40;
+                    // Mini header for continuation
+                    doc.rect(40, 20, doc.page.width - 80, 35).fill('#F8FAFC');
+                    doc.fillColor('#1E293B').fontSize(14).text(`📋 Plano ${planId} (continuação)`, 50, 32);
+                    currentY = 70;
                 }
                 
-                doc.fillColor('#374151').fontSize(10).font('Helvetica')
-                   .text(`• ${expense.descricao || 'Sem descrição'}`, 50, currentY)
-                   .text(`R$ ${parseFloat(expense.valor || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, 
-                         doc.page.width - 120, currentY, { width: 80, align: 'right' });
+                const itemHeight = 25;
+                const bg = idx % 2 === 0 ? '#F8FAFC' : '#FFFFFF';
                 
+                // Background for item
+                doc.rect(50, currentY - 3, doc.page.width - 100, itemHeight).fill(bg);
+                
+                // Expense details with better formatting
+                doc.fillColor('#1F2937').fontSize(11).font('Helvetica-Bold')
+                   .text(`${expense.descricao || 'Sem descrição'}`, 60, currentY + 2, { width: 300 });
+                
+                // Value with emphasis
+                const valor = parseFloat(expense.valor || 0);
+                doc.fillColor('#DC2626').fontSize(12).font('Helvetica-Bold')
+                   .text(`R$ ${valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, 
+                         doc.page.width - 150, currentY + 2, { width: 100, align: 'right' });
+                
+                // Date with better formatting
                 if (expense.data_gasto) {
-                    doc.fillColor('#6B7280').fontSize(8)
-                       .text(new Date(expense.data_gasto).toLocaleDateString('pt-BR'), 50, currentY + 12);
+                    const dataFormatada = new Date(expense.data_gasto).toLocaleDateString('pt-BR');
+                    doc.fillColor('#6B7280').fontSize(9).font('Helvetica')
+                       .text(`📅 ${dataFormatada}`, 60, currentY + 14);
                 }
                 
-                currentY += 20;
+                // Type indicator
+                const tipo = expense.tipo || 'N/A';
+                const tipoColor = tipo.toLowerCase().includes('empresarial') ? '#3B82F6' : '#EF4444';
+                doc.fillColor(tipoColor).fontSize(9)
+                   .text(`🏷️ ${tipo}`, doc.page.width - 280, currentY + 14, { width: 120 });
+                
+                currentY += itemHeight + 2;
             });
             
-            currentY += 10; // Space between plans
+            // Summary box for the plan
+            const summaryHeight = 30;
+            doc.rect(50, currentY + 5, doc.page.width - 100, summaryHeight).fill('#E0F2FE');
+            doc.fillColor('#0C4A6E').fontSize(11).font('Helvetica-Bold')
+               .text(`💰 Subtotal do Plano ${planId}: R$ ${planData.total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, 
+                     60, currentY + 15);
+            
+            currentY += summaryHeight + 20; // Space between plans
         }
         
         // Summary totals at the end
