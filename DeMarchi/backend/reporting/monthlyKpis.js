@@ -1,15 +1,15 @@
 const computeMonthlyKPIs = async ({ pool, userId, year, month, account }) => {
   const startDate = new Date(year, month - 1, 1);
   const endDate = new Date(year, month, 0);
-  let sql = `SELECT id, amount, account_plan_code, account, is_business_expense, is_personal, transaction_date, description FROM expenses WHERE user_id = ? AND transaction_date >= ? AND transaction_date <= ?`;
+  let sql = `SELECT id, amount, account_plan_code, account, is_business_expense, transaction_date, description FROM expenses WHERE user_id = ? AND transaction_date >= ? AND transaction_date <= ?`;
   const params = [userId, startDate.toISOString().slice(0,10), endDate.toISOString().slice(0,10)];
   if (account && account !== 'ALL') { sql += ' AND account = ?'; params.push(account); }
   sql += ' ORDER BY transaction_date';
   const [expenses] = await pool.query(sql, params);
   if (!expenses.length) return { expenses: [], message: 'SEM_DADOS', year, month };
 
-  const empresariais = expenses.filter(e => e.is_business_expense === 1 || e.is_business_expense === true || e.is_personal === 0);
-  const pessoais = expenses.filter(e => (e.is_personal === 1 || e.is_personal === true) || (e.is_business_expense === 0 || e.is_business_expense === false)).filter(e => !empresariais.find(b=> b.id===e.id));
+  const empresariais = expenses.filter(e => e.is_business_expense === 1 || e.is_business_expense === true);
+  const pessoais = expenses.filter(e => e.is_business_expense === 0 || e.is_business_expense === false || e.is_business_expense === null).filter(e => !empresariais.find(b=> b.id===e.id));
   const total = expenses.reduce((s,e)=> s + parseFloat(e.amount), 0);
   const totalEmpresarial = empresariais.reduce((s,e)=> s + parseFloat(e.amount), 0);
   const totalPessoal = pessoais.reduce((s,e)=> s + parseFloat(e.amount), 0);

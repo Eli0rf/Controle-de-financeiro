@@ -2760,8 +2760,8 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
             // Análise dos dados
             // Classificação mais robusta: prioridade flags explícitas
             console.log(`📊 [STEP 6.1] Classificando despesas empresariais/pessoais...`);
-            empresariais = expenses.filter(e => e.is_business_expense === 1 || e.is_business_expense === true || e.is_personal === 0);
-            pessoais = expenses.filter(e => (e.is_personal === 1 || e.is_personal === true) || (e.is_business_expense === 0 || e.is_business_expense === false) );
+            empresariais = expenses.filter(e => e.is_business_expense === 1 || e.is_business_expense === true);
+            pessoais = expenses.filter(e => e.is_business_expense === 0 || e.is_business_expense === false || e.is_business_expense === null);
             // Evitar sobreposição duplicada caso flags inconsistentes
             const empresarialIds = new Set(empresariais.map(e=>e.id));
             pessoaisFiltrados = pessoais.filter(e => !empresarialIds.has(e.id));
