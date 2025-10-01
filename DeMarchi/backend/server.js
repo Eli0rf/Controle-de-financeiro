@@ -216,6 +216,18 @@ app.get('/api/kpis/monthly', authenticateToken, async (req, res) => {
             if (cached) return res.json({ cached: true, ...JSON.parse(cached) });
         }
         const kpis = await computeMonthlyKPIs({ pool, userId, year, month, account });
+        // Integrar bloco de controle de tetos por plano (BI)
+        try {
+            const { computeBudgetControlFromDistribution, tetos } = require('./config/budgets');
+            const distr = kpis?.distrib?.porPlano || {};
+            kpis.budgetControl = {
+                ceilings: tetos,
+                ...computeBudgetControlFromDistribution(distr)
+            };
+        } catch (e) {
+            console.warn('⚠️ Erro ao anexar budgetControl aos KPIs mensais:', e.message);
+        }
+
         if (kpis.expenses && kpis.expenses.length === 0) return res.json(kpis);
         // Salva snapshot (não bloqueante)
         saveMonthlySnapshot(pool, userId, year, month, kpis).catch(()=>{});
