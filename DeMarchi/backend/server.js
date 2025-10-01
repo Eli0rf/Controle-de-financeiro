@@ -2216,25 +2216,28 @@ async function generateIntelligentBIReport(data) {
 
     // === 📊 PÁGINA 1: DASHBOARD EXECUTIVO ===
     await createExecutiveDashboard(doc, data);
-    
+
+    // === 🎯 PÁGINA 2: CONTROLE DE TETOS POR PLANO (FOCO) ===
+    doc.addPage();
+    await createBudgetControlPage(doc, data);
+
     // === 🧾 (Opcional) PÁGINA DE EXTRATO ESTILO CONTA/NUBANK ===
     if (themeCfg.name === 'nubank') {
         doc.addPage();
         await createStatementStylePage(doc, data);
     }
-    
-    // === 📈 PÁGINA 2: ANÁLISES BI E INSIGHTS ===
+
+    // === 📈 PÁGINA 3: ANÁLISES BI E INSIGHTS ===
     doc.addPage();
     await createBIAnalyticsPage(doc, data);
-    
-    // === 📋 PÁGINA 3: DETALHAMENTO INTELIGENTE ===
+
+    // === 📋 PÁGINA 4: DETALHAMENTO INTELIGENTE ===
     doc.addPage();
     await createIntelligentDetailPage(doc, data);
-    
-    // === 📊 PÁGINA 4: GRÁFICOS MODERNOS ===
+
+    // === 📊 PÁGINA 5: GRÁFICOS MODERNOS ===
     doc.addPage();
     await createModernChartsPage(doc, data);
-    await createBudgetControlPage(doc, data);
     
     return doc;
 }
@@ -2648,13 +2651,13 @@ async function createBudgetControlPage(doc, data) {
         doc.addPage({ margin: 40, size: 'A4' });
         // Header
         doc.rect(0, 0, doc.page.width, 70).fill('#0F172A');
-        doc.fillColor('#FFFFFF').fontSize(20).text('📏 Controle de Tetos por Plano', 40, 25);
-        doc.fontSize(12).fillColor('#E5E7EB').text(`${monthNames[month-1]} ${year}`, 40, 50);
+        doc.fillColor('#FFFFFF').fontSize(22).text('📏 Controle de Tetos por Plano', 40, 22);
+        doc.fontSize(12).fillColor('#E5E7EB').text(`${monthNames[month-1]} ${year}`, 40, 48);
 
         doc.moveDown(1);
-        doc.fillColor('#111827').fontSize(12).text('Resumo de status:', 40, 90);
-        const s = control.summary || {};
-        doc.fontSize(11)
+    doc.fillColor('#0B1220').fontSize(13).text('Resumo de status:', 40, 90);
+    const s = control.summary || {};
+    doc.fontSize(12)
            .text(`• Acima do teto: ${s.overBudget || 0}`)
            .text(`• Em risco (≥90%): ${s.atRisk || 0}`)
            .text(`• Dentro do orçamento: ${s.withinBudget || 0}`)
@@ -2663,8 +2666,8 @@ async function createBudgetControlPage(doc, data) {
         // Table header
         doc.moveDown(1);
         const tableTop = doc.y + 10;
-        const colX = [40, 120, 240, 360, 460];
-        doc.fontSize(11).fillColor('#374151');
+        const colX = [40, 120, 250, 380, 500];
+        doc.fontSize(12).fillColor('#111827');
         doc.text('Plano', colX[0], tableTop);
         doc.text('Gasto (R$)', colX[1], tableTop);
         doc.text('Teto (R$)', colX[2], tableTop);
@@ -2673,12 +2676,12 @@ async function createBudgetControlPage(doc, data) {
         doc.moveTo(40, tableTop + 14).lineTo(doc.page.width - 40, tableTop + 14).stroke('#E5E7EB');
 
         // Rows
-        const rows = Object.values(control.perPlan || {}).sort((a,b)=> b.percent - a.percent).slice(0, 18);
+        const rows = Object.values(control.perPlan || {}).sort((a,b)=> b.percent - a.percent).slice(0, 16);
         let y = tableTop + 20;
         rows.forEach((row, idx) => {
-            const bg = idx % 2 === 0 ? '#F9FAFB' : '#FFFFFF';
-            doc.rect(40, y - 4, doc.page.width - 80, 18).fill(bg);
-            doc.fillColor('#111827').fontSize(10);
+            const bg = idx % 2 === 0 ? '#F8FAFC' : '#FFFFFF';
+            doc.rect(40, y - 6, doc.page.width - 80, 24).fill(bg);
+            doc.fillColor('#0B1220').fontSize(11);
             doc.text(String(row.plan), colX[0], y);
             doc.text((row.spent || 0).toFixed(2), colX[1], y);
             doc.text((row.ceiling || 0).toFixed(2), colX[2], y);
@@ -2690,7 +2693,20 @@ async function createBudgetControlPage(doc, data) {
             else if (status.startsWith('WATCH')) color = '#2563EB';
 
             doc.fillColor(color).text(status.replace('_', ' '), colX[4], y);
-            y += 20;
+
+            // Barra de progresso clara para visão imediata do uso de teto
+            const barX = 40;
+            const barY = y + 14;
+            const barW = doc.page.width - 80;
+            const usedPct = Math.max(0, Math.min(150, row.percent || 0)); // cap em 150%
+            const fillW = (barW * usedPct) / 100;
+            doc.rect(barX, barY, barW, 6).fill('#E5E7EB');
+            const fillColor = status === 'OVER_BUDGET' ? '#DC2626' : status.startsWith('AT_RISK') ? '#D97706' : '#10B981';
+            doc.rect(barX, barY, Math.max(2, fillW), 6).fill(fillColor);
+            // Label fora da barra para legibilidade
+            doc.fillColor('#0B1220').fontSize(9).text(`${usedPct.toFixed(1)}%`, barX + Math.min(fillW + 6, barW - 30), barY - 2, { width: 40 });
+
+            y += 30;
         });
 
         // Insights / Recommendations
@@ -2706,7 +2722,7 @@ async function createBudgetControlPage(doc, data) {
 
         // Legend
         doc.moveDown(1);
-        doc.fontSize(9).fillColor('#6B7280').text('Legenda: OVER_BUDGET >100% • AT_RISK ≥90% • WATCH 70–89% • OK <70%');
+        doc.fontSize(10).fillColor('#374151').text('Legenda: OVER_BUDGET >100% • AT_RISK ≥90% • WATCH 70–89% • OK <70%');
     } catch (err) {
         console.warn('⚠️ Erro ao gerar página de tetos:', err.message);
     }
