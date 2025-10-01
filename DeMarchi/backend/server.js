@@ -48,155 +48,16 @@ async function drawEmoji(doc, emoji, x, y, size=18){
     try { doc.image(filePath, x, y, { width:size, height:size }); } catch { doc.fontSize(size).text(emoji,x,y); }
 }
 const fs = require('fs');
-require('dotenv').config();
-
-// --- 2. CONFIGURAÇÕES PRINCIPAIS ---
-const app = express();
-const PORT = process.env.PORT || 3000;
-
-// CORS PRIMEIRO - antes de qualquer outro middleware
-app.use((req, res, next) => {
-    const origin = req.headers.origin;
-    
-    console.log(`🔍 CORS Debug - ${req.method} ${req.url}`);
-    console.log(`📍 Origin: ${origin || 'NO_ORIGIN'}`);
-    console.log(`🌐 User-Agent: ${req.headers['user-agent'] || 'NO_USER_AGENT'}`);
-    
-    // SEMPRE permitir estas origens específicas
-    const allowedOrigins = [
-        'https://controle-de-financeiro-production.up.railway.app',
-        'https://controlegastos-production.up.railway.app'
-    ];
-    
-    // Headers CORS obrigatórios - SEMPRE definir
-    res.header('Access-Control-Allow-Origin', origin && allowedOrigins.includes(origin) ? origin : '*');
-    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
-    res.header('Access-Control-Allow-Credentials', 'true');
-    res.header('Access-Control-Max-Age', '3600');
-    
-    console.log(`✅ CORS Headers definidos:`);
-    console.log(`   Access-Control-Allow-Origin: ${res.getHeader('Access-Control-Allow-Origin')}`);
-    console.log(`   Access-Control-Allow-Methods: ${res.getHeader('Access-Control-Allow-Methods')}`);
-    
-    // Para requisições OPTIONS (preflight), responder imediatamente
-    if (req.method === 'OPTIONS') {
-        console.log('✅ Respondendo preflight OPTIONS');
-        return res.status(200).end();
-    }
-    
-    next();
-});
-
-// Importar configurações de banco e migrações
+const cors = require('cors');
 const { pool, testConnection } = require('./config/database');
-const { createDatabase } = require('./migrations/migrate');
 
-// Definição dos períodos de faturamento por conta
-const billingPeriods = {
-    'Nu Bank Ketlyn': { startDay: 2, endDay: 1 },
-    'Nu Vainer': { startDay: 2, endDay: 1 },
-    'Ourocard Ketlyn': { startDay: 17, endDay: 16 },
-    'PicPay Vainer': { startDay: 1, endDay: 30 },
-    'PIX/Boleto': { startDay: 1, endDay: 30, isRecurring: true }
-};
-
-// --- 3. MIDDLEWARES ---
+// Inicialização do Express
+const app = express();
+app.use(cors());
 app.use(express.json());
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-// 3. Crie o endpoint de Health Check Inteligente
-app.get('/health', async (req, res) => {
-    try {
-        // Tenta pegar uma conexão do pool e fazer uma query simples
-        const connection = await pool.getConnection();
-        await connection.ping(); // ping() é mais rápido que uma query completa
-        connection.release(); // Libera a conexão de volta para o pool
-        
-        // Se tudo deu certo, retorna 200 OK
-        res.status(200).json({ status: 'ok', db: 'connected', version: '1.0.1' });
-    } catch (error) {
-        // Se a conexão com o banco falhar, o serviço não está saudável
-        console.error('Health check falhou:', error);
-        res.status(503).json({ status: 'error', db: 'disconnected', details: error.message });
-    }
-});
-
-// Endpoint de exemplo
-app.get('/', (req, res) => {
-    res.send('Aplicação rodando!');
-});
-
-// Endpoint de teste CORS
-app.get('/test-cors', (req, res) => {
-    res.json({ 
-        message: 'CORS funcionando!', 
-        origin: req.headers.origin,
-        timestamp: new Date().toISOString()
-    });
-});
-
-// Endpoint de teste POST para CORS
-app.post('/test-cors', (req, res) => {
-    res.json({ 
-        message: 'POST CORS funcionando!', 
-        origin: req.headers.origin,
-        body: req.body,
-        timestamp: new Date().toISOString()
-    });
-});
-// Cria/atualiza view de snapshots para BI externo
-async function ensureKpiView(){
-    try {
-        // Primeiro, garante que a tabela existe
-        await pool.query(`CREATE TABLE IF NOT EXISTS monthly_snapshots (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            user_id INT NOT NULL,
-            year INT NOT NULL,
-            month INT NOT NULL,
-            total DECIMAL(12,2) NOT NULL,
-            total_business DECIMAL(12,2) NOT NULL,
-            total_personal DECIMAL(12,2) NOT NULL,
-            by_plan JSON,
-            by_account JSON,
-            projection DECIMAL(12,2) DEFAULT 0,
-            hhi DECIMAL(10,5) DEFAULT 0,
-            bi_insights JSON,
-            recommendations JSON,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-            UNIQUE KEY uniq_user_month (user_id, year, month)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;`);
-        // Tenta alinhar colunas caso a tabela já exista sem os novos campos
-        try {
-            await pool.query("ALTER TABLE monthly_snapshots ADD COLUMN IF NOT EXISTS bi_insights JSON, ADD COLUMN IF NOT EXISTS recommendations JSON");
-        } catch (e) {
-            // Ignora se o banco não suportar IF NOT EXISTS; tenta individualmente
-            try { await pool.query("ALTER TABLE monthly_snapshots ADD COLUMN bi_insights JSON"); } catch(_) {}
-            try { await pool.query("ALTER TABLE monthly_snapshots ADD COLUMN recommendations JSON"); } catch(_) {}
-        }
-        
-        // Depois cria a view
-        await pool.query(`CREATE OR REPLACE VIEW monthly_kpi_view AS 
-            SELECT ms.user_id, u.username, ms.year, ms.month, ms.total, ms.total_business, ms.total_personal,
-                         ms.projection, ms.hhi, ms.created_at, ms.updated_at
-            FROM monthly_snapshots ms
-            JOIN users u ON u.id = ms.user_id`);
-        console.log('✅ View monthly_kpi_view pronta');
-    } catch(e){ console.error('Erro criando view monthly_kpi_view', e.message); }
-}
-ensureKpiView();
-// Inicializa scheduler de KPIs após dependências carregadas
-setTimeout(()=>{
-    try { initKpiScheduler({ pool, computeMonthlyKPIs, saveMonthlySnapshot }); } catch(e){ console.error('Falha init scheduler', e); }
-}, 2000);
-
-// Global error handler (last middleware)
-app.use((err, req, res, next) => {
-    console.error('🔥 Erro não tratado:', err.stack || err);
-    if (res.headersSent) return next(err);
-    res.status(500).json({ error: 'INTERNAL_ERROR', message: err.message });
-});
+// Teste de conexão com o banco no start (não bloqueante)
+testConnection().catch(() => {});
 // ====== API KPIs Mensais (JSON) ======
 const { computeMonthlyKPIs, saveMonthlySnapshot, computeTrendAnalysis, computeComparativeAnalysis, generateExecutiveReport } = require('./reporting/monthlyKpis');
 const { getRedis } = require('./utils/redisClient');
@@ -2708,6 +2569,27 @@ async function createModernChartsPage(doc, data) {
                 doc.image(charts.accountChart, 50, doc.y + 20, { width: 500, height: 300 });
                 doc.y += 340;
             }
+            if (doc.y > 600) { doc.addPage(); doc.y = 50; }
+
+            if (charts.comparisonChart) {
+                doc.fontSize(14).fillColor('#1F2937').text('🍩 Pessoal vs Empresarial', { underline: true });
+                doc.image(charts.comparisonChart, 50, doc.y + 20, { width: 400, height: 300 });
+                doc.y += 340;
+            }
+            if (doc.y > 600) { doc.addPage(); doc.y = 50; }
+
+            if (charts.evolutionChart) {
+                doc.fontSize(14).fillColor('#1F2937').text('📈 Evolução diária de gastos', { underline: true });
+                doc.image(charts.evolutionChart, 50, doc.y + 20, { width: 500, height: 300 });
+                doc.y += 340;
+            }
+            if (doc.y > 600) { doc.addPage(); doc.y = 50; }
+
+            if (charts.weeklyChart) {
+                doc.fontSize(14).fillColor('#1F2937').text('📅 Comparativo semanal', { underline: true });
+                doc.image(charts.weeklyChart, 50, doc.y + 20, { width: 500, height: 300 });
+                doc.y += 340;
+            }
             
         } catch (chartError) {
             console.error('Erro ao inserir gráficos no PDF:', chartError);
@@ -2739,22 +2621,31 @@ async function createStatementStylePage(doc, data) {
         doc.text('Valor (R$)', colX[4], startY);
         doc.moveTo(40, startY + 14).lineTo(doc.page.width - 40, startY + 14).stroke('#E5E7EB');
 
-        // Linhas com zebra
+        // Linhas com zebra - paginação completa
         let y = startY + 20;
-        const rows = expenses
-            .slice()
-            .sort((a, b) => new Date(a.transaction_date) - new Date(b.transaction_date))
-            .slice(0, 28); // cabe em 1 página
+        const rows = expenses.slice().sort((a, b) => new Date(a.transaction_date) - new Date(b.transaction_date));
         rows.forEach((e, idx) => {
+            if (y > doc.page.height - 60) {
+                doc.addPage();
+                // re-render header row on new page
+                const headerY = 40;
+                doc.fillColor('#111827').fontSize(11).text('Data', colX[0], headerY);
+                doc.text('Descrição', colX[1], headerY);
+                doc.text('Conta', colX[2], headerY);
+                doc.text('Tipo', colX[3], headerY);
+                doc.text('Valor (R$)', colX[4], headerY);
+                doc.moveTo(40, headerY + 14).lineTo(doc.page.width - 40, headerY + 14).stroke('#E5E7EB');
+                y = headerY + 20;
+            }
             const bg = idx % 2 === 0 ? (themeCfg?.zebra1 || '#FAF5FF') : (themeCfg?.zebra2 || '#FFFFFF');
             doc.rect(40, y - 4, doc.page.width - 80, 18).fill(bg);
             doc.fillColor('#111827').fontSize(10);
             doc.text(new Date(e.transaction_date).toLocaleDateString('pt-BR'), colX[0], y);
-            const descricao = (e.description || '').slice(0, 32);
+            const descricao = (e.description || '').slice(0, 48);
             doc.text(descricao, colX[1], y, { width: colX[2] - colX[1] - 10 });
             doc.text(e.account || '-', colX[2], y, { width: colX[3] - colX[2] - 10 });
             doc.text(e.is_business_expense ? 'Empresarial' : 'Pessoal', colX[3], y);
-            const valStr = (parseFloat(e.amount || 0)).toFixed(2);
+            const valStr = (parseFloat(e.amount || 0)).toLocaleString('pt-BR', { minimumFractionDigits: 2 });
             doc.text(valStr, colX[4], y, { width: 60, align: 'right' });
             y += 20;
         });
