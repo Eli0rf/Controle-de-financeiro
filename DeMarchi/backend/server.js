@@ -2524,7 +2524,8 @@ async function createIntelligentDetailPage(doc, data) {
     doc.moveDown(1);
     
     detailedAnalysis.forEach(([plano, total], index) => {
-        const planoExpenses = (expenses || []).filter(e => e.account_plan_code === plano);
+        const planoStr = String(plano);
+        const planoExpenses = (expenses || []).filter(e => String(e.account_plan_code || '') === planoStr);
         const count = planoExpenses.length || 1;
         const avgTransaction = total / count;
         
@@ -2647,8 +2648,7 @@ async function createBudgetControlPage(doc, data) {
         const monthNames = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
         const { computeBudgetControlFromDistribution, tetos } = require('./config/budgets');
         const control = computeBudgetControlFromDistribution(porPlano);
-
-        doc.addPage({ margin: 40, size: 'A4' });
+        // desenha na página atual (a página já foi adicionada pelo chamador)
         // Header
         doc.rect(0, 0, doc.page.width, 70).fill('#0F172A');
         doc.fillColor('#FFFFFF').fontSize(22).text('📏 Controle de Tetos por Plano', 40, 22);
@@ -2665,14 +2665,15 @@ async function createBudgetControlPage(doc, data) {
 
         // Table header
         doc.moveDown(1);
-        const tableTop = doc.y + 10;
-        const colX = [40, 120, 250, 380, 500];
+    const tableTop = doc.y + 10;
+    const colX = [40, 140, 280, 400, 510];
         doc.fontSize(12).fillColor('#111827');
-        doc.text('Plano', colX[0], tableTop);
-        doc.text('Gasto (R$)', colX[1], tableTop);
-        doc.text('Teto (R$)', colX[2], tableTop);
-        doc.text('% do Teto', colX[3], tableTop);
-        doc.text('Status', colX[4], tableTop);
+    const colW = [colX[1]-colX[0]-10, colX[2]-colX[1]-10, colX[3]-colX[2]-10, colX[4]-colX[3]-10, doc.page.width-40-colX[4]];
+    doc.text('Plano', colX[0], tableTop, { width: colW[0] });
+    doc.text('Gasto (R$)', colX[1], tableTop, { width: colW[1], align: 'right' });
+    doc.text('Teto (R$)', colX[2], tableTop, { width: colW[2], align: 'right' });
+    doc.text('% do Teto', colX[3], tableTop, { width: colW[3], align: 'right' });
+    doc.text('Status', colX[4], tableTop, { width: colW[4] });
         doc.moveTo(40, tableTop + 14).lineTo(doc.page.width - 40, tableTop + 14).stroke('#E5E7EB');
 
         // Rows
@@ -2680,33 +2681,29 @@ async function createBudgetControlPage(doc, data) {
         let y = tableTop + 20;
         rows.forEach((row, idx) => {
             const bg = idx % 2 === 0 ? '#F8FAFC' : '#FFFFFF';
-            doc.rect(40, y - 6, doc.page.width - 80, 24).fill(bg);
-            doc.fillColor('#0B1220').fontSize(11);
-            doc.text(String(row.plan), colX[0], y);
-            doc.text((row.spent || 0).toFixed(2), colX[1], y);
-            doc.text((row.ceiling || 0).toFixed(2), colX[2], y);
-            doc.text(`${(row.percent || 0).toFixed(1)}%`, colX[3], y);
+            doc.rect(40, y - 6, doc.page.width - 80, 30).fill(bg);
+            // Barra de progresso primeiro (para não cobrir textos)
+            const barX = colX[1];
+            const barW = (colX[4] - 10) - barX; // até antes da coluna Status
+            const usedPct = Math.max(0, Math.min(150, row.percent || 0));
+            const fillW = (barW * usedPct) / 100;
+            doc.rect(barX, y + 14, barW, 6).fill('#E5E7EB');
+            const fillColor = (row.status === 'OVER_BUDGET') ? '#DC2626' : (row.status || '').startsWith('AT_RISK') ? '#D97706' : '#10B981';
+            doc.rect(barX, y + 14, Math.max(2, fillW), 6).fill(fillColor);
+            doc.fillColor('#0B1220').fontSize(9).text(`${usedPct.toFixed(1)}%`, barX + Math.min(fillW + 6, barW - 30), y + 12, { width: 40 });
 
+            // Textos sobre a área da linha
+            doc.fillColor('#0B1220').fontSize(11);
+            doc.text(String(row.plan), colX[0], y, { width: colW[0] });
+            doc.text((row.spent || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 }), colX[1], y, { width: colW[1], align: 'right' });
+            doc.text((row.ceiling || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 }), colX[2], y, { width: colW[2], align: 'right' });
+            doc.text(`${(row.percent || 0).toFixed(1)}%`, colX[3], y, { width: colW[3], align: 'right' });
             let color = '#065F46', status = row.status || 'OK';
             if (status === 'OVER_BUDGET') color = '#B91C1C';
             else if (status.startsWith('AT_RISK')) color = '#92400E';
             else if (status.startsWith('WATCH')) color = '#2563EB';
-
-            doc.fillColor(color).text(status.replace('_', ' '), colX[4], y);
-
-            // Barra de progresso clara para visão imediata do uso de teto
-            const barX = 40;
-            const barY = y + 14;
-            const barW = doc.page.width - 80;
-            const usedPct = Math.max(0, Math.min(150, row.percent || 0)); // cap em 150%
-            const fillW = (barW * usedPct) / 100;
-            doc.rect(barX, barY, barW, 6).fill('#E5E7EB');
-            const fillColor = status === 'OVER_BUDGET' ? '#DC2626' : status.startsWith('AT_RISK') ? '#D97706' : '#10B981';
-            doc.rect(barX, barY, Math.max(2, fillW), 6).fill(fillColor);
-            // Label fora da barra para legibilidade
-            doc.fillColor('#0B1220').fontSize(9).text(`${usedPct.toFixed(1)}%`, barX + Math.min(fillW + 6, barW - 30), barY - 2, { width: 40 });
-
-            y += 30;
+            doc.fillColor(color).text(status.replace('_', ' '), colX[4], y, { width: colW[4] });
+            y += 34;
         });
 
         // Insights / Recommendations
