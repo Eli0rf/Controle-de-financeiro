@@ -2269,7 +2269,16 @@ async function createExecutiveDashboard(doc, data) {
 
 // 📈 PÁGINA 2: ANÁLISES BI E INSIGHTS
 async function createBIAnalyticsPage(doc, data) {
-    const { expenses, total, totalPessoal, totalEmpresarial, porPlano, porConta, year, month } = data;
+    const {
+        expenses = [],
+        total = 0,
+        totalPessoal = 0,
+        totalEmpresarial = 0,
+        porPlano = {},
+        porConta = {},
+        year,
+        month
+    } = data;
     
     // Cabeçalho da página
     doc.rect(0, 0, doc.page.width, 80).fill('#764ba2');
@@ -2306,7 +2315,7 @@ async function createBIAnalyticsPage(doc, data) {
     doc.fontSize(18).fillColor('#1F2937').text('🏆 TOP CATEGORIAS', { underline: true });
     doc.moveDown(1);
     
-    const topCategories = Object.entries(porConta)
+    const topCategories = Object.entries(porConta || {})
         .sort(([,a], [,b]) => b - a)
         .slice(0, 10);
     
@@ -2327,7 +2336,7 @@ async function createBIAnalyticsPage(doc, data) {
     doc.fontSize(18).fillColor('#1F2937').text('⚖️ ANÁLISE COMPARATIVA', { underline: true });
     doc.moveDown(1);
     
-    const comparative = generateComparativeAnalysis(expenses, total, totalPessoal, totalEmpresarial);
+    const comparative = generateComparativeAnalysis(expenses || [], total || 0, totalPessoal || 0, totalEmpresarial || 0);
     
     comparative.forEach(comp => {
         doc.roundedRect(40, doc.y, doc.page.width - 80, 60, 8).fill('#F8FAFC');
@@ -2339,7 +2348,7 @@ async function createBIAnalyticsPage(doc, data) {
 
 // 📋 PÁGINA 3: DETALHAMENTO INTELIGENTE
 async function createIntelligentDetailPage(doc, data) {
-    const { expenses, porPlano, year, month } = data;
+    const { expenses = [], porPlano = {}, year, month } = data;
     
     // Cabeçalho
     doc.rect(0, 0, doc.page.width, 80).fill('#4F46E5');
@@ -2349,7 +2358,7 @@ async function createIntelligentDetailPage(doc, data) {
     doc.y = 100;
     
     // Agrupar por planos e analisar
-    const detailedAnalysis = Object.entries(porPlano)
+    const detailedAnalysis = Object.entries(porPlano || {})
         .sort(([,a], [,b]) => b - a)
         .slice(0, 8); // Top 8 planos
     
@@ -2357,8 +2366,9 @@ async function createIntelligentDetailPage(doc, data) {
     doc.moveDown(1);
     
     detailedAnalysis.forEach(([plano, total], index) => {
-        const planoExpenses = expenses.filter(e => e.account_plan_code === plano);
-        const avgTransaction = total / planoExpenses.length;
+        const planoExpenses = (expenses || []).filter(e => e.account_plan_code === plano);
+        const count = planoExpenses.length || 1;
+        const avgTransaction = total / count;
         
         const colors = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#06B6D4', '#84CC16', '#F97316'];
         
@@ -2371,17 +2381,17 @@ async function createIntelligentDetailPage(doc, data) {
         
         // Detalhes
         doc.fillColor('#374151').fontSize(10)
-           .text(`• ${planoExpenses.length} transações`, 60, doc.y + 45)
+           .text(`• ${planoExpenses.length || 0} transações`, 60, doc.y + 45)
            .text(`• Média por transação: R$ ${avgTransaction.toFixed(2)}`, 60, doc.y + 60)
-           .text(`• Percentual do total: ${(total / expenses.reduce((sum, e) => sum + parseFloat(e.amount), 0) * 100).toFixed(1)}%`, 280, doc.y + 45)
-           .text(`• Maior transação: R$ ${Math.max(...planoExpenses.map(e => parseFloat(e.amount))).toFixed(2)}`, 280, doc.y + 60);
+           .text(`• Percentual do total: ${((total / ((expenses||[]).reduce((sum, e) => sum + parseFloat(e.amount||0), 0) || 1)) * 100).toFixed(1)}%`, 280, doc.y + 45)
+           .text(`• Maior transação: R$ ${((planoExpenses.length? Math.max(...planoExpenses.map(e => parseFloat(e.amount||0))) : 0)).toFixed(2)}`, 280, doc.y + 60);
         
         doc.y += 95;
     });
 }
 // 📊 PÁGINA 4: GRÁFICOS MODERNOS
 async function createModernChartsPage(doc, data) {
-    const { expenses, porPlano, porConta } = data;
+    const { expenses = [], porPlano = {}, porConta = {} } = data;
     
     // Cabeçalho
     doc.rect(0, 0, doc.page.width, 80).fill('#059669');
@@ -2527,7 +2537,7 @@ function generateSmartAlerts(expenses, total, totalPessoal, totalEmpresarial, ye
 }
 
 // 📈 ANÁLISE TEMPORAL
-function analyzeTemporalPatterns(expenses, year, month) {
+function analyzeTemporalPatterns(expenses = [], year, month) {
     const weekly = [
         { total: 0, count: 0 },
         { total: 0, count: 0 },
@@ -2536,7 +2546,7 @@ function analyzeTemporalPatterns(expenses, year, month) {
         { total: 0, count: 0 }
     ];
     
-    expenses.forEach(expense => {
+    (expenses || []).forEach(expense => {
         const day = new Date(expense.transaction_date).getDate();
         const weekIndex = Math.min(Math.floor((day - 1) / 7), 4);
         
@@ -2548,7 +2558,7 @@ function analyzeTemporalPatterns(expenses, year, month) {
 }
 
 // ⚖️ ANÁLISE COMPARATIVA
-function generateComparativeAnalysis(expenses, total, totalPessoal, totalEmpresarial) {
+function generateComparativeAnalysis(expenses = [], total = 0, totalPessoal = 0, totalEmpresarial = 0) {
     const analysis = [];
     
     // Comparação de volumes
@@ -2569,8 +2579,8 @@ function generateComparativeAnalysis(expenses, total, totalPessoal, totalEmpresa
     }
     
     // Análise de frequência
-    const pessoaisCount = expenses.filter(e => !e.is_business_expense).length;
-    const empresariaisCount = expenses.filter(e => e.is_business_expense).length;
+    const pessoaisCount = (expenses || []).filter(e => !e.is_business_expense).length;
+    const empresariaisCount = (expenses || []).filter(e => e.is_business_expense).length;
     
     const mediaPessoal = totalPessoal / pessoaisCount || 0;
     const mediaEmpresarial = totalEmpresarial / empresariaisCount || 0;
@@ -2899,21 +2909,21 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
         console.log(`🧠 [STEP 11] Iniciando geração do relatório BI inteligente...`);
         
         try {
-            // Gerar relatório BI completo usando a nova função
-            const biReport = await generateIntelligentBIReport(
-                expenses, 
-                total, 
-                totalEmpresarial, 
-                totalPessoal, 
-                empresariais, 
-                pessoaisFiltrados, 
-                expensesByPlan,
+            // Gerar relatório BI completo usando a nova função (objeto de dados)
+            const biReport = await generateIntelligentBIReport({
+                expenses,
+                total,
+                totalPessoal,
+                totalEmpresarial,
                 startDate,
                 endDate,
                 contaNome,
                 year,
-                month
-            );
+                month,
+                porPlano,
+                porConta,
+                userId
+            });
             
             console.log(`✅ [STEP 11] Relatório BI inteligente gerado com sucesso!`);
             
