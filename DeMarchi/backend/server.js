@@ -103,26 +103,90 @@ const billingPeriods = {
 };
 
 // Fallback simples de PDF (usado quando BI falha)
-function generateSimplePDF(expenses, total, startDate, endDate, contaNome, year, month){
-    const doc = new pdfkit();
+function generateSimplePDF(expenses, total, startDate, endDate, contaNome, year, month, opts={}){
+    const doc = new pdfkit({ margin: 35, size: 'A4' });
+    const safeExpenses = Array.isArray(expenses) ? expenses : [];
+    const totalPessoal = safeExpenses.filter(e=>!e.is_business_expense).reduce((s,e)=>s+parseFloat(e.amount||0),0);
+    const totalEmp = safeExpenses.filter(e=>e.is_business_expense).reduce((s,e)=>s+parseFloat(e.amount||0),0);
+    const monthNames = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
     try {
-        doc.fontSize(22).text('RELATÓRIO SIMPLIFICADO', {align:'center'});
+        // Capa / Header
+        const grad = doc.linearGradient(0,0,0,140); grad.stop(0,'#0F172A').stop(1,'#1E3A8A');
+        doc.rect(0,0,doc.page.width,140).fill(grad);
+        doc.fillColor('#FFFFFF').fontSize(26).text('RELATÓRIO FINANCEIRO MENSAL',40,40,{width:doc.page.width-80});
+        doc.fontSize(13).fillColor('#E2E8F0').text(`${monthNames[month-1]}/${year} • ${contaNome}`,40,90);
+        doc.fontSize(10).fillColor('#94A3B8').text(`Gerado em ${new Date().toLocaleString('pt-BR')}`,40,108);
+
         doc.moveDown();
-        doc.fontSize(12).text(`Período: ${startDate.toLocaleDateString('pt-BR')} a ${endDate.toLocaleDateString('pt-BR')}`, {align:'center'});
-        doc.text(`Conta: ${contaNome}`, {align:'center'});
-        doc.moveDown();
-        doc.fontSize(16).text(`Total: R$ ${total.toLocaleString('pt-BR',{minimumFractionDigits:2})}`, {align:'center'});
-        doc.moveDown();
-        doc.fontSize(12).text('Top 20 Despesas:', {underline:true});
-        (expenses||[]).slice(0,20).forEach((e,i)=>{
-            const dt = new Date(e.transaction_date).toLocaleDateString('pt-BR');
-            const val = parseFloat(e.amount||0).toLocaleString('pt-BR',{minimumFractionDigits:2});
-            doc.text(`${i+1}. ${dt} - R$ ${val} - ${(e.description||'').slice(0,60)}`);
-        });
-        if (expenses.length>20) doc.text(`... e mais ${expenses.length-20} itens.`);
-    } catch(err){
-        console.warn('Falha generateSimplePDF:', err.message);
-    }
+        doc.y = 155;
+        // Resumo Geral (cards)
+        const cardW = (doc.page.width-80)/3; const y0 = doc.y; const cardH=90;
+        function card(x,color,title,value,sub){
+            doc.roundedRect(x,y0,cardW,cardH,10).fill(color); doc.fillColor('#FFFFFF').fontSize(12).text(title,x+12,y0+14,{width:cardW-24});
+            doc.fontSize(18).text(value,x+12,y0+38,{width:cardW-24});
+            doc.fontSize(10).fillColor('#F1F5F9').text(sub,x+12,y0+64,{width:cardW-24});
+        }
+        const totalFmt = `R$ ${total.toLocaleString('pt-BR',{minimumFractionDigits:2})}`;
+        card(40,'#2563EB','💰 Total Geral', totalFmt, `${safeExpenses.length} transações`);
+        card(40+cardW+10,'#10B981','🏠 Pessoal', `R$ ${totalPessoal.toLocaleString('pt-BR',{minimumFractionDigits:2})}`, `${total>0?(totalPessoal/total*100).toFixed(1):0}% do total`);
+        card(40+2*(cardW+10),'#F59E0B','💼 Empresarial', `R$ ${totalEmp.toLocaleString('pt-BR',{minimumFractionDigits:2})}`, `${total>0?(totalEmp/total*100).toFixed(1):0}% do total`);
+        doc.y = y0 + cardH + 25;
+
+        // Distribuição por Plano (tabela resumida)
+        doc.fontSize(14).fillColor('#0F172A').text('🥧 Distribuição por Plano de Conta',40,doc.y);
+        const byPlan = {};
+        safeExpenses.forEach(e=>{ const p = e.account_plan_code||'Sem Plano'; byPlan[p]=(byPlan[p]||0)+parseFloat(e.amount||0); });
+        const sortedPlans = Object.entries(byPlan).sort((a,b)=>b[1]-a[1]);
+        doc.moveDown(0.5); doc.fontSize(9).fillColor('#374151');
+        let ty = doc.y; doc.text('Plano',40,ty); doc.text('Valor (R$)',140,ty,{align:'right',width:120}); doc.text('%',270,ty,{align:'right',width:50});
+        doc.moveTo(40,ty+12).lineTo(doc.page.width-40,ty+12).stroke('#E5E7EB'); ty+=18;
+        sortedPlans.slice(0,12).forEach(([p,v],i)=>{ const pct = total>0?(v/total*100).toFixed(1):'0.0'; if(ty>doc.page.height-80){ doc.addPage(); ty=60; }
+            const bg = i%2===0?'#F8FAFC':'#FFFFFF'; doc.rect(40,ty-4, doc.page.width-80,16).fill(bg);
+            doc.fillColor('#1F2937').fontSize(9).text(String(p),45,ty); doc.text(v.toLocaleString('pt-BR',{minimumFractionDigits:2}),140,ty,{width:120,align:'right'}); doc.text(pct+'%',270,ty,{width:50,align:'right'}); ty+=18; });
+        doc.y = ty + 10;
+
+        // Limites vs Gastos (se fornecido orçamento em opts.budgets)
+        if (opts.budgets) {
+            doc.fontSize(14).fillColor('#0F172A').text('🎯 Análise de Limites vs Gastos',40,doc.y); doc.moveDown(0.5);
+            const perPlan = sortedPlans.slice(0,12);
+            let ly = doc.y;
+            perPlan.forEach(([p,v])=>{ const teto = opts.budgets[p]||0; const pct = teto>0?(v/teto*100):0; if(ly>doc.page.height-70){ doc.addPage(); ly=60; }
+                doc.fontSize(9).fillColor('#111827').text(`Plano ${p}: R$ ${v.toLocaleString('pt-BR',{minimumFractionDigits:2})} / Teto R$ ${teto.toLocaleString('pt-BR',{minimumFractionDigits:2})} (${pct.toFixed(1)}%)`,40,ly,{width:doc.page.width-80});
+                // Barra
+                const barW = doc.page.width-160; const used = Math.min(1,pct/100); doc.rect(40,ly+12,barW,6).fill('#E5E7EB'); doc.rect(40,ly+12,Math.max(4,barW*used),6).fill(pct>=100?'#DC2626':pct>=90?'#D97706':pct>=70?'#2563EB':'#10B981'); ly+=24; });
+            doc.y = ly + 5;
+        }
+
+        // Alertas e Recomendações
+        doc.fontSize(14).fillColor('#0F172A').text('⚠️ Alertas & Recomendações',40,doc.y); doc.moveDown(0.5);
+        const alerts = []; if (opts.budgets){ sortedPlans.forEach(([p,v])=>{ const teto=opts.budgets[p]; if(teto){ const pct=v/teto*100; if(pct>=100) alerts.push({level:'CRIT', msg:`Plano ${p} estourou o teto (${pct.toFixed(1)}%)`}); else if(pct>=90) alerts.push({level:'RISK', msg:`Plano ${p} em risco (${pct.toFixed(1)}%)`}); } }); }
+        if(alerts.length===0) { doc.fontSize(10).fillColor('#059669').text('Nenhum alerta crítico encontrado.'); }
+        else { alerts.slice(0,8).forEach(a=>{ doc.fontSize(10).fillColor(a.level==='CRIT'?'#B91C1C':'#D97706').text(`• ${a.msg}`,40,doc.y); doc.y+=14; }); }
+        doc.moveDown(0.5);
+
+        // Gastos por Conta
+        doc.fontSize(14).fillColor('#0F172A').text('🏦 Gastos por Conta',40,doc.y); doc.moveDown(0.5);
+        const byAccount={}; safeExpenses.forEach(e=>{const c=e.account||'Sem Conta'; byAccount[c]=(byAccount[c]||0)+parseFloat(e.amount||0);});
+        Object.entries(byAccount).sort((a,b)=>b[1]-a[1]).slice(0,10).forEach(([c,v])=>{ doc.fontSize(10).fillColor('#111827').text(`• ${c}: R$ ${v.toLocaleString('pt-BR',{minimumFractionDigits:2})}`,40,doc.y); doc.y+=14; });
+
+        // Detalhamento Empresarial
+        doc.addPage();
+        doc.fontSize(16).fillColor('#1F2937').text('💼 Detalhamento de Gastos Empresariais',40,50);
+        const emp = safeExpenses.filter(e=>e.is_business_expense); let ey=90;
+        emp.slice(0,40).forEach((e,i)=>{ if(ey>doc.page.height-60){ doc.addPage(); ey=50; doc.fontSize(12).text('Continuação Empresarial',40,ey); ey+=30; }
+            const dt=new Date(e.transaction_date).toLocaleDateString('pt-BR'); const val=parseFloat(e.amount||0).toLocaleString('pt-BR',{minimumFractionDigits:2});
+            doc.fontSize(9).fillColor('#111827').text(`${i+1}. ${dt} • R$ ${val} • ${(e.description||'').slice(0,60)} (Plano ${e.account_plan_code||'-'})`,40,ey,{width:doc.page.width-80}); ey+=14; });
+
+        // Lista Completa de Despesas
+        doc.addPage();
+        doc.fontSize(16).fillColor('#1F2937').text('📋 Lista Completa de Despesas',40,50);
+        let ly2=90; safeExpenses.forEach((e,i)=>{ if(ly2>doc.page.height-60){ doc.addPage(); ly2=50; doc.fontSize(12).text('Continuação Despesas',40,ly2); ly2+=30; }
+            const dt=new Date(e.transaction_date).toLocaleDateString('pt-BR'); const val=parseFloat(e.amount||0).toLocaleString('pt-BR',{minimumFractionDigits:2});
+            doc.fontSize(9).fillColor('#374151').text(`${i+1}. ${dt} • R$ ${val} • ${(e.description||'').slice(0,70)} • ${e.account||''} • Plano ${e.account_plan_code||'-'}`,40,ly2,{width:doc.page.width-80}); ly2+=12; });
+
+        // Rodapé final
+        doc.moveDown(2); doc.fontSize(9).fillColor('#6B7280').text('Relatório Moderno Compacto • Geração fallback aprimorada', {align:'center'});
+    } catch(err){ console.warn('Falha generateSimplePDF (modern):', err); }
     return doc;
 }
 
