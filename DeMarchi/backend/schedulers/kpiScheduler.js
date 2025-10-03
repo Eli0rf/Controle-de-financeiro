@@ -22,8 +22,7 @@ function initKpiScheduler({ pool, computeMonthlyKPIs, saveMonthlySnapshot }) {
         for (const u of users) {
           try {
             const kpis = await computeMonthlyKPIs({ pool, userId: u.id, year, month, account: 'ALL' });
-            const count = (kpis && kpis.totals && typeof kpis.totals.despesas === 'number') ? kpis.totals.despesas : 0;
-            if (count > 0) {
+            if (kpis.expenses && kpis.expenses.length > 0) {
               await saveMonthlySnapshot(pool, u.id, year, month, kpis);
             }
           } catch (e) {

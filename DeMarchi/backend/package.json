@@ -6,8 +6,7 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "node server.js",
     "dev": "node server.js",
-    "postinstall": "npm rebuild canvas || echo 'Canvas rebuild failed, continuing without it'",
-    "migrate:monthly-bi": "node migrations/run_monthly_bi_migration.js"
+    "postinstall": "npm rebuild canvas || echo 'Canvas rebuild failed, continuing without it'"
   },
   "keywords": [],
   "author": "",

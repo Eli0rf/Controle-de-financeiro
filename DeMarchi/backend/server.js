@@ -48,25 +48,145 @@ async function drawEmoji(doc, emoji, x, y, size=18){
     try { doc.image(filePath, x, y, { width:size, height:size }); } catch { doc.fontSize(size).text(emoji,x,y); }
 }
 const fs = require('fs');
-const cors = require('cors');
+require('dotenv').config();
+
+// --- 2. CONFIGURAÇÕES PRINCIPAIS ---
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+// CORS PRIMEIRO - antes de qualquer outro middleware
+app.use((req, res, next) => {
+    const origin = req.headers.origin;
+    
+    console.log(`🔍 CORS Debug - ${req.method} ${req.url}`);
+    console.log(`📍 Origin: ${origin || 'NO_ORIGIN'}`);
+    console.log(`🌐 User-Agent: ${req.headers['user-agent'] || 'NO_USER_AGENT'}`);
+    
+    // SEMPRE permitir estas origens específicas
+    const allowedOrigins = [
+        'https://controle-de-financeiro-production.up.railway.app',
+        'https://controlegastos-production.up.railway.app'
+    ];
+    
+    // Headers CORS obrigatórios - SEMPRE definir
+    res.header('Access-Control-Allow-Origin', origin && allowedOrigins.includes(origin) ? origin : '*');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+    res.header('Access-Control-Allow-Credentials', 'true');
+    res.header('Access-Control-Max-Age', '3600');
+    
+    console.log(`✅ CORS Headers definidos:`);
+    console.log(`   Access-Control-Allow-Origin: ${res.getHeader('Access-Control-Allow-Origin')}`);
+    console.log(`   Access-Control-Allow-Methods: ${res.getHeader('Access-Control-Allow-Methods')}`);
+    
+    // Para requisições OPTIONS (preflight), responder imediatamente
+    if (req.method === 'OPTIONS') {
+        console.log('✅ Respondendo preflight OPTIONS');
+        return res.status(200).end();
+    }
+    
+    next();
+});
+
+// Importar configurações de banco e migrações
 const { pool, testConnection } = require('./config/database');
-// Definição central de períodos de fatura / cobrança por conta (evita ReferenceError em Railway)
-// Ajuste conforme necessidade de cartões com ciclo diferente do mês civil.
+const { createDatabase } = require('./migrations/migrate');
+
+// Definição dos períodos de faturamento por conta
 const billingPeriods = {
-    // Exemplo de cartão com ciclo 5 a 4: (início dia 5, término dia 4 do mês seguinte)
-    'CartaoPrincipal': { startDay: 5, endDay: 4, isRecurring: false },
-    // Conta unificada PIX/Boleto tratada como recorrente (usa mês civil normal)
-    'PIX/Boleto': { startDay: 1, endDay: 30, isRecurring: true },
-    // Adicione outros cartões/contas aqui conforme ampliação
+    'Nu Bank Ketlyn': { startDay: 2, endDay: 1 },
+    'Nu Vainer': { startDay: 2, endDay: 1 },
+    'Ourocard Ketlyn': { startDay: 17, endDay: 16 },
+    'PicPay Vainer': { startDay: 1, endDay: 30 },
+    'PIX/Boleto': { startDay: 1, endDay: 30, isRecurring: true }
 };
 
-// Inicialização do Express
-const app = express();
-app.use(cors());
+// --- 3. MIDDLEWARES ---
 app.use(express.json());
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-// Teste de conexão com o banco no start (não bloqueante)
-testConnection().catch(() => {});
+// 3. Crie o endpoint de Health Check Inteligente
+app.get('/health', async (req, res) => {
+    try {
+        // Tenta pegar uma conexão do pool e fazer uma query simples
+        const connection = await pool.getConnection();
+        await connection.ping(); // ping() é mais rápido que uma query completa
+        connection.release(); // Libera a conexão de volta para o pool
+        
+        // Se tudo deu certo, retorna 200 OK
+        res.status(200).json({ status: 'ok', db: 'connected', version: '1.0.1' });
+    } catch (error) {
+        // Se a conexão com o banco falhar, o serviço não está saudável
+        console.error('Health check falhou:', error);
+        res.status(503).json({ status: 'error', db: 'disconnected', details: error.message });
+    }
+});
+
+// Endpoint de exemplo
+app.get('/', (req, res) => {
+    res.send('Aplicação rodando!');
+});
+
+// Endpoint de teste CORS
+app.get('/test-cors', (req, res) => {
+    res.json({ 
+        message: 'CORS funcionando!', 
+        origin: req.headers.origin,
+        timestamp: new Date().toISOString()
+    });
+});
+
+// Endpoint de teste POST para CORS
+app.post('/test-cors', (req, res) => {
+    res.json({ 
+        message: 'POST CORS funcionando!', 
+        origin: req.headers.origin,
+        body: req.body,
+        timestamp: new Date().toISOString()
+    });
+});
+// Cria/atualiza view de snapshots para BI externo
+async function ensureKpiView(){
+    try {
+        // Primeiro, garante que a tabela existe
+        await pool.query(`CREATE TABLE IF NOT EXISTS monthly_snapshots (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            user_id INT NOT NULL,
+            year INT NOT NULL,
+            month INT NOT NULL,
+            total DECIMAL(12,2) NOT NULL,
+            total_business DECIMAL(12,2) NOT NULL,
+            total_personal DECIMAL(12,2) NOT NULL,
+            by_plan JSON,
+            by_account JSON,
+            projection DECIMAL(12,2) DEFAULT 0,
+            hhi DECIMAL(10,5) DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            UNIQUE KEY uniq_user_month (user_id, year, month)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;`);
+        
+        // Depois cria a view
+        await pool.query(`CREATE OR REPLACE VIEW monthly_kpi_view AS 
+            SELECT ms.user_id, u.username, ms.year, ms.month, ms.total, ms.total_business, ms.total_personal,
+                         ms.projection, ms.hhi, ms.created_at, ms.updated_at
+            FROM monthly_snapshots ms
+            JOIN users u ON u.id = ms.user_id`);
+        console.log('✅ View monthly_kpi_view pronta');
+    } catch(e){ console.error('Erro criando view monthly_kpi_view', e.message); }
+}
+ensureKpiView();
+// Inicializa scheduler de KPIs após dependências carregadas
+setTimeout(()=>{
+    try { initKpiScheduler({ pool, computeMonthlyKPIs, saveMonthlySnapshot }); } catch(e){ console.error('Falha init scheduler', e); }
+}, 2000);
+
+// Global error handler (last middleware)
+app.use((err, req, res, next) => {
+    console.error('🔥 Erro não tratado:', err.stack || err);
+    if (res.headersSent) return next(err);
+    res.status(500).json({ error: 'INTERNAL_ERROR', message: err.message });
+});
 // ====== API KPIs Mensais (JSON) ======
 const { computeMonthlyKPIs, saveMonthlySnapshot, computeTrendAnalysis, computeComparativeAnalysis, generateExecutiveReport } = require('./reporting/monthlyKpis');
 const { getRedis } = require('./utils/redisClient');
@@ -86,18 +206,6 @@ app.get('/api/kpis/monthly', authenticateToken, async (req, res) => {
             if (cached) return res.json({ cached: true, ...JSON.parse(cached) });
         }
         const kpis = await computeMonthlyKPIs({ pool, userId, year, month, account });
-        // Integrar bloco de controle de tetos por plano (BI)
-        try {
-            const { computeBudgetControlFromDistribution, tetos } = require('./config/budgets');
-            const distr = kpis?.distrib?.porPlano || {};
-            kpis.budgetControl = {
-                ceilings: tetos,
-                ...computeBudgetControlFromDistribution(distr)
-            };
-        } catch (e) {
-            console.warn('⚠️ Erro ao anexar budgetControl aos KPIs mensais:', e.message);
-        }
-
         if (kpis.expenses && kpis.expenses.length === 0) return res.json(kpis);
         // Salva snapshot (não bloqueante)
         saveMonthlySnapshot(pool, userId, year, month, kpis).catch(()=>{});
@@ -501,7 +609,7 @@ app.get('/api/bi/full-report', authenticateToken, async (req, res) => {
         const format = req.query.format || 'json'; // json, pdf (futuro)
 
         // Coletar todos os dados em paralelo
-    const [trends, concentration, dashboard, performance, anomalies] = await Promise.all([
+        const [trends, concentration, dashboard, performance, anomalies] = await Promise.all([
             // Trends dos últimos 6 meses
             (async () => {
                 const trendsData = [];
@@ -554,18 +662,6 @@ app.get('/api/bi/full-report', authenticateToken, async (req, res) => {
             detectAnomalies({ pool, userId, year, month }).catch(() => ({ anomalies: [] }))
         ]);
 
-        // Compute budget control for decision support
-        let budgetControl = null;
-        try {
-            const { computeBudgetControlFromDistribution, tetos } = require('./config/budgets');
-            budgetControl = {
-                ceilings: tetos,
-                ...computeBudgetControlFromDistribution(concentration.planDistribution || {})
-            };
-        } catch (e) {
-            console.warn('⚠️ Erro ao calcular budgetControl:', e.message);
-        }
-
         const report = {
             metadata: {
                 generatedAt: new Date().toISOString(),
@@ -602,8 +698,7 @@ app.get('/api/bi/full-report', authenticateToken, async (req, res) => {
                 count: anomalies.anomalies?.length || 0,
                 details: anomalies.anomalies?.slice(0, 10) || [] // Top 10 anomalias
             },
-            recommendations: [],
-            budgetControl
+            recommendations: []
         };
 
         // Gerar recomendações
@@ -1241,8 +1336,20 @@ app.get('/api/dashboard', authenticateToken, async (req, res) => {
 });
 
 // --- 8.1. ROTA DE TETOS POR PLANO DE CONTAS (ALERTAS) ---
-// Centraliza tetos em config/budgets.js para reuso em BI e PDF
-const { tetos, computeBudgetControlFromDistribution } = require('./config/budgets');
+// Tetos de gastos por plano de contas - baseado na planilha atualizada
+// Observação: estendido até o plano 47. Caso não haja teto definido, permanece 0.00.
+const tetos = {
+    1: 1000.00, 2: 2782.47, 3: 2431.67, 4: 350.00, 5: 2100.00,
+    6: 550.00, 7: 270.00, 8: 1200.00, 9: 1200.00, 10: 270.00,
+    11: 1895.40, 12: 2627.60, 13: 270.00, 14: 55.00, 15: 129.90,
+    16: 59.90, 17: 4100.00, 18: 1570.00, 19: 500.00, 20: 500.00,
+    21: 150.00, 22: 1134.00, 23: 500.00, 24: 1000.00, 25: 350.00,
+    26: 1000.00, 27: 500.00, 28: 450.00, 29: 285.00, 30: 700.00,
+    31: 200.00, 32: 450.00, 33: 100.00, 34: 54.80, 35: 0.00,
+    36: 0.00, 37: 0.00, 38: 0.00, 39: 400.00, 40: 0.00,
+    41: 0.00, 42: 0.00, 43: 210.00, 44: 0.00, 45: 12700.00,
+    46: 1000.00, 47: 1000.00
+};
 
 // Rota protegida para tetos por plano de contas
 app.get('/api/expenses-goals', authenticateToken, async (req, res) => {
@@ -1340,30 +1447,6 @@ app.get('/api/expenses-goals', authenticateToken, async (req, res) => {
     } catch (error) {
         console.error('Erro ao buscar tetos:', error);
         res.status(500).json({ message: 'Erro ao buscar tetos.' });
-    }
-});
-
-// 8.2. BI - Controle de planos vs tetos para tomada de decisão
-app.get('/api/bi/budget-control', authenticateToken, async (req, res) => {
-    try {
-        const userId = parseInt(req.user?.id || 0);
-        const year = parseInt(req.query.year) || new Date().getFullYear();
-        const month = parseInt(req.query.month) || (new Date().getMonth() + 1);
-        const account = req.query.account || 'ALL';
-
-        const kpis = await computeMonthlyKPIs({ pool, userId, year, month, account });
-        const control = computeBudgetControlFromDistribution(kpis.distrib?.porPlano || {});
-
-        res.json({
-            period: { year, month, account },
-            totals: kpis.totals || {},
-            distribution: kpis.distrib?.porPlano || {},
-            ceilings: tetos,
-            control
-        });
-    } catch (error) {
-        console.error('Erro BI budget-control:', error);
-        res.status(500).json({ error: 'Erro ao gerar controle de tetos', details: error.message });
     }
 });
 
@@ -2025,52 +2108,6 @@ async function generateChartsForPDF(porPlano, porConta, expenses, chartJSNodeCan
 // 🤖 FUNÇÃO PRINCIPAL: RELATÓRIO BI INTELIGENTE
 async function generateIntelligentBIReport(data) {
     const { expenses, total, totalPessoal, totalEmpresarial, startDate, endDate, contaNome, year, month, porPlano, porConta, userId } = data;
-
-    // Sanitização defensiva de números (evita PDFKit "unsupported number: NaN")
-    function safeNumber(n){ return (typeof n === 'number' && isFinite(n)) ? n : 0; }
-    data.total = safeNumber(total);
-    data.totalPessoal = safeNumber(totalPessoal);
-    data.totalEmpresarial = safeNumber(totalEmpresarial);
-
-    // Tema/estilo do relatório (ex.: 'modern' padrão, 'nubank' inspirado no anexo)
-    function resolveTheme(theme) {
-        if ((theme || '').toLowerCase() === 'nubank') {
-            return {
-                name: 'nubank',
-                headerGradient: ['#8A05BE', '#C572E0'],
-                headerSolid: '#8A05BE',
-                headerText: '#FFFFFF',
-                kpiBg: ['#FFFFFF', '#FFFFFF', '#FFFFFF'],
-                kpiText: '#0F172A',
-                kpiBorder: '#E5E7EB',
-                barPalette: ['#8A05BE', '#A13DC7', '#BE7DE1', '#C2410C', '#0E7490'],
-                barBorder: '#E5E7EB',
-                zebra1: '#FAF5FF',
-                zebra2: '#FFFFFF',
-                accent: '#8A05BE',
-                darkText: '#0F172A',
-                lightText: '#FFFFFF'
-            };
-        }
-        return {
-            name: 'modern',
-            headerGradient: ['#667eea', '#764ba2', '#3B82F6'],
-            headerSolid: '#0F172A',
-            headerText: '#FFFFFF',
-            kpiBg: ['#E5F3FF', '#E6FFFA', '#FFF7ED'],
-            kpiText: '#0F172A',
-            kpiBorder: '#E5E7EB',
-            barPalette: ['#2563EB', '#059669', '#EA580C', '#DC2626', '#7C3AED'],
-            barBorder: '#94A3B8',
-            zebra1: '#F9FAFB',
-            zebra2: '#FFFFFF',
-            accent: '#2563EB',
-            darkText: '#0F172A',
-            lightText: '#FFFFFF'
-        };
-    }
-    const themeCfg = resolveTheme(data.theme);
-    data.themeCfg = themeCfg;
     
     console.log('🎯 Gerando relatório BI inteligente...');
     
@@ -2092,30 +2129,16 @@ async function generateIntelligentBIReport(data) {
 
     // === 📊 PÁGINA 1: DASHBOARD EXECUTIVO ===
     await createExecutiveDashboard(doc, data);
-
-    // === 🎯 PÁGINA 2: CONTROLE DE TETOS POR PLANO (FOCO) ===
-    doc.addPage();
-    await createBudgetControlPage(doc, data);
-
-    // === 📋 PÁGINA 3: DETALHAMENTO DE GASTOS POR PLANO ===
-    doc.addPage();
-    await createExpenseDetailPage(doc, data);
-
-    // === 🧾 (Opcional) PÁGINA DE EXTRATO ESTILO CONTA/NUBANK ===
-    if (themeCfg.name === 'nubank') {
-        doc.addPage();
-        await createStatementStylePage(doc, data);
-    }
-
-    // === 📈 PÁGINA 4: ANÁLISES BI E INSIGHTS ===
+    
+    // === 📈 PÁGINA 2: ANÁLISES BI E INSIGHTS ===
     doc.addPage();
     await createBIAnalyticsPage(doc, data);
-
-    // === 📋 PÁGINA 5: DETALHAMENTO INTELIGENTE ===
+    
+    // === 📋 PÁGINA 3: DETALHAMENTO INTELIGENTE ===
     doc.addPage();
     await createIntelligentDetailPage(doc, data);
-
-    // === 📊 PÁGINA 6: GRÁFICOS MODERNOS ===
+    
+    // === 📊 PÁGINA 4: GRÁFICOS MODERNOS ===
     doc.addPage();
     await createModernChartsPage(doc, data);
     
@@ -2124,15 +2147,11 @@ async function generateIntelligentBIReport(data) {
 
 // 📊 PÁGINA 1: DASHBOARD EXECUTIVO
 async function createExecutiveDashboard(doc, data) {
-    const { expenses, total, totalPessoal, totalEmpresarial, startDate, endDate, contaNome, year, month, themeCfg } = data;
+    const { expenses, total, totalPessoal, totalEmpresarial, startDate, endDate, contaNome, year, month } = data;
     
     // === CABEÇALHO EXECUTIVO MODERNO ===
     const gradient = doc.linearGradient(0, 0, doc.page.width, 100);
-    const headerStops = themeCfg?.headerGradient || ['#667eea', '#764ba2', '#3B82F6'];
-    const stopsCount = headerStops.length;
-    headerStops.forEach((col, idx) => {
-        gradient.stop(idx / Math.max(1, stopsCount - 1), col);
-    });
+    gradient.stop(0, '#667eea').stop(0.5, '#764ba2').stop(1, '#3B82F6');
     
     doc.rect(0, 0, doc.page.width, 100).fill(gradient);
     
@@ -2163,28 +2182,21 @@ async function createExecutiveDashboard(doc, data) {
     const spacing = 20;
 
     // Calcular métricas inteligentes
-    const diasNoMes = new Date(year, month, 0).getDate() || 30;
-    const mediaDiariaRaw = (typeof total === 'number' && isFinite(total)) ? total / diasNoMes : 0;
-    const mediaDiaria = isFinite(mediaDiariaRaw) ? mediaDiariaRaw : 0;
+    const mediaDiaria = total / new Date(year, month, 0).getDate();
     const percentualPessoal = total > 0 ? (totalPessoal / total * 100) : 0;
     const percentualEmpresarial = total > 0 ? (totalEmpresarial / total * 100) : 0;
     
-    // KPI 1: Total Geral (usa paleta de tema)
-    const kpiBg1 = themeCfg?.kpiBg?.[0] || '#E5F3FF';
-    const kpiFg = themeCfg?.kpiText || '#0F172A';
-    doc.roundedRect(40, kpiY, kpiWidth, kpiHeight, 15).fill(kpiBg1).stroke(themeCfg?.kpiBorder || '#E5E7EB');
-    doc.fillColor(kpiFg).fontSize(14).text('💰 TOTAL GERAL', 50, kpiY + 20, { width: kpiWidth - 20, align: 'center' });
+    // KPI 1: Total Geral
+    doc.roundedRect(40, kpiY, kpiWidth, kpiHeight, 15).fill('#3B82F6');
+    doc.fillColor('#FFFFFF').fontSize(14).text('💰 TOTAL GERAL', 50, kpiY + 20, { width: kpiWidth - 20, align: 'center' });
     doc.fontSize(20).text(`R$ ${(total || 0).toLocaleString('pt-BR', {minimumFractionDigits: 2})}`, 50, kpiY + 45, { width: kpiWidth - 20, align: 'center' });
     doc.fontSize(11).text(`${expenses.length} transações`, 50, kpiY + 75, { width: kpiWidth - 20, align: 'center' });
-    const mediaPorTransacaoRaw = (expenses.length > 0 && isFinite(total)) ? (total / expenses.length) : 0;
-    const mediaPorTransacao = isFinite(mediaPorTransacaoRaw) ? mediaPorTransacaoRaw : 0;
-    doc.fontSize(10).text(`Média: R$ ${mediaPorTransacao.toFixed(2)}`, 50, kpiY + 90, { width: kpiWidth - 20, align: 'center' });
+    doc.fontSize(10).text(`Média: R$ ${(total/expenses.length || 0).toFixed(2)}`, 50, kpiY + 90, { width: kpiWidth - 20, align: 'center' });
 
     // KPI 2: Pessoal
     const kpi2X = 40 + kpiWidth + spacing;
-    const kpiBg2 = themeCfg?.kpiBg?.[1] || '#E6FFFA';
-    doc.roundedRect(kpi2X, kpiY, kpiWidth, kpiHeight, 15).fill(kpiBg2).stroke(themeCfg?.kpiBorder || '#E5E7EB');
-    doc.fillColor(kpiFg).fontSize(14).text('🏠 PESSOAL', kpi2X + 10, kpiY + 20, { width: kpiWidth - 20, align: 'center' });
+    doc.roundedRect(kpi2X, kpiY, kpiWidth, kpiHeight, 15).fill('#10B981');
+    doc.fillColor('#FFFFFF').fontSize(14).text('🏠 PESSOAL', kpi2X + 10, kpiY + 20, { width: kpiWidth - 20, align: 'center' });
     doc.fontSize(20).text(`R$ ${(totalPessoal || 0).toLocaleString('pt-BR', {minimumFractionDigits: 2})}`, kpi2X + 10, kpiY + 45, { width: kpiWidth - 20, align: 'center' });
     doc.fontSize(11).text(`${percentualPessoal.toFixed(1)}% do total`, kpi2X + 10, kpiY + 75, { width: kpiWidth - 20, align: 'center' });
     const pessoaisCount = expenses.filter(e => !e.is_business_expense).length;
@@ -2192,9 +2204,8 @@ async function createExecutiveDashboard(doc, data) {
 
     // KPI 3: Empresarial
     const kpi3X = kpi2X + kpiWidth + spacing;
-    const kpiBg3 = themeCfg?.kpiBg?.[2] || '#FFF7ED';
-    doc.roundedRect(kpi3X, kpiY, kpiWidth, kpiHeight, 15).fill(kpiBg3).stroke(themeCfg?.kpiBorder || '#E5E7EB');
-    doc.fillColor(kpiFg).fontSize(14).text('💼 EMPRESARIAL', kpi3X + 10, kpiY + 20, { width: kpiWidth - 20, align: 'center' });
+    doc.roundedRect(kpi3X, kpiY, kpiWidth, kpiHeight, 15).fill('#F59E0B');
+    doc.fillColor('#FFFFFF').fontSize(14).text('💼 EMPRESARIAL', kpi3X + 10, kpiY + 20, { width: kpiWidth - 20, align: 'center' });
     doc.fontSize(20).text(`R$ ${(totalEmpresarial || 0).toLocaleString('pt-BR', {minimumFractionDigits: 2})}`, kpi3X + 10, kpiY + 45, { width: kpiWidth - 20, align: 'center' });
     doc.fontSize(11).text(`${percentualEmpresarial.toFixed(1)}% do total`, kpi3X + 10, kpiY + 75, { width: kpiWidth - 20, align: 'center' });
     const empresariaisCount = expenses.filter(e => e.is_business_expense).length;
@@ -2248,164 +2259,14 @@ async function createExecutiveDashboard(doc, data) {
 
 // 📈 PÁGINA 2: ANÁLISES BI E INSIGHTS
 async function createBIAnalyticsPage(doc, data) {
-    const {
-        expenses = [],
-        total = 0,
-        totalPessoal = 0,
-        totalEmpresarial = 0,
-        porPlano = {},
-        porConta = {},
-        year,
-        month
-    } = data;
+    const { expenses, total, totalPessoal, totalEmpresarial, porPlano, porConta, year, month } = data;
     
-    // Utilitários de contraste de cor para melhorar legibilidade
-    function hexToRgb(hex) {
-        try {
-            let c = (hex || '').replace('#', '');
-            if (c.length === 3) c = c.split('').map(ch => ch + ch).join('');
-            const num = parseInt(c, 16);
-            return { r: (num >> 16) & 255, g: (num >> 8) & 255, b: num & 255 };
-        } catch { return { r: 0, g: 0, b: 0 }; }
-    }
-    function relativeLuminance({ r, g, b }) {
-        const srgb = [r, g, b].map(v => {
-            v /= 255;
-            return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
-        });
-        return 0.2126 * srgb[0] + 0.7152 * srgb[1] + 0.0722 * srgb[2];
-    }
-    function textColorForBg(hex) {
-        try {
-            const lum = relativeLuminance(hexToRgb(hex));
-            return lum > 0.5 ? '#111827' : '#FFFFFF';
-        } catch { return '#FFFFFF'; }
-    }
-
     // Cabeçalho da página
     doc.rect(0, 0, doc.page.width, 80).fill('#764ba2');
     doc.fontSize(24).fillColor('#FFFFFF').text('📈 ANÁLISES BUSINESS INTELLIGENCE', 0, 25, { align: 'center', width: doc.page.width });
     doc.fontSize(14).fillColor('#E5E7EB').text('Insights Avançados & Análises Preditivas', 0, 50, { align: 'center', width: doc.page.width });
     
     doc.y = 100;
-    
-    // === COMPARATIVO EMPRESARIAL VS PESSOAL ===
-    doc.fontSize(18).fillColor('#1F2937').text('💼 COMPARATIVO: EMPRESARIAL VS PESSOAL', { underline: true });
-    doc.moveDown(1);
-    
-    const propEmpresarial = total > 0 ? (totalEmpresarial / total * 100) : 0;
-    const propPessoal = total > 0 ? (totalPessoal / total * 100) : 0;
-    
-    // Gráfico de barras horizontais comparativo
-    const barWidth = 400;
-    const barHeight = 30;
-    const startX = 80;
-    let currentY = doc.y;
-    
-    // Barra Empresarial
-    doc.fillColor('#E5E7EB').rect(startX, currentY, barWidth, barHeight).fill();
-    const empWidth = (barWidth * propEmpresarial) / 100;
-    doc.fillColor('#3B82F6').rect(startX, currentY, empWidth, barHeight).fill();
-    doc.fillColor('#FFFFFF').fontSize(12).text('💼 EMPRESARIAL', startX + 10, currentY + 8);
-    doc.fillColor('#1F2937').text(`R$ ${totalEmpresarial.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} (${propEmpresarial.toFixed(1)}%)`, startX + barWidth + 20, currentY + 8);
-    
-    currentY += barHeight + 20;
-    
-    // Barra Pessoal
-    doc.fillColor('#E5E7EB').rect(startX, currentY, barWidth, barHeight).fill();
-    const pesWidth = (barWidth * propPessoal) / 100;
-    doc.fillColor('#EF4444').rect(startX, currentY, pesWidth, barHeight).fill();
-    doc.fillColor('#FFFFFF').fontSize(12).text('🏠 PESSOAL', startX + 10, currentY + 8);
-    doc.fillColor('#1F2937').text(`R$ ${totalPessoal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} (${propPessoal.toFixed(1)}%)`, startX + barWidth + 20, currentY + 8);
-    
-    doc.y = currentY + 50;
-    
-    // === GRÁFICO DE UTILIZAÇÃO POR PLANO DE CONTA ===
-    doc.fontSize(18).fillColor('#1F2937').text('📊 UTILIZAÇÃO POR PLANO DE CONTA', { underline: true });
-    doc.moveDown(1);
-    
-    // Obter dados dos planos com utilização
-    const budgetConfig = require('./config/budgets');
-    const planosComGastos = [];
-    
-    for (let planId = 1; planId <= 47; planId++) {
-        const planData = porPlano[planId];
-        const ceiling = budgetConfig.tetos[planId] || 0;
-        const spent = planData ? planData.total : 0;
-        
-        if (spent > 0 || ceiling > 0) {
-            const percent = ceiling > 0 ? (spent / ceiling * 100) : 0;
-            planosComGastos.push({
-                plan: planId,
-                spent: spent,
-                ceiling: ceiling,
-                percent: Math.min(percent, 150) // Cap at 150% for visualization
-            });
-        }
-    }
-    
-    // Ordenar por maior utilização
-    planosComGastos.sort((a, b) => b.percent - a.percent);
-    
-    // Mostrar top 15 planos com maior utilização
-    const topPlanos = planosComGastos.slice(0, 15);
-    
-    if (topPlanos.length > 0) {
-        doc.fontSize(12).fillColor('#6B7280').text('Top 15 Planos por Utilização do Teto:');
-        doc.moveDown(0.5);
-        
-        const chartStartY = doc.y;
-        const chartHeight = 300;
-        const chartWidth = 500;
-        const chartX = 60;
-        
-        // Background do gráfico
-        doc.rect(chartX, chartStartY, chartWidth, chartHeight).stroke('#E5E7EB');
-        
-        // Barras do gráfico
-        const barSpacing = chartHeight / topPlanos.length;
-        const maxBarWidth = chartWidth - 100;
-        
-        topPlanos.forEach((plano, index) => {
-            const y = chartStartY + (index * barSpacing) + 5;
-            const barWidth = (plano.percent / 150) * maxBarWidth; // Scale to 150%
-            
-            // Cor baseada na utilização
-            let color = '#10B981'; // Verde para OK
-            if (plano.percent >= 100) color = '#EF4444'; // Vermelho para over budget
-            else if (plano.percent >= 90) color = '#F59E0B'; // Amarelo para at risk
-            else if (plano.percent >= 70) color = '#3B82F6'; // Azul para watch
-            
-            // Barra de fundo
-            doc.fillColor('#F3F4F6').rect(chartX + 80, y, maxBarWidth, barSpacing - 8).fill();
-            
-            // Barra de progresso
-            doc.fillColor(color).rect(chartX + 80, y, Math.max(2, barWidth), barSpacing - 8).fill();
-            
-            // Label do plano
-            doc.fillColor('#374151').fontSize(10).text(`Plano ${plano.plan}`, chartX + 5, y + 3, { width: 70 });
-            
-            // Percentual
-            doc.fillColor('#1F2937').text(`${plano.percent.toFixed(1)}%`, chartX + 85 + Math.min(barWidth + 5, maxBarWidth - 50), y + 3);
-        });
-        
-        // Legenda
-        doc.y = chartStartY + chartHeight + 20;
-        doc.fontSize(10).fillColor('#6B7280');
-        const legendItems = [
-            { color: '#10B981', text: '■ OK (<70%)' },
-            { color: '#3B82F6', text: '■ ATENÇÃO (70-89%)' },
-            { color: '#F59E0B', text: '■ RISCO (90-99%)' },
-            { color: '#EF4444', text: '■ EXCEDIDO (≥100%)' }
-        ];
-        
-        legendItems.forEach((item, index) => {
-            const x = 80 + (index * 120);
-            doc.fillColor(item.color).text(item.text, x, doc.y);
-        });
-        
-        doc.moveDown(2);
-    }
     
     // === ANÁLISE TEMPORAL ===
     doc.fontSize(18).fillColor('#1F2937').text('📅 ANÁLISE TEMPORAL', { underline: true });
@@ -2418,30 +2279,14 @@ async function createBIAnalyticsPage(doc, data) {
     doc.moveDown(0.5);
     
     temporalAnalysis.weekly.forEach((week, index) => {
-        const weekWidth = (doc.page.width - 120) * (total > 0 ? (week.total / total) : 0);
-        const barColor = ['#2563EB', '#059669', '#EA580C', '#DC2626', '#7C3AED'][index];
-        const barY = doc.y;
-
-        // Desenha a barra (mínimo visual de 2px quando houver valor)
-        const effectiveWidth = week.total > 0 ? Math.max(2, weekWidth) : 0;
-        if (effectiveWidth > 0) {
-            // Fill com borda fina para contraste
-            doc.roundedRect(60, barY, effectiveWidth, 25, 5).fill(barColor);
-            doc.roundedRect(60, barY, effectiveWidth, 25, 5).stroke('#94A3B8');
-        }
-
-        const label = `Sem ${index + 1}: R$ ${week.total.toFixed(2)} (${week.count} trans.)`;
-        if (effectiveWidth >= 120) {
-            // Texto dentro da barra com contraste automático
-            const insideColor = textColorForBg(barColor);
-            doc.fillColor(insideColor).fontSize(10).text(label, 70, barY + 7, { width: effectiveWidth - 20 });
-        } else {
-            // Texto fora da barra em cor escura
-            const textX = 60 + effectiveWidth + 10;
-            doc.fillColor('#1F2937').fontSize(10).text(label, textX, barY + 7, { width: doc.page.width - textX - 40 });
-        }
-        // Reset de cor para escuro por padrão
-        doc.fillColor('#1F2937');
+        const weekWidth = (doc.page.width - 120) * (week.total / total);
+        const barColor = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6'][index];
+        
+        doc.roundedRect(60, doc.y, weekWidth, 25, 5).fill(barColor);
+        doc.fillColor('#FFFFFF').fontSize(10).text(
+            `Sem ${index + 1}: R$ ${week.total.toFixed(2)} (${week.count} trans.)`, 
+            70, doc.y + 7, { width: weekWidth - 20 }
+        );
         doc.y += 35;
     });
     
@@ -2451,42 +2296,18 @@ async function createBIAnalyticsPage(doc, data) {
     doc.fontSize(18).fillColor('#1F2937').text('🏆 TOP CATEGORIAS', { underline: true });
     doc.moveDown(1);
     
-    const topCategories = Object.entries(porConta || {})
+    const topCategories = Object.entries(porConta)
         .sort(([,a], [,b]) => b - a)
         .slice(0, 10);
     
     topCategories.forEach(([categoria, valor], index) => {
-        const totalTop = topCategories.length ? topCategories[0][1] : 0;
-        const share = totalTop > 0 ? (valor / totalTop) : 0;
-        const percentage = total > 0 ? (valor / total * 100).toFixed(1) : '0.0';
-        const barWidth = (doc.page.width - 220) * share;
-        const colors = ['#1E40AF', '#047857', '#B91C1C', '#6D28D9', '#C2410C', '#0E7490', '#3F6212', '#9D174D', '#3730A3', '#115E59'];
-
-        // Nome da categoria
+        const percentage = (valor / total * 100).toFixed(1);
+        const barWidth = (doc.page.width - 200) * (valor / topCategories[0][1]);
+        const colors = ['#1E40AF', '#059669', '#DC2626', '#7C3AED', '#EA580C', '#0891B2', '#65A30D', '#BE185D', '#4338CA', '#0F766E'];
+        
         doc.fontSize(11).fillColor('#374151').text(`${index + 1}. ${categoria}`, 40, doc.y);
-
-        // Barra
-        const baseX = 200;
-        const baseY = doc.y - 2;
-        const effectiveBar = valor > 0 ? Math.max(2, barWidth) : 0;
-        if (effectiveBar > 0) {
-            const barCol = colors[index];
-            doc.roundedRect(baseX, baseY, effectiveBar, 18, 3).fill(barCol);
-            doc.roundedRect(baseX, baseY, effectiveBar, 18, 3).stroke('#CBD5E1');
-        }
-
-        const valueLabel = `R$ ${valor.toFixed(2)} (${percentage}%)`;
-        if (effectiveBar >= 100) {
-            // Texto dentro da barra com contraste automático
-            const insideColor = textColorForBg(colors[index]);
-            doc.fillColor(insideColor).fontSize(9).text(valueLabel, baseX + 5, doc.y + 2, { width: effectiveBar - 10 });
-        } else {
-            // Texto fora da barra em cor escura
-            const labelX = baseX + effectiveBar + 8;
-            doc.fillColor('#1F2937').fontSize(9).text(valueLabel, labelX, doc.y + 2, { width: doc.page.width - labelX - 40 });
-        }
-        // Reset de cor
-        doc.fillColor('#1F2937');
+        doc.roundedRect(200, doc.y - 2, barWidth, 18, 3).fill(colors[index]);
+        doc.fillColor('#FFFFFF').fontSize(9).text(`R$ ${valor.toFixed(2)} (${percentage}%)`, 205, doc.y + 2);
         doc.y += 25;
     });
     
@@ -2496,7 +2317,7 @@ async function createBIAnalyticsPage(doc, data) {
     doc.fontSize(18).fillColor('#1F2937').text('⚖️ ANÁLISE COMPARATIVA', { underline: true });
     doc.moveDown(1);
     
-    const comparative = generateComparativeAnalysis(expenses || [], total || 0, totalPessoal || 0, totalEmpresarial || 0);
+    const comparative = generateComparativeAnalysis(expenses, total, totalPessoal, totalEmpresarial);
     
     comparative.forEach(comp => {
         doc.roundedRect(40, doc.y, doc.page.width - 80, 60, 8).fill('#F8FAFC');
@@ -2508,7 +2329,7 @@ async function createBIAnalyticsPage(doc, data) {
 
 // 📋 PÁGINA 3: DETALHAMENTO INTELIGENTE
 async function createIntelligentDetailPage(doc, data) {
-    const { expenses = [], porPlano = {}, year, month } = data;
+    const { expenses, porPlano, year, month } = data;
     
     // Cabeçalho
     doc.rect(0, 0, doc.page.width, 80).fill('#4F46E5');
@@ -2518,7 +2339,7 @@ async function createIntelligentDetailPage(doc, data) {
     doc.y = 100;
     
     // Agrupar por planos e analisar
-    const detailedAnalysis = Object.entries(porPlano || {})
+    const detailedAnalysis = Object.entries(porPlano)
         .sort(([,a], [,b]) => b - a)
         .slice(0, 8); // Top 8 planos
     
@@ -2526,33 +2347,31 @@ async function createIntelligentDetailPage(doc, data) {
     doc.moveDown(1);
     
     detailedAnalysis.forEach(([plano, total], index) => {
-        const planoStr = String(plano);
-        const planoExpenses = (expenses || []).filter(e => String(e.account_plan_code || '') === planoStr);
-        const count = planoExpenses.length || 1;
-        const avgTransaction = total / count;
+        const planoExpenses = expenses.filter(e => e.account_plan_code === plano);
+        const avgTransaction = total / planoExpenses.length;
         
         const colors = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#06B6D4', '#84CC16', '#F97316'];
         
-    doc.roundedRect(40, doc.y, doc.page.width - 80, 80, 10).fill('#F8FAFC');
+        doc.roundedRect(40, doc.y, doc.page.width - 80, 80, 10).fill('#F8FAFC');
         
         // Header do plano
-    doc.roundedRect(50, doc.y + 10, doc.page.width - 100, 25, 5).fill('#E5E7EB');
-    doc.fillColor('#111827').fontSize(12).text(`Plano ${plano}`, 60, doc.y + 18, { width: 200 });
-    doc.fillColor('#111827').text(`R$ ${total.toFixed(2)}`, 0, doc.y + 18, { width: doc.page.width - 110, align: 'right' });
+        doc.roundedRect(50, doc.y + 10, doc.page.width - 100, 25, 5).fill(colors[index]);
+        doc.fillColor('#FFFFFF').fontSize(12).text(`Plano ${plano}`, 60, doc.y + 18, { width: 200 });
+        doc.text(`R$ ${total.toFixed(2)}`, 0, doc.y + 18, { width: doc.page.width - 110, align: 'right' });
         
         // Detalhes
-    doc.fillColor('#111827').fontSize(10)
-           .text(`• ${planoExpenses.length || 0} transações`, 60, doc.y + 45)
+        doc.fillColor('#374151').fontSize(10)
+           .text(`• ${planoExpenses.length} transações`, 60, doc.y + 45)
            .text(`• Média por transação: R$ ${avgTransaction.toFixed(2)}`, 60, doc.y + 60)
-           .text(`• Percentual do total: ${((total / ((expenses||[]).reduce((sum, e) => sum + parseFloat(e.amount||0), 0) || 1)) * 100).toFixed(1)}%`, 280, doc.y + 45)
-           .text(`• Maior transação: R$ ${((planoExpenses.length? Math.max(...planoExpenses.map(e => parseFloat(e.amount||0))) : 0)).toFixed(2)}`, 280, doc.y + 60);
+           .text(`• Percentual do total: ${(total / expenses.reduce((sum, e) => sum + parseFloat(e.amount), 0) * 100).toFixed(1)}%`, 280, doc.y + 45)
+           .text(`• Maior transação: R$ ${Math.max(...planoExpenses.map(e => parseFloat(e.amount))).toFixed(2)}`, 280, doc.y + 60);
         
         doc.y += 95;
     });
 }
 // 📊 PÁGINA 4: GRÁFICOS MODERNOS
 async function createModernChartsPage(doc, data) {
-    const { expenses = [], porPlano = {}, porConta = {} } = data;
+    const { expenses, porPlano, porConta } = data;
     
     // Cabeçalho
     doc.rect(0, 0, doc.page.width, 80).fill('#059669');
@@ -2588,27 +2407,6 @@ async function createModernChartsPage(doc, data) {
                 doc.image(charts.accountChart, 50, doc.y + 20, { width: 500, height: 300 });
                 doc.y += 340;
             }
-            if (doc.y > 600) { doc.addPage(); doc.y = 50; }
-
-            if (charts.comparisonChart) {
-                doc.fontSize(14).fillColor('#1F2937').text('🍩 Pessoal vs Empresarial', { underline: true });
-                doc.image(charts.comparisonChart, 50, doc.y + 20, { width: 400, height: 300 });
-                doc.y += 340;
-            }
-            if (doc.y > 600) { doc.addPage(); doc.y = 50; }
-
-            if (charts.evolutionChart) {
-                doc.fontSize(14).fillColor('#1F2937').text('📈 Evolução diária de gastos', { underline: true });
-                doc.image(charts.evolutionChart, 50, doc.y + 20, { width: 500, height: 300 });
-                doc.y += 340;
-            }
-            if (doc.y > 600) { doc.addPage(); doc.y = 50; }
-
-            if (charts.weeklyChart) {
-                doc.fontSize(14).fillColor('#1F2937').text('📅 Comparativo semanal', { underline: true });
-                doc.image(charts.weeklyChart, 50, doc.y + 20, { width: 500, height: 300 });
-                doc.y += 340;
-            }
             
         } catch (chartError) {
             console.error('Erro ao inserir gráficos no PDF:', chartError);
@@ -2616,453 +2414,6 @@ async function createModernChartsPage(doc, data) {
         }
     } else {
         doc.fontSize(12).fillColor('#6B7280').text('📊 Gráficos não disponíveis (ChartJS não carregado)', 50, doc.y);
-    }
-}
-
-// 🧾 Página estilo extrato bancário (inspirado no anexo)
-async function createStatementStylePage(doc, data) {
-    const { expenses = [], contaNome, startDate, endDate, themeCfg } = data;
-    try {
-        // Header sólido com a cor principal do tema
-        const headerColor = (themeCfg && themeCfg.headerSolid) || '#8A05BE';
-        doc.rect(0, 0, doc.page.width, 70).fill(headerColor);
-        doc.fillColor('#FFFFFF').fontSize(18).text('Extrato do Período', 40, 20);
-        const periodText = `${new Date(startDate).toLocaleDateString('pt-BR')} a ${new Date(endDate).toLocaleDateString('pt-BR')}`;
-        doc.fontSize(12).fillColor('#F3E8FF').text(`${contaNome} • ${periodText}`, 40, 45);
-
-        // Tabela
-        const startY = 90;
-        const colX = [40, 120, 320, 430, 520]; // Data, Descrição, Conta, Tipo, Valor
-        doc.fillColor('#111827').fontSize(11).text('Data', colX[0], startY);
-        doc.text('Descrição', colX[1], startY);
-        doc.text('Conta', colX[2], startY);
-        doc.text('Tipo', colX[3], startY);
-        doc.text('Valor (R$)', colX[4], startY);
-        doc.moveTo(40, startY + 14).lineTo(doc.page.width - 40, startY + 14).stroke('#E5E7EB');
-
-        // Linhas com zebra - paginação completa
-        let y = startY + 20;
-        const rows = expenses.slice().sort((a, b) => new Date(a.transaction_date) - new Date(b.transaction_date));
-        rows.forEach((e, idx) => {
-            if (y > doc.page.height - 60) {
-                doc.addPage();
-                // re-render header row on new page
-                const headerY = 40;
-                doc.fillColor('#111827').fontSize(11).text('Data', colX[0], headerY);
-                doc.text('Descrição', colX[1], headerY);
-                doc.text('Conta', colX[2], headerY);
-                doc.text('Tipo', colX[3], headerY);
-                doc.text('Valor (R$)', colX[4], headerY);
-                doc.moveTo(40, headerY + 14).lineTo(doc.page.width - 40, headerY + 14).stroke('#E5E7EB');
-                y = headerY + 20;
-            }
-            const bg = idx % 2 === 0 ? (themeCfg?.zebra1 || '#FAF5FF') : (themeCfg?.zebra2 || '#FFFFFF');
-            doc.rect(40, y - 4, doc.page.width - 80, 18).fill(bg);
-            doc.fillColor('#111827').fontSize(10);
-            doc.text(new Date(e.transaction_date).toLocaleDateString('pt-BR'), colX[0], y);
-            const descricao = (e.description || '').slice(0, 48);
-            doc.text(descricao, colX[1], y, { width: colX[2] - colX[1] - 10 });
-            doc.text(e.account || '-', colX[2], y, { width: colX[3] - colX[2] - 10 });
-            doc.text(e.is_business_expense ? 'Empresarial' : 'Pessoal', colX[3], y);
-            const valStr = (parseFloat(e.amount || 0)).toLocaleString('pt-BR', { minimumFractionDigits: 2 });
-            doc.text(valStr, colX[4], y, { width: 60, align: 'right' });
-            y += 20;
-        });
-    } catch (err) {
-        console.warn('⚠️ Erro ao gerar página estilo extrato:', err.message);
-    }
-}
-
-// 📋 Página de listagem detalhada de gastos por plano
-async function createExpenseDetailPage(doc, data) {
-    const { expenses = [], porPlano = {}, total = 0, year, month, themeCfg } = data;
-    const monthNames = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
-    
-    try {
-        // Header
-        const headerColor = (themeCfg && themeCfg.headerSolid) || '#0F172A';
-        doc.rect(0, 0, doc.page.width, 70).fill(headerColor);
-        doc.fillColor('#FFFFFF').fontSize(20).text('📋 Detalhamento de Gastos por Plano', 40, 22);
-        doc.fontSize(12).fillColor('#E5E7EB').text(`${monthNames[month-1]} ${year}`, 40, 48);
-        
-        doc.y = 90;
-        
-        // Resumo geral
-        doc.fillColor('#0B1220').fontSize(14).text('Resumo Geral:', 40, doc.y);
-        doc.moveDown(0.5);
-        doc.fontSize(12)
-           .text(`• Total de gastos: R$ ${total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`)
-           .text(`• Total de transações: ${expenses.length}`)
-           .text(`• Ticket médio: R$ ${(total / Math.max(1, expenses.length)).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`);
-        
-        doc.moveDown(1);
-        
-        // Agrupar gastos por plano e ordenar
-        const plansWithExpenses = Object.entries(porPlano)
-            .filter(([_, value]) => value > 0)
-            .sort(([,a], [,b]) => b - a)
-            .slice(0, 10); // Top 10 planos com gastos
-        
-        plansWithExpenses.forEach(([planCode, planTotal], planIdx) => {
-            if (doc.y > doc.page.height - 100) {
-                doc.addPage();
-                doc.y = 40;
-            }
-            
-            // Header do plano
-            doc.roundedRect(40, doc.y, doc.page.width - 80, 40, 8).fill('#F1F5F9');
-            doc.fillColor('#0F172A').fontSize(13)
-               .text(`Plano ${planCode}`, 50, doc.y + 10)
-               .text(`R$ ${planTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, 0, doc.y + 10, { width: doc.page.width - 90, align: 'right' });
-            
-            const planExpenses = expenses.filter(e => String(e.account_plan_code || '') === String(planCode));
-            doc.fontSize(11).text(`${planExpenses.length} transações • ${((planTotal/total)*100).toFixed(1)}% do total`, 50, doc.y + 25);
-            
-            doc.y += 50;
-            
-            // Listagem das transações deste plano (limitado a 8 por plano)
-            const topTransactions = planExpenses
-                .sort((a, b) => parseFloat(b.amount || 0) - parseFloat(a.amount || 0))
-                .slice(0, 8);
-            
-            topTransactions.forEach((expense, expIdx) => {
-                if (doc.y > doc.page.height - 30) {
-                    doc.addPage();
-                    doc.y = 40;
-                }
-                
-                const bg = expIdx % 2 === 0 ? '#FAFAFA' : '#FFFFFF';
-                doc.rect(50, doc.y - 2, doc.page.width - 100, 20).fill(bg);
-                
-                doc.fillColor('#374151').fontSize(10);
-                const dateStr = new Date(expense.transaction_date).toLocaleDateString('pt-BR');
-                const description = (expense.description || '').slice(0, 40);
-                const amount = parseFloat(expense.amount || 0);
-                
-                doc.text(dateStr, 55, doc.y);
-                doc.text(description, 140, doc.y, { width: 280 });
-                doc.text(`R$ ${amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, 0, doc.y, { width: doc.page.width - 95, align: 'right' });
-                
-                doc.y += 22;
-            });
-            
-            if (planExpenses.length > 8) {
-                doc.fillColor('#6B7280').fontSize(9)
-                   .text(`... e mais ${planExpenses.length - 8} transações`, 55, doc.y);
-                doc.y += 15;
-            }
-            
-            doc.y += 10;
-        });
-        
-    } catch (err) {
-        console.warn('⚠️ Erro ao gerar página de detalhes:', err.message);
-    }
-}
-
-// New: Budget Control Page (Plan ceilings vs spent) for decision support
-async function createBudgetControlPage(doc, data) {
-    try {
-        const { porPlano = {}, year, month, expenses = [] } = data;
-        const monthNames = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
-        const { computeBudgetControlFromDistribution, tetos } = require('./config/budgets');
-        const control = computeBudgetControlFromDistribution(porPlano);
-        // desenha na página atual (a página já foi adicionada pelo chamador)
-        // Header
-        doc.rect(0, 0, doc.page.width, 70).fill('#0F172A');
-        doc.fillColor('#FFFFFF').fontSize(22).text('📏 Controle de Tetos por Plano', 40, 22);
-        doc.fontSize(12).fillColor('#E5E7EB').text(`${monthNames[month-1]} ${year}`, 40, 48);
-
-        doc.moveDown(1);
-        // Prévia dos limites monitorados (lista rápida destacando riscos e excedidos)
-        try {
-            const perPlan = control.perPlan || {};
-            const critical = [];
-            const warning = [];
-            const improving = [];
-            Object.keys(tetos).forEach(k => {
-                const plan = Number(k);
-                const ceiling = tetos[plan];
-                const spent = perPlan[plan]?.spent || 0;
-                if (!ceiling || ceiling <= 0) return; // ignora sem teto
-                const pct = (spent / ceiling) * 100;
-                if (pct >= 100) critical.push({ plan, pct });
-                else if (pct >= 90) warning.push({ plan, pct });
-                else if (pct >= 70) improving.push({ plan, pct });
-            });
-            // Ordenar por maior % primeiro
-            const fmt = v => v.pct.toFixed(1) + '%';
-            const iconCritical = '🔴';
-            const iconWarning = '🟠';
-            const iconWatch = '🟡';
-            let startY = doc.y + 10;
-            doc.fillColor('#0B1220').fontSize(13).text('Prévia dos Limites Monitorados', 40, startY);
-            startY = doc.y + 4;
-            doc.fontSize(10).fillColor('#111827');
-            if (critical.length === 0 && warning.length === 0 && improving.length === 0) {
-                doc.text('Todos os planos estão confortáveis (<70% do teto).');
-            } else {
-                if (critical.length) {
-                    doc.text(iconCritical + ' Acima do teto: ' + critical.sort((a,b)=>b.pct-a.pct).map(c=>`Plano ${c.plan} (${fmt(c)})`).join(', '));
-                }
-                if (warning.length) {
-                    doc.text(iconWarning + ' Em risco (≥90%): ' + warning.sort((a,b)=>b.pct-a.pct).map(c=>`Plano ${c.plan} (${fmt(c)})`).join(', '));
-                }
-                if (improving.length) {
-                    doc.text(iconWatch + ' Zona de atenção (70–89%): ' + improving.sort((a,b)=>b.pct-a.pct).map(c=>`Plano ${c.plan} (${fmt(c)})`).join(', '));
-                }
-            }
-            doc.moveDown(0.5);
-        } catch(previewErr) {
-            console.warn('Falha ao gerar prévia de limites:', previewErr.message);
-        }
-        // Resumo geral
-    doc.fillColor('#0B1220').fontSize(13).text('Resumo de status:', 40, 90);
-    const s = control.summary || {};
-    doc.fontSize(12)
-           .text(`• Acima do teto: ${s.overBudget || 0}`)
-           .text(`• Em risco (≥90%): ${s.atRisk || 0}`)
-           .text(`• Dentro do orçamento: ${s.withinBudget || 0}`)
-           .text(`• Sem teto definido: ${s.zeroCeiling || 0}`);
-
-        // Table header
-        doc.moveDown(1);
-    const tableTop = doc.y + 10;
-    const colX = [40, 140, 280, 400, 510];
-        doc.fontSize(12).fillColor('#111827');
-    const colW = [colX[1]-colX[0]-10, colX[2]-colX[1]-10, colX[3]-colX[2]-10, colX[4]-colX[3]-10, doc.page.width-40-colX[4]];
-    doc.text('Plano', colX[0], tableTop, { width: colW[0] });
-    doc.text('Gasto (R$)', colX[1], tableTop, { width: colW[1], align: 'right' });
-    doc.text('Teto (R$)', colX[2], tableTop, { width: colW[2], align: 'right' });
-    doc.text('% do Teto', colX[3], tableTop, { width: colW[3], align: 'right' });
-    doc.text('Status', colX[4], tableTop, { width: colW[4] });
-        doc.moveTo(40, tableTop + 14).lineTo(doc.page.width - 40, tableTop + 14).stroke('#E5E7EB');
-
-        // Rows - show ALL plans 1-47 with utilization
-        const budgetConfig = require('./config/budgets');
-        const allPlans = [];
-        
-        // Create entries for ALL plans 1-47
-        for (let planId = 1; planId <= 47; planId++) {
-            const planData = (control.perPlan || {})[planId];
-            const ceiling = budgetConfig.tetos[planId] || 0;
-            const spent = planData ? planData.spent : 0;
-            const percent = ceiling > 0 ? (spent / ceiling * 100) : 0;
-            
-            let status = 'OK';
-            if (percent >= 100) status = 'OVER_BUDGET';
-            else if (percent >= 90) status = 'AT_RISK';
-            else if (percent >= 70) status = 'WATCH';
-            
-            allPlans.push({
-                plan: planId,
-                spent: spent,
-                ceiling: ceiling,
-                percent: percent,
-                status: status
-            });
-        }
-        
-        const rows = allPlans; // All 47 plans
-        const rowsPerPage = 16;
-        const totalPages = Math.ceil(rows.length / rowsPerPage);
-        
-        let y = tableTop + 20;
-        
-        for (let page = 0; page < totalPages; page++) {
-            const startIdx = page * rowsPerPage;
-            const pageRows = rows.slice(startIdx, startIdx + rowsPerPage);
-            
-            if (page > 0) {
-                doc.addPage({ margin: 40, size: 'A4' });
-                // Header for continuation pages
-                doc.rect(0, 0, doc.page.width, 50).fill('#0F172A');
-                doc.fillColor('#FFFFFF').fontSize(18).text('📏 Controle de Tetos por Plano (cont.)', 40, 15);
-                doc.fontSize(10).fillColor('#E5E7EB').text(`Página ${page + 1} de ${totalPages}`, 40, 35);
-                
-                // Redraw table header
-                const headerY = 70;
-                doc.fontSize(12).fillColor('#111827');
-                doc.text('Plano', colX[0], headerY, { width: colW[0] });
-                doc.text('Gasto (R$)', colX[1], headerY, { width: colW[1], align: 'right' });
-                doc.text('Teto (R$)', colX[2], headerY, { width: colW[2], align: 'right' });
-                doc.text('% do Teto', colX[3], headerY, { width: colW[3], align: 'right' });
-                doc.text('Status', colX[4], headerY, { width: colW[4] });
-                doc.moveTo(40, headerY + 14).lineTo(doc.page.width - 40, headerY + 14).stroke('#E5E7EB');
-                y = headerY + 20;
-            }
-            
-            pageRows.forEach((row, idx) => {
-                const bg = idx % 2 === 0 ? '#F8FAFC' : '#FFFFFF';
-                doc.rect(40, y - 6, doc.page.width - 80, 30).fill(bg);
-                // Barra de progresso primeiro (para não cobrir textos)
-                const barX = colX[1];
-                const barW = (colX[4] - 10) - barX; // até antes da coluna Status
-                const usedPct = Math.max(0, Math.min(150, row.percent || 0));
-                const fillW = (barW * usedPct) / 100;
-                doc.rect(barX, y + 14, barW, 6).fill('#E5E7EB');
-                const fillColor = (row.status === 'OVER_BUDGET') ? '#DC2626' : (row.status || '').startsWith('AT_RISK') ? '#D97706' : '#10B981';
-                doc.rect(barX, y + 14, Math.max(2, fillW), 6).fill(fillColor);
-                doc.fillColor('#0B1220').fontSize(9).text(`${usedPct.toFixed(1)}%`, barX + Math.min(fillW + 6, barW - 30), y + 12, { width: 40 });
-
-                // Textos sobre a área da linha
-                doc.fillColor('#0B1220').fontSize(11);
-                doc.text(String(row.plan), colX[0], y, { width: colW[0] });
-                doc.text((row.spent || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 }), colX[1], y, { width: colW[1], align: 'right' });
-                doc.text((row.ceiling || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 }), colX[2], y, { width: colW[2], align: 'right' });
-                doc.text(`${(row.percent || 0).toFixed(1)}%`, colX[3], y, { width: colW[3], align: 'right' });
-                let color = '#065F46', status = row.status || 'OK';
-                if (status === 'OVER_BUDGET') color = '#B91C1C';
-                else if (status.startsWith('AT_RISK')) color = '#92400E';
-                else if (status.startsWith('WATCH')) color = '#2563EB';
-                doc.fillColor(color).text(status.replace('_', ' '), colX[4], y, { width: colW[4] });
-                y += 34;
-            });
-        }
-
-        // Insights / Recommendations (after all pages)
-        doc.moveDown(1);
-        const insights = control.insights || {};
-        if (insights.topRisks && insights.topRisks.length) {
-            doc.fillColor('#111827').fontSize(12).text('Recomendações de ação prioritária:', 40, y + 10);
-            insights.topRisks.forEach((r, i) => {
-                doc.fontSize(10).fillColor('#111827')
-                   .text(`• Plano ${r.plan}: ${(r.percent || 0).toFixed(1)}% do teto — ${r.recommendation || 'Revisar gastos.'}`);
-            });
-        }
-
-        // Legend
-        doc.moveDown(1);
-        doc.fontSize(10).fillColor('#374151').text('Legenda: OVER_BUDGET >100% • AT_RISK ≥90% • WATCH 70–89% • OK <70%');
-        
-        // Add detailed expense listing with improved styling
-        doc.addPage({ margin: 40, size: 'A4' });
-        
-        // Header for expense listing
-        doc.rect(0, 0, doc.page.width, 60).fill('#1E293B');
-        doc.fillColor('#FFFFFF').fontSize(20).text('� DETALHAMENTO POR PLANO DE CONTA', 40, 15);
-        doc.fontSize(12).fillColor('#CBD5E1').text(`Análise detalhada dos gastos - ${monthNames[month - 1]} ${year}`, 40, 40);
-        
-        let currentY = 80;
-        
-        // Group expenses by plan
-        const expensesByPlan = {};
-        if (Array.isArray(expenses)) {
-            expenses.forEach(expense => {
-                const planId = expense.plano_conta || 'Sem Plano';
-                if (!expensesByPlan[planId]) {
-                    expensesByPlan[planId] = {
-                        expenses: [],
-                        total: 0
-                    };
-                }
-                expensesByPlan[planId].expenses.push(expense);
-                expensesByPlan[planId].total += parseFloat(expense.valor || 0);
-            });
-        }
-        
-        // Sort plans and display
-        const sortedPlans = Object.keys(expensesByPlan).sort((a, b) => {
-            const numA = parseInt(a) || 999;
-            const numB = parseInt(b) || 999;
-            return numA - numB;
-        });
-        
-        for (const planId of sortedPlans) {
-            const planData = expensesByPlan[planId];
-            
-            // Check if we need a new page
-            if (currentY > doc.page.height - 120) {
-                doc.addPage({ margin: 40, size: 'A4' });
-                // Mini header for continuation
-                doc.rect(40, 20, doc.page.width - 80, 35).fill('#F8FAFC');
-                doc.fillColor('#1E293B').fontSize(14).text('📋 Detalhamento (continuação)', 50, 32);
-                currentY = 70;
-            }
-            
-            // Plan header with modern styling
-            const headerHeight = 40;
-            const gradient = doc.linearGradient(40, currentY, doc.page.width - 40, currentY + headerHeight);
-            gradient.stop(0, '#3B82F6').stop(1, '#1E40AF');
-            doc.rect(40, currentY, doc.page.width - 80, headerHeight).fill(gradient);
-            
-            // Plan info in header
-            doc.fillColor('#FFFFFF').fontSize(14).font('Helvetica-Bold')
-               .text(`📊 PLANO ${planId}`, 50, currentY + 8);
-            doc.fontSize(12).font('Helvetica')
-               .text(`Total: R$ ${planData.total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, 50, currentY + 25);
-            
-            // Expense count
-            doc.text(`${planData.expenses.length} ${planData.expenses.length === 1 ? 'lançamento' : 'lançamentos'}`, 
-                     doc.page.width - 180, currentY + 25, { width: 120, align: 'right' });
-            
-            currentY += headerHeight + 10;
-            
-            // Expense items with alternating background
-            planData.expenses.forEach((expense, idx) => {
-                if (currentY > doc.page.height - 80) {
-                    doc.addPage({ margin: 40, size: 'A4' });
-                    // Mini header for continuation
-                    doc.rect(40, 20, doc.page.width - 80, 35).fill('#F8FAFC');
-                    doc.fillColor('#1E293B').fontSize(14).text(`📋 Plano ${planId} (continuação)`, 50, 32);
-                    currentY = 70;
-                }
-                
-                const itemHeight = 25;
-                const bg = idx % 2 === 0 ? '#F8FAFC' : '#FFFFFF';
-                
-                // Background for item
-                doc.rect(50, currentY - 3, doc.page.width - 100, itemHeight).fill(bg);
-                
-                // Expense details with better formatting
-                doc.fillColor('#1F2937').fontSize(11).font('Helvetica-Bold')
-                   .text(`${expense.descricao || 'Sem descrição'}`, 60, currentY + 2, { width: 300 });
-                
-                // Value with emphasis
-                const valor = parseFloat(expense.valor || 0);
-                doc.fillColor('#DC2626').fontSize(12).font('Helvetica-Bold')
-                   .text(`R$ ${valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, 
-                         doc.page.width - 150, currentY + 2, { width: 100, align: 'right' });
-                
-                // Date with better formatting
-                if (expense.data_gasto) {
-                    const dataFormatada = new Date(expense.data_gasto).toLocaleDateString('pt-BR');
-                    doc.fillColor('#6B7280').fontSize(9).font('Helvetica')
-                       .text(`📅 ${dataFormatada}`, 60, currentY + 14);
-                }
-                
-                // Type indicator
-                const tipo = expense.tipo || 'N/A';
-                const tipoColor = tipo.toLowerCase().includes('empresarial') ? '#3B82F6' : '#EF4444';
-                doc.fillColor(tipoColor).fontSize(9)
-                   .text(`🏷️ ${tipo}`, doc.page.width - 280, currentY + 14, { width: 120 });
-                
-                currentY += itemHeight + 2;
-            });
-            
-            // Summary box for the plan
-            const summaryHeight = 30;
-            doc.rect(50, currentY + 5, doc.page.width - 100, summaryHeight).fill('#E0F2FE');
-            doc.fillColor('#0C4A6E').fontSize(11).font('Helvetica-Bold')
-               .text(`💰 Subtotal do Plano ${planId}: R$ ${planData.total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, 
-                     60, currentY + 15);
-            
-            currentY += summaryHeight + 20; // Space between plans
-        }
-        
-        // Summary totals at the end
-        if (currentY > doc.page.height - 80) {
-            doc.addPage({ margin: 40, size: 'A4' });
-            currentY = 40;
-        }
-        
-        doc.rect(40, currentY, doc.page.width - 80, 40).fill('#E2E8F0');
-        doc.fillColor('#1E293B').fontSize(14).font('Helvetica-Bold')
-           .text('TOTAIS GERAIS', 45, currentY + 5);
-        doc.fontSize(12)
-           .text(`Total Geral: R$ ${total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, 45, currentY + 22);
-    } catch (err) {
-        console.warn('⚠️ Erro ao gerar página de tetos:', err.message);
     }
 }
 
@@ -3166,7 +2517,7 @@ function generateSmartAlerts(expenses, total, totalPessoal, totalEmpresarial, ye
 }
 
 // 📈 ANÁLISE TEMPORAL
-function analyzeTemporalPatterns(expenses = [], year, month) {
+function analyzeTemporalPatterns(expenses, year, month) {
     const weekly = [
         { total: 0, count: 0 },
         { total: 0, count: 0 },
@@ -3175,7 +2526,7 @@ function analyzeTemporalPatterns(expenses = [], year, month) {
         { total: 0, count: 0 }
     ];
     
-    (expenses || []).forEach(expense => {
+    expenses.forEach(expense => {
         const day = new Date(expense.transaction_date).getDate();
         const weekIndex = Math.min(Math.floor((day - 1) / 7), 4);
         
@@ -3187,7 +2538,7 @@ function analyzeTemporalPatterns(expenses = [], year, month) {
 }
 
 // ⚖️ ANÁLISE COMPARATIVA
-function generateComparativeAnalysis(expenses = [], total = 0, totalPessoal = 0, totalEmpresarial = 0) {
+function generateComparativeAnalysis(expenses, total, totalPessoal, totalEmpresarial) {
     const analysis = [];
     
     // Comparação de volumes
@@ -3208,8 +2559,8 @@ function generateComparativeAnalysis(expenses = [], total = 0, totalPessoal = 0,
     }
     
     // Análise de frequência
-    const pessoaisCount = (expenses || []).filter(e => !e.is_business_expense).length;
-    const empresariaisCount = (expenses || []).filter(e => e.is_business_expense).length;
+    const pessoaisCount = expenses.filter(e => !e.is_business_expense).length;
+    const empresariaisCount = expenses.filter(e => e.is_business_expense).length;
     
     const mediaPessoal = totalPessoal / pessoaisCount || 0;
     const mediaEmpresarial = totalEmpresarial / empresariaisCount || 0;
@@ -3287,7 +2638,7 @@ async function generateFallbackPDF(expenses, total, startDate, endDate, contaNom
 
 app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
     const userId = req.user.id;
-    const { year, month, account, theme } = req.body;
+    const { year, month, account } = req.body;
 
     console.log(`🎯 [INÍCIO] Relatório mensal - User: ${userId}, Ano: ${year}, Mês: ${month}, Conta: ${account || 'Todas'}`);
 
@@ -3325,9 +2676,6 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
             }
             endDate = new Date(endYear, endMonth - 1, endDay);
         } else {
-            if (account && !billingPeriods[account]) {
-                console.log(`ℹ️ [INFO] Conta '${account}' sem período customizado. Usando mês civil.`);
-            }
             console.log(`📊 [STEP 2.2] Usando período padrão mensal`);
             startDate = new Date(year, month - 1, 1);
             endDate = new Date(year, month, 0);
@@ -3541,35 +2889,21 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
         console.log(`🧠 [STEP 11] Iniciando geração do relatório BI inteligente...`);
         
         try {
-            // Gerar relatório BI completo usando a nova função (objeto de dados)
-            // Compute budget control for the PDF
-            let budgetControl = null;
-            try {
-                const { computeBudgetControlFromDistribution, tetos } = require('./config/budgets');
-                budgetControl = {
-                    ceilings: tetos,
-                    ...computeBudgetControlFromDistribution(porPlano)
-                };
-            } catch (e) {
-                console.warn('⚠️ Erro ao calcular budgetControl para PDF:', e.message);
-            }
-
-            const biReport = await generateIntelligentBIReport({
-                expenses,
-                total,
-                totalPessoal,
-                totalEmpresarial,
+            // Gerar relatório BI completo usando a nova função
+            const biReport = await generateIntelligentBIReport(
+                expenses, 
+                total, 
+                totalEmpresarial, 
+                totalPessoal, 
+                empresariais, 
+                pessoaisFiltrados, 
+                expensesByPlan,
                 startDate,
                 endDate,
                 contaNome,
                 year,
-                month,
-                porPlano,
-                porConta,
-                theme: theme || 'modern',
-                budgetControl,
-                userId
-            });
+                month
+            );
             
             console.log(`✅ [STEP 11] Relatório BI inteligente gerado com sucesso!`);
             
@@ -3579,9 +2913,6 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
             
             // Enviar o documento BI
             biReport.pipe(res);
-            // Finaliza o documento e encerra a execução desta rota
-            try { biReport.end(); } catch(_) {}
-            return;
             
             console.log(`🎉 [SUCESSO] Relatório BI inteligente enviado com sucesso! 
             📊 Dados processados: ${expenses.length} despesas totalizando R$ ${total.toFixed(2)}
@@ -3593,8 +2924,6 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
             console.error(`❌ [ERRO] Falha na geração do relatório BI:`, biError);
             throw new Error(`Erro ao gerar relatório BI inteligente: ${biError.message}`);
         }
-    // Código legado abaixo não deve executar quando usamos o relatório BI acima
-    // Mantido apenas como referência; retornamos antes.
     doc.roundedRect(40, totalBoxY, doc.page.width - 80, 130, 24).fill('#10B981');
     doc.fillColor('#FFFFFF').fontSize(56).text('💰', 70, totalBoxY + 32);
     doc.fontSize(28).text(`R$ ${total.toFixed(2)}`, 150, totalBoxY + 25, { width: 300, align: 'left' });
@@ -3619,26 +2948,26 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
         doc.fillColor('#FFFFFF').fontSize(24).text('🎯 RESUMO EXECUTIVO', 50, 25);
         doc.moveDown(3);
 
-    // Cards de resumo estilizados
+        // Cards de resumo estilizados
         const cardY = doc.y;
         
         // Card Total
-    doc.roundedRect(50, cardY, 150, 100, 10).fill('#E5F3FF');
-    doc.fillColor('#0F172A').fontSize(12).text('TOTAL GERAL', 60, cardY + 15, { width: 130, align: 'left' });
-    doc.fontSize(16).text(`R$ ${total.toFixed(2)}`, 60, cardY + 35, { width: 130, align: 'left' });
-    doc.fontSize(10).fillColor('#334155').text(`${expenses.length} transações`, 60, cardY + 65, { width: 130, align: 'left' });
+        doc.roundedRect(50, cardY, 150, 100, 10).fill('#3B82F6');
+        doc.fillColor('#FFFFFF').fontSize(12).text('TOTAL GERAL', 60, cardY + 15, { width: 130, align: 'left' });
+        doc.fontSize(16).text(`R$ ${total.toFixed(2)}`, 60, cardY + 35, { width: 130, align: 'left' });
+        doc.fontSize(10).text(`${expenses.length} transações`, 60, cardY + 65, { width: 130, align: 'left' });
 
         // Card Pessoal
-    doc.roundedRect(220, cardY, 150, 100, 10).fill('#E6FFFA');
-    doc.fillColor('#0F172A').fontSize(12).text('PESSOAL 🏠', 230, cardY + 15, { width: 130, align: 'left' });
-    doc.fontSize(16).text(`R$ ${totalPessoal.toFixed(2)}`, 230, cardY + 35, { width: 130, align: 'left' });
-    doc.fontSize(10).fillColor('#334155').text(`${pessoais.length || 0} transações`, 230, cardY + 65, { width: 130, align: 'left' });
+        doc.roundedRect(220, cardY, 150, 100, 10).fill('#10B981');
+        doc.fillColor('#FFFFFF').fontSize(12).text('PESSOAL 🏠', 230, cardY + 15, { width: 130, align: 'left' });
+        doc.fontSize(16).text(`R$ ${totalPessoal.toFixed(2)}`, 230, cardY + 35, { width: 130, align: 'left' });
+        doc.fontSize(10).text(`${pessoais.length} transações`, 230, cardY + 65, { width: 130, align: 'left' });
 
         // Card Empresarial
-    doc.roundedRect(390, cardY, 150, 100, 10).fill('#FFF7ED');
-    doc.fillColor('#0F172A').fontSize(12).text('EMPRESARIAL 💼', 400, cardY + 15, { width: 130, align: 'left' });
-    doc.fontSize(16).text(`R$ ${totalEmpresarial.toFixed(2)}`, 400, cardY + 35, { width: 130, align: 'left' });
-    doc.fontSize(10).fillColor('#334155').text(`${empresariais.length || 0} transações`, 400, cardY + 65, { width: 130, align: 'left' });
+        doc.roundedRect(390, cardY, 150, 100, 10).fill('#F59E0B');
+        doc.fillColor('#FFFFFF').fontSize(12).text('EMPRESARIAL 💼', 400, cardY + 15, { width: 130, align: 'left' });
+        doc.fontSize(16).text(`R$ ${totalEmpresarial.toFixed(2)}`, 400, cardY + 35, { width: 130, align: 'left' });
+        doc.fontSize(10).text(`${empresariais.length} transações`, 400, cardY + 65, { width: 130, align: 'left' });
 
         doc.y = cardY + 120;
         doc.moveDown(1);
@@ -4729,8 +4058,6 @@ app.post('/api/recurring-expenses/process', authenticateToken, async (req, res) 
 });
 
 // --- 9. INICIALIZAÇÃO DO SERVIDOR ---
-// Definição segura das portas (Railway injeta process.env.PORT)
-const PORT = parseInt(process.env.PORT, 10) || 3000;
 const HOST = '0.0.0.0'; // Essencial para Railway
 app.listen(PORT, HOST, async () => {
     try {
@@ -4739,16 +4066,9 @@ app.listen(PORT, HOST, async () => {
         
         // Executar migração do banco
         console.log('🔄 Verificando e criando estrutura do banco...');
-    // Criar estrutura básica se necessário (tabelas essenciais) - execução idempotente
-    try {
-        await initializeSchema();
-    } catch(e){
-        console.warn('⚠️ Falha ao inicializar schema (continuando):', e.message);
-    }
-    // Garantir unificação retroativa de registros PIX/Boleto se função existir
-    if (typeof ensurePixBoletoUnification === 'function') {
-        try { await ensurePixBoletoUnification(); } catch(e){ console.warn('⚠️ Falha unificação PIX/Boleto:', e.message); }
-    }
+    await createDatabase();
+    // Garantir unificação retroativa de registros PIX/Boleto
+    await ensurePixBoletoUnification();
         
         console.log(`🚀 Servidor rodando em http://${HOST}:${PORT}`);
         console.log('✅ Sistema inicializado com sucesso!');
@@ -4792,64 +4112,6 @@ async function ensurePixBoletoUnification() {
     } catch (e) {
         console.error('❌ Erro na unificação de contas PIX/Boleto (ignorado na execução):', e.message);
     }
-}
-
-// Criação simplificada de schema (somente cria tabelas faltantes básicas usadas no relatório)
-async function initializeSchema(){
-    const ddlStatements = [
-        `CREATE TABLE IF NOT EXISTS expenses (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            user_id INT NOT NULL,
-            transaction_date DATE NOT NULL,
-            amount DECIMAL(12,2) NOT NULL DEFAULT 0,
-            description VARCHAR(255),
-            account VARCHAR(64),
-            is_business_expense TINYINT(1) DEFAULT 0,
-            account_plan_code INT,
-            is_recurring_expense TINYINT(1) DEFAULT 0,
-            total_installments INT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            INDEX idx_user_date (user_id, transaction_date)
-        ) ENGINE=InnoDB`,
-        `CREATE TABLE IF NOT EXISTS recurring_expenses (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            user_id INT NOT NULL,
-            description VARCHAR(255),
-            amount DECIMAL(12,2) NOT NULL DEFAULT 0,
-            day_of_month INT,
-            is_business_expense TINYINT(1) DEFAULT 0,
-            account VARCHAR(64),
-            account_plan_code INT,
-            is_active TINYINT(1) DEFAULT 1,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        ) ENGINE=InnoDB`,
-        `CREATE TABLE IF NOT EXISTS recurring_expense_processing (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            recurring_expense_id INT NOT NULL,
-            processed_month VARCHAR(7) NOT NULL,
-            expense_id INT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            UNIQUE KEY uniq_rec_month (recurring_expense_id, processed_month)
-        ) ENGINE=InnoDB`,
-        `CREATE TABLE IF NOT EXISTS monthly_snapshots (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            user_id INT NOT NULL,
-            year INT NOT NULL,
-            month INT NOT NULL,
-            total DECIMAL(12,2),
-            total_business DECIMAL(12,2),
-            total_personal DECIMAL(12,2),
-            projection DECIMAL(12,2),
-            hhi DECIMAL(12,4),
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-            UNIQUE KEY uniq_user_month (user_id, year, month)
-        ) ENGINE=InnoDB`
-    ];
-    for (const ddl of ddlStatements) {
-        try { await pool.query(ddl); } catch(e){ console.warn('⚠️ DDL falhou:', e.message); }
-    }
-    console.log('✅ Schema básico validado/criado');
 }
 
 // Rota dedicada para obter gastos da conta unificada PIX/Boleto com resumo agregado
@@ -4929,43 +4191,27 @@ app.get('/api/account-plans', authenticateToken, async (req, res) => {
 });
 
 // --- ROTAS PARA RELATÓRIOS ---
-// Relatório Mensal (JSON detalhado, compatível com Railway)
 app.get('/api/reports/monthly', authenticateToken, async (req, res) => {
     try {
-        const userId = parseInt(req.user.id);
-        const year = parseInt(req.query.year) || new Date().getFullYear();
-        const month = parseInt(req.query.month) || (new Date().getMonth() + 1);
-        const account = req.query.account || 'ALL';
-
-        // Usa a engine de KPIs para compor um resumo mensal robusto sem dependências nativas
-        const kpis = await computeMonthlyKPIs({ pool, userId, year, month, account });
-
-        // Complementa com um pequeno resumo agregador para facilitar consumo no frontend
-        const summary = {
-            period: kpis.period,
-            totals: kpis.totals,
-            distribution: {
-                byPlan: kpis.distrib?.porPlano || {},
-                byAccount: kpis.distrib?.porConta || {},
-                byDay: kpis.distrib?.porDia || {}
-            },
-            comparison: kpis.comparativo || [],
-            efficiency: kpis.eficiencia || {},
-            outliers: kpis.outliers || { top: [] },
-            projection: kpis.projecao || {},
-            concentration: kpis.concentracao || {},
-            bi: kpis.businessIntelligence || {}
-        };
-
-        return res.json({
-            source: 'monthly-summary',
-            userId,
-            account,
-            ...summary
-        });
+        const userId = req.user.id;
+        const { year, month } = req.query;
+        
+        const [rows] = await pool.query(`
+            SELECT 
+                account,
+                SUM(CASE WHEN is_business_expense = 0 THEN amount ELSE 0 END) as personal_total,
+                SUM(CASE WHEN is_business_expense = 1 THEN amount ELSE 0 END) as business_total,
+                COUNT(*) as transaction_count
+            FROM expenses 
+            WHERE user_id = ? AND YEAR(transaction_date) = ? AND MONTH(transaction_date) = ?
+            GROUP BY account
+            ORDER BY (personal_total + business_total) DESC
+        `, [userId, year, month]);
+        
+        res.json(rows);
     } catch (error) {
-        console.error('Erro ao buscar relatório mensal (JSON):', error);
-        res.status(500).json({ message: 'Erro ao buscar relatório mensal.', details: error.message });
+        console.error('Erro ao buscar relatório mensal:', error);
+        res.status(500).json({ message: 'Erro ao buscar relatório mensal.' });
     }
 });
 
