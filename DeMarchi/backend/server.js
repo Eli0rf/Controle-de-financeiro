@@ -2026,6 +2026,12 @@ async function generateChartsForPDF(porPlano, porConta, expenses, chartJSNodeCan
 async function generateIntelligentBIReport(data) {
     const { expenses, total, totalPessoal, totalEmpresarial, startDate, endDate, contaNome, year, month, porPlano, porConta, userId } = data;
 
+    // Sanitização defensiva de números (evita PDFKit "unsupported number: NaN")
+    function safeNumber(n){ return (typeof n === 'number' && isFinite(n)) ? n : 0; }
+    data.total = safeNumber(total);
+    data.totalPessoal = safeNumber(totalPessoal);
+    data.totalEmpresarial = safeNumber(totalEmpresarial);
+
     // Tema/estilo do relatório (ex.: 'modern' padrão, 'nubank' inspirado no anexo)
     function resolveTheme(theme) {
         if ((theme || '').toLowerCase() === 'nubank') {
@@ -2157,7 +2163,9 @@ async function createExecutiveDashboard(doc, data) {
     const spacing = 20;
 
     // Calcular métricas inteligentes
-    const mediaDiaria = total / new Date(year, month, 0).getDate();
+    const diasNoMes = new Date(year, month, 0).getDate() || 30;
+    const mediaDiariaRaw = (typeof total === 'number' && isFinite(total)) ? total / diasNoMes : 0;
+    const mediaDiaria = isFinite(mediaDiariaRaw) ? mediaDiariaRaw : 0;
     const percentualPessoal = total > 0 ? (totalPessoal / total * 100) : 0;
     const percentualEmpresarial = total > 0 ? (totalEmpresarial / total * 100) : 0;
     
@@ -2168,7 +2176,9 @@ async function createExecutiveDashboard(doc, data) {
     doc.fillColor(kpiFg).fontSize(14).text('💰 TOTAL GERAL', 50, kpiY + 20, { width: kpiWidth - 20, align: 'center' });
     doc.fontSize(20).text(`R$ ${(total || 0).toLocaleString('pt-BR', {minimumFractionDigits: 2})}`, 50, kpiY + 45, { width: kpiWidth - 20, align: 'center' });
     doc.fontSize(11).text(`${expenses.length} transações`, 50, kpiY + 75, { width: kpiWidth - 20, align: 'center' });
-    doc.fontSize(10).text(`Média: R$ ${(total/expenses.length || 0).toFixed(2)}`, 50, kpiY + 90, { width: kpiWidth - 20, align: 'center' });
+    const mediaPorTransacaoRaw = (expenses.length > 0 && isFinite(total)) ? (total / expenses.length) : 0;
+    const mediaPorTransacao = isFinite(mediaPorTransacaoRaw) ? mediaPorTransacaoRaw : 0;
+    doc.fontSize(10).text(`Média: R$ ${mediaPorTransacao.toFixed(2)}`, 50, kpiY + 90, { width: kpiWidth - 20, align: 'center' });
 
     // KPI 2: Pessoal
     const kpi2X = 40 + kpiWidth + spacing;
