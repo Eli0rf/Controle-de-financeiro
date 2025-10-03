@@ -173,22 +173,79 @@ async function generateSimplePDF(expenses, total, startDate, endDate, contaNome,
             try {
                 const { ChartJSNodeCanvas } = require('chartjs-node-canvas');
                 const width=480, height=260; const chart = new ChartJSNodeCanvas({width,height,backgroundColour:'#FFFFFF'});
+
+                // Plugin genérico de rótulos de valor
+                const valueLabelPlugin = {
+                    id:'valueLabels',
+                    afterDatasetsDraw(ch){
+                        const {ctx} = ch; ctx.save();
+                        ch.data.datasets.forEach((ds,di)=>{
+                            const meta = ch.getDatasetMeta(di);
+                            meta.data.forEach((el,idx)=>{
+                                if(!el || !el.x || !el.y) return;
+                                let raw = ds.data[idx]; const val = typeof raw==='number'? raw : parseFloat(raw)||0;
+                                let labelText;
+                                if(ch.config.type==='pie' || ch.config.type==='doughnut'){
+                                    const tot = ds.data.reduce((a,b)=> a + (typeof b==='number'?b: (parseFloat(b)||0)),0) || 1;
+                                    const pct = (val / tot *100).toFixed(1)+'%';
+                                    labelText = pct;
+                                    if(pct==='0.0%') return;
+                                } else if(ch.config.type==='bar') {
+                                    labelText = val>=1000? (val/1000).toFixed(1)+'k' : val.toFixed(0);
+                                } else if(ch.config.type==='line') {
+                                    if(idx !== ds.data.length-1) return; // só último ponto
+                                    labelText = val.toFixed(0);
+                                } else return;
+                                ctx.font = '11px sans-serif';
+                                ctx.fillStyle = '#111827';
+                                ctx.textAlign='center'; ctx.textBaseline='middle';
+                                const p = el.tooltipPosition();
+                                ctx.fillText(labelText, p.x, p.y - (ch.config.type==='bar'?10:0));
+                            });
+                        });
+                        ctx.restore();
+                    }
+                };
+
                 // Pie Plano
                 const sortedPlans = Object.entries(byPlan).sort((a,b)=>b[1]-a[1]);
                 const topPlans = sortedPlans.slice(0,7); const outros = sortedPlans.slice(7).reduce((s,[,v])=>s+v,0); if(outros>0) topPlans.push(['Outros',outros]);
-                const pieCfg={type:'pie',data:{labels:topPlans.map(x=>x[0]),datasets:[{data:topPlans.map(x=>x[1]),backgroundColor:['#2563EB','#10B981','#F59E0B','#6366F1','#EF4444','#0D9488','#D946EF','#94A3B8']} ]},options:{plugins:{legend:{display:false}}}};
+                const pieCfg={
+                    type:'pie',
+                    data:{labels:topPlans.map(x=>x[0]),datasets:[{data:topPlans.map(x=>x[1]),backgroundColor:['#2563EB','#10B981','#F59E0B','#6366F1','#EF4444','#0D9488','#D946EF','#94A3B8']} ]},
+                    options:{plugins:{legend:{display:true,position:'bottom',labels:{boxWidth:12,font:{size:9}}},tooltip:{enabled:true}}},
+                    plugins:[valueLabelPlugin]
+                };
                 const pieImg = await chart.renderToBuffer(pieCfg);
                 doc.image(pieImg,40,80,{width:230}); doc.fontSize(10).fillColor('#334155').text('🥧 Distribuição por Plano',40,80+height+4,{width:230,align:'center'});
+
                 // Bar Conta
                 const sortedAcc = Object.entries(byAccount).sort((a,b)=>b[1]-a[1]).slice(0,8);
-                const barCfg={type:'bar',data:{labels:sortedAcc.map(x=>x[0]),datasets:[{label:'Conta',data:sortedAcc.map(x=>x[1]),backgroundColor:'#2563EB'}]},options:{plugins:{legend:{display:false}},scales:{x:{ticks:{display:false}},y:{display:false}}}};
+                const barCfg={
+                    type:'bar',
+                    data:{labels:sortedAcc.map(x=>x[0]),datasets:[{label:'Gasto (R$)',data:sortedAcc.map(x=>x[1]),backgroundColor:'#2563EB'}]},
+                    options:{plugins:{legend:{display:true,position:'bottom',labels:{font:{size:9}}},tooltip:{enabled:true}},scales:{x:{ticks:{display:false}},y:{display:false}}},
+                    plugins:[valueLabelPlugin]
+                };
                 const barImg = await chart.renderToBuffer(barCfg); doc.image(barImg,300,80,{width:230}); doc.fontSize(10).fillColor('#334155').text('📊 Gastos por Conta',300,80+height+4,{width:230,align:'center'});
+
                 // Donut Pessoal vs Empresarial
-                const donutCfg={type:'doughnut',data:{labels:['Pessoal','Empresarial'],datasets:[{data:[totalPessoal,totalEmp],backgroundColor:['#10B981','#F59E0B']} ]},options:{plugins:{legend:{display:false}},cutout:'55%'}};
+                const donutCfg={
+                    type:'doughnut',
+                    data:{labels:['Pessoal','Empresarial'],datasets:[{data:[totalPessoal,totalEmp],backgroundColor:['#10B981','#F59E0B']} ]},
+                    options:{plugins:{legend:{display:true,position:'bottom',labels:{font:{size:9}}},tooltip:{enabled:true}},cutout:'55%'},
+                    plugins:[valueLabelPlugin]
+                };
                 const donutImg = await chart.renderToBuffer(donutCfg); doc.image(donutImg,40,400,{width:230}); doc.fontSize(10).fillColor('#334155').text('🍩 Pessoal vs Empresarial',40,400+height+4,{width:230,align:'center'});
+
                 // Line Evolução diária
                 const daysSorted = Object.keys(byDay).sort(); const dailyValues = daysSorted.map(d=> byDay[d]);
-                const lineCfg={type:'line',data:{labels:daysSorted.map(d=>d.slice(8,10)),datasets:[{label:'Dia',data:dailyValues,borderColor:'#6366F1',backgroundColor:'rgba(99,102,241,0.3)',tension:0.3,fill:true}]},options:{plugins:{legend:{display:false}},scales:{x:{display:false},y:{display:false}}}};
+                const lineCfg={
+                    type:'line',
+                    data:{labels:daysSorted.map(d=>d.slice(8,10)),datasets:[{label:'Dia',data:dailyValues,borderColor:'#6366F1',pointBackgroundColor:'#6366F1',pointRadius:3,backgroundColor:'rgba(99,102,241,0.3)',tension:0.3,fill:true}]},
+                    options:{plugins:{legend:{display:true,position:'bottom',labels:{font:{size:9}}},tooltip:{enabled:true}},scales:{x:{display:false},y:{display:false}}},
+                    plugins:[valueLabelPlugin]
+                };
                 const lineImg = await chart.renderToBuffer(lineCfg); doc.image(lineImg,300,400,{width:230}); doc.fontSize(10).fillColor('#334155').text('📈 Evolução Diária',300,400+height+4,{width:230,align:'center'});
             } catch(chartErr){ doc.fontSize(10).fillColor('#DC2626').text('Falha ao gerar gráficos (fallback textual).',40,80); }
         }
