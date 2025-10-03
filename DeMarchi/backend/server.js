@@ -96,7 +96,8 @@ const { createDatabase } = require('./migrations/migrate');
 const billingPeriods = {
     'Nu Bank Ketlyn': { startDay: 2, endDay: 1 },
     'Nu Vainer': { startDay: 2, endDay: 1 },
-    'Ourocard Ketlyn': { startDay: 17, endDay: 16 },
+    // Ourocard agora segue mês civil (1 até último dia) – usar isRecurring para cair na lógica padrão
+    'Ourocard Ketlyn': { startDay: 1, endDay: 30, isRecurring: true },
     'PicPay Vainer': { startDay: 1, endDay: 30 },
     'PIX/Boleto': { startDay: 1, endDay: 30, isRecurring: true }
 };
@@ -934,7 +935,7 @@ app.get('/api/expenses', authenticateToken, async (req, res) => {
             sql += ' AND transaction_date >= ? AND transaction_date <= ?';
             params.push(start_date, end_date);
         } else if (account && billingPeriods[account] && year && month) {
-            // Para conta unificada PIX/Boleto, não aplicar filtro de período de fatura customizado de cartão
+            // Contas marcadas como isRecurring (inclui agora Ourocard Ketlyn e PIX/Boleto) usam mês civil
             if (!billingPeriods[account].isRecurring) {
                 const { startDay, endDay } = billingPeriods[account];
                 const startDate = new Date(year, month - 1, startDay);
@@ -949,7 +950,7 @@ app.get('/api/expenses', authenticateToken, async (req, res) => {
                 sql += ' AND transaction_date >= ? AND transaction_date <= ?';
                 params.push(startDate.toISOString().slice(0, 10), endDate.toISOString().slice(0, 10));
             } else {
-                // Para conta unificada PIX/Boleto filtrar apenas por mês/ano normal
+                // Mês civil: de 1 ao último dia
                 sql += ' AND YEAR(transaction_date) = ? AND MONTH(transaction_date) = ?';
                 params.push(year, month);
             }
@@ -2664,7 +2665,7 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
         // Determina período vigente se por conta
         console.log(`📅 [STEP 2] Calculando período...`);
         
-        if (account && billingPeriods[account]) {
+        if (account && billingPeriods[account] && !billingPeriods[account].isRecurring) {
             console.log(`📊 [STEP 2.1] Usando período personalizado para conta: ${account}`);
             const { startDay, endDay } = billingPeriods[account];
             startDate = new Date(year, month - 1, startDay);
@@ -2676,7 +2677,7 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
             }
             endDate = new Date(endYear, endMonth - 1, endDay);
         } else {
-            console.log(`📊 [STEP 2.2] Usando período padrão mensal`);
+            console.log(`📊 [STEP 2.2] Usando período padrão mensal (mês civil)`);
             startDate = new Date(year, month - 1, 1);
             endDate = new Date(year, month, 0);
         }
