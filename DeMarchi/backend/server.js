@@ -102,6 +102,30 @@ const billingPeriods = {
     'PIX/Boleto': { startDay: 1, endDay: 30, isRecurring: true }
 };
 
+// Fallback simples de PDF (usado quando BI falha)
+function generateSimplePDF(expenses, total, startDate, endDate, contaNome, year, month){
+    const doc = new pdfkit();
+    try {
+        doc.fontSize(22).text('RELATÓRIO SIMPLIFICADO', {align:'center'});
+        doc.moveDown();
+        doc.fontSize(12).text(`Período: ${startDate.toLocaleDateString('pt-BR')} a ${endDate.toLocaleDateString('pt-BR')}`, {align:'center'});
+        doc.text(`Conta: ${contaNome}`, {align:'center'});
+        doc.moveDown();
+        doc.fontSize(16).text(`Total: R$ ${total.toLocaleString('pt-BR',{minimumFractionDigits:2})}`, {align:'center'});
+        doc.moveDown();
+        doc.fontSize(12).text('Top 20 Despesas:', {underline:true});
+        (expenses||[]).slice(0,20).forEach((e,i)=>{
+            const dt = new Date(e.transaction_date).toLocaleDateString('pt-BR');
+            const val = parseFloat(e.amount||0).toLocaleString('pt-BR',{minimumFractionDigits:2});
+            doc.text(`${i+1}. ${dt} - R$ ${val} - ${(e.description||'').slice(0,60)}`);
+        });
+        if (expenses.length>20) doc.text(`... e mais ${expenses.length-20} itens.`);
+    } catch(err){
+        console.warn('Falha generateSimplePDF:', err.message);
+    }
+    return doc;
+}
+
 // --- 3. MIDDLEWARES ---
 app.use(express.json());
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
@@ -2148,7 +2172,8 @@ async function generateIntelligentBIReport(data) {
 
 // 📊 PÁGINA 1: DASHBOARD EXECUTIVO
 async function createExecutiveDashboard(doc, data) {
-    const { expenses, total, totalPessoal, totalEmpresarial, startDate, endDate, contaNome, year, month } = data;
+    const { expenses: rawExpenses, total, totalPessoal, totalEmpresarial, startDate, endDate, contaNome, year, month } = data;
+    const expenses = Array.isArray(rawExpenses) ? rawExpenses : [];
     
     // === CABEÇALHO EXECUTIVO MODERNO ===
     const gradient = doc.linearGradient(0, 0, doc.page.width, 100);
@@ -2192,7 +2217,8 @@ async function createExecutiveDashboard(doc, data) {
     doc.fillColor('#FFFFFF').fontSize(14).text('💰 TOTAL GERAL', 50, kpiY + 20, { width: kpiWidth - 20, align: 'center' });
     doc.fontSize(20).text(`R$ ${(total || 0).toLocaleString('pt-BR', {minimumFractionDigits: 2})}`, 50, kpiY + 45, { width: kpiWidth - 20, align: 'center' });
     doc.fontSize(11).text(`${expenses.length} transações`, 50, kpiY + 75, { width: kpiWidth - 20, align: 'center' });
-    doc.fontSize(10).text(`Média: R$ ${(total/expenses.length || 0).toFixed(2)}`, 50, kpiY + 90, { width: kpiWidth - 20, align: 'center' });
+    const mediaTx = expenses.length > 0 ? (total / expenses.length) : 0;
+    doc.fontSize(10).text(`Média: R$ ${mediaTx.toFixed(2)}`, 50, kpiY + 90, { width: kpiWidth - 20, align: 'center' });
 
     // KPI 2: Pessoal
     const kpi2X = 40 + kpiWidth + spacing;
