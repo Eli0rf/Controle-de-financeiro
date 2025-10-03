@@ -4739,9 +4739,16 @@ app.listen(PORT, HOST, async () => {
         
         // Executar migração do banco
         console.log('🔄 Verificando e criando estrutura do banco...');
-    await createDatabase();
-    // Garantir unificação retroativa de registros PIX/Boleto
-    await ensurePixBoletoUnification();
+    // Criar estrutura básica se necessário (tabelas essenciais) - execução idempotente
+    try {
+        await initializeSchema();
+    } catch(e){
+        console.warn('⚠️ Falha ao inicializar schema (continuando):', e.message);
+    }
+    // Garantir unificação retroativa de registros PIX/Boleto se função existir
+    if (typeof ensurePixBoletoUnification === 'function') {
+        try { await ensurePixBoletoUnification(); } catch(e){ console.warn('⚠️ Falha unificação PIX/Boleto:', e.message); }
+    }
         
         console.log(`🚀 Servidor rodando em http://${HOST}:${PORT}`);
         console.log('✅ Sistema inicializado com sucesso!');
@@ -4785,6 +4792,64 @@ async function ensurePixBoletoUnification() {
     } catch (e) {
         console.error('❌ Erro na unificação de contas PIX/Boleto (ignorado na execução):', e.message);
     }
+}
+
+// Criação simplificada de schema (somente cria tabelas faltantes básicas usadas no relatório)
+async function initializeSchema(){
+    const ddlStatements = [
+        `CREATE TABLE IF NOT EXISTS expenses (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            user_id INT NOT NULL,
+            transaction_date DATE NOT NULL,
+            amount DECIMAL(12,2) NOT NULL DEFAULT 0,
+            description VARCHAR(255),
+            account VARCHAR(64),
+            is_business_expense TINYINT(1) DEFAULT 0,
+            account_plan_code INT,
+            is_recurring_expense TINYINT(1) DEFAULT 0,
+            total_installments INT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_user_date (user_id, transaction_date)
+        ) ENGINE=InnoDB`,
+        `CREATE TABLE IF NOT EXISTS recurring_expenses (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            user_id INT NOT NULL,
+            description VARCHAR(255),
+            amount DECIMAL(12,2) NOT NULL DEFAULT 0,
+            day_of_month INT,
+            is_business_expense TINYINT(1) DEFAULT 0,
+            account VARCHAR(64),
+            account_plan_code INT,
+            is_active TINYINT(1) DEFAULT 1,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB`,
+        `CREATE TABLE IF NOT EXISTS recurring_expense_processing (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            recurring_expense_id INT NOT NULL,
+            processed_month VARCHAR(7) NOT NULL,
+            expense_id INT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE KEY uniq_rec_month (recurring_expense_id, processed_month)
+        ) ENGINE=InnoDB`,
+        `CREATE TABLE IF NOT EXISTS monthly_snapshots (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            user_id INT NOT NULL,
+            year INT NOT NULL,
+            month INT NOT NULL,
+            total DECIMAL(12,2),
+            total_business DECIMAL(12,2),
+            total_personal DECIMAL(12,2),
+            projection DECIMAL(12,2),
+            hhi DECIMAL(12,4),
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            UNIQUE KEY uniq_user_month (user_id, year, month)
+        ) ENGINE=InnoDB`
+    ];
+    for (const ddl of ddlStatements) {
+        try { await pool.query(ddl); } catch(e){ console.warn('⚠️ DDL falhou:', e.message); }
+    }
+    console.log('✅ Schema básico validado/criado');
 }
 
 // Rota dedicada para obter gastos da conta unificada PIX/Boleto com resumo agregado
