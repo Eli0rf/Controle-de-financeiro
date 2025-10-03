@@ -50,6 +50,15 @@ async function drawEmoji(doc, emoji, x, y, size=18){
 const fs = require('fs');
 const cors = require('cors');
 const { pool, testConnection } = require('./config/database');
+// Definição central de períodos de fatura / cobrança por conta (evita ReferenceError em Railway)
+// Ajuste conforme necessidade de cartões com ciclo diferente do mês civil.
+const billingPeriods = {
+    // Exemplo de cartão com ciclo 5 a 4: (início dia 5, término dia 4 do mês seguinte)
+    'CartaoPrincipal': { startDay: 5, endDay: 4, isRecurring: false },
+    // Conta unificada PIX/Boleto tratada como recorrente (usa mês civil normal)
+    'PIX/Boleto': { startDay: 1, endDay: 30, isRecurring: true },
+    // Adicione outros cartões/contas aqui conforme ampliação
+};
 
 // Inicialização do Express
 const app = express();
@@ -2744,7 +2753,7 @@ async function createExpenseDetailPage(doc, data) {
 // New: Budget Control Page (Plan ceilings vs spent) for decision support
 async function createBudgetControlPage(doc, data) {
     try {
-        const { porPlano = {}, year, month } = data;
+        const { porPlano = {}, year, month, expenses = [] } = data;
         const monthNames = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
         const { computeBudgetControlFromDistribution, tetos } = require('./config/budgets');
         const control = computeBudgetControlFromDistribution(porPlano);
@@ -2755,6 +2764,49 @@ async function createBudgetControlPage(doc, data) {
         doc.fontSize(12).fillColor('#E5E7EB').text(`${monthNames[month-1]} ${year}`, 40, 48);
 
         doc.moveDown(1);
+        // Prévia dos limites monitorados (lista rápida destacando riscos e excedidos)
+        try {
+            const perPlan = control.perPlan || {};
+            const critical = [];
+            const warning = [];
+            const improving = [];
+            Object.keys(tetos).forEach(k => {
+                const plan = Number(k);
+                const ceiling = tetos[plan];
+                const spent = perPlan[plan]?.spent || 0;
+                if (!ceiling || ceiling <= 0) return; // ignora sem teto
+                const pct = (spent / ceiling) * 100;
+                if (pct >= 100) critical.push({ plan, pct });
+                else if (pct >= 90) warning.push({ plan, pct });
+                else if (pct >= 70) improving.push({ plan, pct });
+            });
+            // Ordenar por maior % primeiro
+            const fmt = v => v.pct.toFixed(1) + '%';
+            const iconCritical = '🔴';
+            const iconWarning = '🟠';
+            const iconWatch = '🟡';
+            let startY = doc.y + 10;
+            doc.fillColor('#0B1220').fontSize(13).text('Prévia dos Limites Monitorados', 40, startY);
+            startY = doc.y + 4;
+            doc.fontSize(10).fillColor('#111827');
+            if (critical.length === 0 && warning.length === 0 && improving.length === 0) {
+                doc.text('Todos os planos estão confortáveis (<70% do teto).');
+            } else {
+                if (critical.length) {
+                    doc.text(iconCritical + ' Acima do teto: ' + critical.sort((a,b)=>b.pct-a.pct).map(c=>`Plano ${c.plan} (${fmt(c)})`).join(', '));
+                }
+                if (warning.length) {
+                    doc.text(iconWarning + ' Em risco (≥90%): ' + warning.sort((a,b)=>b.pct-a.pct).map(c=>`Plano ${c.plan} (${fmt(c)})`).join(', '));
+                }
+                if (improving.length) {
+                    doc.text(iconWatch + ' Zona de atenção (70–89%): ' + improving.sort((a,b)=>b.pct-a.pct).map(c=>`Plano ${c.plan} (${fmt(c)})`).join(', '));
+                }
+            }
+            doc.moveDown(0.5);
+        } catch(previewErr) {
+            console.warn('Falha ao gerar prévia de limites:', previewErr.message);
+        }
+        // Resumo geral
     doc.fillColor('#0B1220').fontSize(13).text('Resumo de status:', 40, 90);
     const s = control.summary || {};
     doc.fontSize(12)
@@ -3263,6 +3315,9 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
             }
             endDate = new Date(endYear, endMonth - 1, endDay);
         } else {
+            if (account && !billingPeriods[account]) {
+                console.log(`ℹ️ [INFO] Conta '${account}' sem período customizado. Usando mês civil.`);
+            }
             console.log(`📊 [STEP 2.2] Usando período padrão mensal`);
             startDate = new Date(year, month - 1, 1);
             endDate = new Date(year, month, 0);
