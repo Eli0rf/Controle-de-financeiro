@@ -18,7 +18,8 @@
     <!-- SweetAlert2 -->
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <!-- jsPDF para exportação PDF -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" integrity="sha512-/F2DfQeJ6TP2PzefDs2fzGEylh4G6dkprdFM5lTyBC0bYKT1eZq9VHtV6nRvWmvMRGsiE9zMDFMvx6bMpiKdwQ==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <!-- Removido integrity inválido que bloqueava carregamento (SRI mismatch) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" referrerpolicy="no-referrer"></script>
     <!-- Tippy.js (use bundle for Popper and Tippy together, avoids 404 source map) -->
     <link rel="stylesheet" href="https://unpkg.com/tippy.js@6/dist/tippy.css" />
     <script src="https://unpkg.com/@popperjs/core@2.11.8/dist/umd/popper.min.js"></script>

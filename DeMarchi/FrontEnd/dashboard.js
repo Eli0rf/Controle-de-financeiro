@@ -6850,7 +6850,7 @@ document.addEventListener('DOMContentLoaded', function() {
             `);
         }
 
-        async function showBudgetProjection() {
+    async function showBudgetProjection() {
             const btn = document.getElementById('budget-projection');
             const originalHTML = btn.innerHTML;
             
@@ -6881,6 +6881,10 @@ document.addEventListener('DOMContentLoaded', function() {
                 btn.innerHTML = originalHTML;
                 btn.disabled = false;
             }
+        }
+        // Disponibiliza no escopo global para evitar ReferenceError ao adicionar listener antes da definição final
+        if (typeof window !== 'undefined') {
+            window.showBudgetProjection = showBudgetProjection;
         }
 
         // Função para gerar PDF de análise de tendências
