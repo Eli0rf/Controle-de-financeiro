@@ -103,8 +103,19 @@ const billingPeriods = {
 };
 
 // Fallback simples de PDF (usado quando BI falha)
+// Utilitário global para fonte principal Unicode
+let globalPrimaryFontPath = null;
+function ensurePrimaryFont(){
+    if(!globalPrimaryFontPath){
+        const fp = path.join(__dirname,'fonts','NotoSans-Regular.ttf');
+        if(fs.existsSync(fp)) globalPrimaryFontPath = fp; else globalPrimaryFontPath = null;
+    }
+    return globalPrimaryFontPath;
+}
+
 async function generateSimplePDF(expenses, total, startDate, endDate, contaNome, year, month, opts={}){
     const doc = new pdfkit({ margin: 35, size: 'A4' });
+    try { const f=ensurePrimaryFont(); if(f){ doc.registerFont('NotoSans', f); doc.font('NotoSans'); } } catch(e){ /* ignore */ }
     const safeExpenses = Array.isArray(expenses) ? expenses : [];
     const totalPessoal = safeExpenses.filter(e=>!e.is_business_expense).reduce((s,e)=>s+parseFloat(e.amount||0),0);
     const totalEmp = safeExpenses.filter(e=>e.is_business_expense).reduce((s,e)=>s+parseFloat(e.amount||0),0);
@@ -1692,7 +1703,8 @@ app.get('/api/reports/weekly', authenticateToken, async (req, res) => {
         });
 
         // Gera PDF
-        const doc = new pdfkit({ autoFirstPage: false });
+    const doc = new pdfkit({ autoFirstPage: false });
+    try { const f=ensurePrimaryFont(); if(f){ doc.registerFont('NotoSans', f); doc.font('NotoSans'); } } catch{}
         doc.registerFont('NotoSans', path.join(__dirname, 'fonts', 'NotoSans-Regular.ttf'));
         doc.font('NotoSans');
 
@@ -2269,6 +2281,7 @@ async function generateIntelligentBIReport(data) {
     
     // CRIAR DOCUMENTO PDF
     const doc = new pdfkit({ margin: 30, size: 'A4' });
+    try { const f=ensurePrimaryFont(); if(f){ doc.registerFont('NotoSans', f); doc.font('NotoSans'); } } catch{}
     
     // Configurar fonte com fallback para Railway
     try {
@@ -2745,7 +2758,8 @@ async function generateFallbackPDF(expenses, total, startDate, endDate, contaNom
     console.log(`🆘 [FALLBACK] Gerando PDF simplificado...`);
     
     try {
-        const doc = new pdfkit();
+    const doc = new pdfkit();
+    try { const f=ensurePrimaryFont(); if(f){ doc.registerFont('NotoSans', f); doc.font('NotoSans'); } } catch{}
         
         // Fonte mais simples
         try {
@@ -2879,6 +2893,7 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
             try {
                 // Criar PDF simples para período sem gastos
                 const doc = new pdfkit();
+                try { const f=ensurePrimaryFont(); if(f){ doc.registerFont('NotoSans', f); doc.font('NotoSans'); } } catch{}
                 
                 // Tentar registrar fonte com fallback robusto para Railway
                 try {
@@ -3929,6 +3944,7 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
                 
                 // Gerar PDF vazio se não há despesas mas temos as datas
                 const emptyDoc = new pdfkit();
+                try { const f=ensurePrimaryFont(); if(f){ emptyDoc.registerFont('NotoSans', f); emptyDoc.font('NotoSans'); } } catch{}
                 try { emptyDoc.font('Helvetica'); } catch { emptyDoc.font('Times-Roman'); }
                 
                 emptyDoc.fontSize(20).text('RELATÓRIO FINANCEIRO MENSAL', { align: 'center' });
@@ -4003,7 +4019,8 @@ app.get('/api/health/pdf-dependencies', (req, res) => {
 
     // Verificar PDFKit
     try {
-        const testDoc = new pdfkit();
+    const testDoc = new pdfkit();
+    try { const f=ensurePrimaryFont(); if(f){ testDoc.registerFont('NotoSans', f); testDoc.font('NotoSans'); } } catch{}
         diagnostics.dependencies.pdfkit = {
             available: true,
             canCreateDocument: !!testDoc
@@ -4399,7 +4416,8 @@ app.post('/api/reports/trend-analysis', authenticateToken, async (req, res) => {
         console.log('📊 Gerando análise de tendências PDF para usuário:', userId);
         
         // Criar documento PDF
-        const doc = new pdfkit({ size: 'A4', margin: 50 });
+    const doc = new pdfkit({ size: 'A4', margin: 50 });
+    try { const f=ensurePrimaryFont(); if(f){ doc.registerFont('NotoSans', f); doc.font('NotoSans'); } } catch{}
         
         // Headers para download
         res.setHeader('Content-Type', 'application/pdf');
