@@ -4729,6 +4729,8 @@ app.post('/api/recurring-expenses/process', authenticateToken, async (req, res) 
 });
 
 // --- 9. INICIALIZAÇÃO DO SERVIDOR ---
+// Definição segura das portas (Railway injeta process.env.PORT)
+const PORT = parseInt(process.env.PORT, 10) || 3000;
 const HOST = '0.0.0.0'; // Essencial para Railway
 app.listen(PORT, HOST, async () => {
     try {
