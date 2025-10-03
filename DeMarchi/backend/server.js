@@ -103,7 +103,7 @@ const billingPeriods = {
 };
 
 // Fallback simples de PDF (usado quando BI falha)
-function generateSimplePDF(expenses, total, startDate, endDate, contaNome, year, month, opts={}){
+async function generateSimplePDF(expenses, total, startDate, endDate, contaNome, year, month, opts={}){
     const doc = new pdfkit({ margin: 35, size: 'A4' });
     const safeExpenses = Array.isArray(expenses) ? expenses : [];
     const totalPessoal = safeExpenses.filter(e=>!e.is_business_expense).reduce((s,e)=>s+parseFloat(e.amount||0),0);
@@ -130,50 +130,117 @@ function generateSimplePDF(expenses, total, startDate, endDate, contaNome, year,
         card(40,'#2563EB','💰 Total Geral', totalFmt, `${safeExpenses.length} transações`);
         card(40+cardW+10,'#10B981','🏠 Pessoal', `R$ ${totalPessoal.toLocaleString('pt-BR',{minimumFractionDigits:2})}`, `${total>0?(totalPessoal/total*100).toFixed(1):0}% do total`);
         card(40+2*(cardW+10),'#F59E0B','💼 Empresarial', `R$ ${totalEmp.toLocaleString('pt-BR',{minimumFractionDigits:2})}`, `${total>0?(totalEmp/total*100).toFixed(1):0}% do total`);
-        doc.y = y0 + cardH + 25;
+        doc.y = y0 + cardH + 18;
+
+        // Checklist do Conteúdo (explícito conforme solicitado)
+        doc.fontSize(13).fillColor('#0F172A').text('📊 O que será incluído no relatório:',40,doc.y); doc.moveDown(0.3);
+        const checklist = [
+            '✅ Resumo geral de gastos (Pessoal vs Empresarial)',
+            '✅ 🥧 Distribuição por Plano de Conta (Pizza)',
+            '✅ 📊 Gastos por Conta (Barras)',
+            '✅ 🍩 Comparação Pessoal vs Empresarial (Rosquinha)',
+            '✅ 📈 Evolução diária de gastos (Linha)',
+            '✅ Gastos detalhados por plano de conta',
+            '✅ 🎯 Análise de limites vs gastos por plano',
+            '✅ Comparativo com tetos configurados',
+            '✅ Alertas de planos que ultrapassaram limites',
+            '✅ Recomendações baseadas na utilização',
+            '✅ Gastos por conta bancária',
+            '✅ Detalhamento de gastos empresariais',
+            '✅ Lista completa de todas as despesas do período'
+        ];
+        doc.fontSize(9).fillColor('#334155');
+        checklist.forEach(item=>{ if(doc.y>doc.page.height-70){ doc.addPage(); } doc.text(item,50,doc.y,{width:doc.page.width-100}); doc.moveDown(0.3); });
+
+        // Página de Gráficos
+        const byPlan = {}; safeExpenses.forEach(e=>{ const p=e.account_plan_code||'Sem Plano'; byPlan[p]=(byPlan[p]||0)+parseFloat(e.amount||0); });
+        const byAccount={}; safeExpenses.forEach(e=>{const c=e.account||'Sem Conta'; byAccount[c]=(byAccount[c]||0)+parseFloat(e.amount||0);});
+        const byDay={}; safeExpenses.forEach(e=>{ const d=new Date(e.transaction_date); const key = d.toISOString().slice(0,10); byDay[key]=(byDay[key]||0)+parseFloat(e.amount||0); });
+        if(opts.enableCharts!==false){
+            doc.addPage();
+            doc.fontSize(16).fillColor('#0F172A').text('📊 Visão Gráfica',40,40);
+            try {
+                const { ChartJSNodeCanvas } = require('chartjs-node-canvas');
+                const width=480, height=260; const chart = new ChartJSNodeCanvas({width,height,backgroundColour:'#FFFFFF'});
+                // Pie Plano
+                const sortedPlans = Object.entries(byPlan).sort((a,b)=>b[1]-a[1]);
+                const topPlans = sortedPlans.slice(0,7); const outros = sortedPlans.slice(7).reduce((s,[,v])=>s+v,0); if(outros>0) topPlans.push(['Outros',outros]);
+                const pieCfg={type:'pie',data:{labels:topPlans.map(x=>x[0]),datasets:[{data:topPlans.map(x=>x[1]),backgroundColor:['#2563EB','#10B981','#F59E0B','#6366F1','#EF4444','#0D9488','#D946EF','#94A3B8']} ]},options:{plugins:{legend:{display:false}}}};
+                const pieImg = await chart.renderToBuffer(pieCfg);
+                doc.image(pieImg,40,80,{width:230}); doc.fontSize(10).fillColor('#334155').text('🥧 Distribuição por Plano',40,80+height+4,{width:230,align:'center'});
+                // Bar Conta
+                const sortedAcc = Object.entries(byAccount).sort((a,b)=>b[1]-a[1]).slice(0,8);
+                const barCfg={type:'bar',data:{labels:sortedAcc.map(x=>x[0]),datasets:[{label:'Conta',data:sortedAcc.map(x=>x[1]),backgroundColor:'#2563EB'}]},options:{plugins:{legend:{display:false}},scales:{x:{ticks:{display:false}},y:{display:false}}}};
+                const barImg = await chart.renderToBuffer(barCfg); doc.image(barImg,300,80,{width:230}); doc.fontSize(10).fillColor('#334155').text('📊 Gastos por Conta',300,80+height+4,{width:230,align:'center'});
+                // Donut Pessoal vs Empresarial
+                const donutCfg={type:'doughnut',data:{labels:['Pessoal','Empresarial'],datasets:[{data:[totalPessoal,totalEmp],backgroundColor:['#10B981','#F59E0B']} ]},options:{plugins:{legend:{display:false}},cutout:'55%'}};
+                const donutImg = await chart.renderToBuffer(donutCfg); doc.image(donutImg,40,400,{width:230}); doc.fontSize(10).fillColor('#334155').text('🍩 Pessoal vs Empresarial',40,400+height+4,{width:230,align:'center'});
+                // Line Evolução diária
+                const daysSorted = Object.keys(byDay).sort(); const dailyValues = daysSorted.map(d=> byDay[d]);
+                const lineCfg={type:'line',data:{labels:daysSorted.map(d=>d.slice(8,10)),datasets:[{label:'Dia',data:dailyValues,borderColor:'#6366F1',backgroundColor:'rgba(99,102,241,0.3)',tension:0.3,fill:true}]},options:{plugins:{legend:{display:false}},scales:{x:{display:false},y:{display:false}}}};
+                const lineImg = await chart.renderToBuffer(lineCfg); doc.image(lineImg,300,400,{width:230}); doc.fontSize(10).fillColor('#334155').text('📈 Evolução Diária',300,400+height+4,{width:230,align:'center'});
+            } catch(chartErr){ doc.fontSize(10).fillColor('#DC2626').text('Falha ao gerar gráficos (fallback textual).',40,80); }
+        }
 
         // Distribuição por Plano (tabela resumida)
-        doc.fontSize(14).fillColor('#0F172A').text('🥧 Distribuição por Plano de Conta',40,doc.y);
-        const byPlan = {};
-        safeExpenses.forEach(e=>{ const p = e.account_plan_code||'Sem Plano'; byPlan[p]=(byPlan[p]||0)+parseFloat(e.amount||0); });
-        const sortedPlans = Object.entries(byPlan).sort((a,b)=>b[1]-a[1]);
+        doc.addPage();
+        doc.fontSize(14).fillColor('#0F172A').text('🥧 Distribuição por Plano de Conta',40,50);
+        const sortedPlans2 = Object.entries(byPlan).sort((a,b)=>b[1]-a[1]);
         doc.moveDown(0.5); doc.fontSize(9).fillColor('#374151');
         let ty = doc.y; doc.text('Plano',40,ty); doc.text('Valor (R$)',140,ty,{align:'right',width:120}); doc.text('%',270,ty,{align:'right',width:50});
         doc.moveTo(40,ty+12).lineTo(doc.page.width-40,ty+12).stroke('#E5E7EB'); ty+=18;
-        sortedPlans.slice(0,12).forEach(([p,v],i)=>{ const pct = total>0?(v/total*100).toFixed(1):'0.0'; if(ty>doc.page.height-80){ doc.addPage(); ty=60; }
+        sortedPlans2.slice(0,20).forEach(([p,v],i)=>{ const pct = total>0?(v/total*100).toFixed(1):'0.0'; if(ty>doc.page.height-80){ doc.addPage(); ty=60; }
             const bg = i%2===0?'#F8FAFC':'#FFFFFF'; doc.rect(40,ty-4, doc.page.width-80,16).fill(bg);
             doc.fillColor('#1F2937').fontSize(9).text(String(p),45,ty); doc.text(v.toLocaleString('pt-BR',{minimumFractionDigits:2}),140,ty,{width:120,align:'right'}); doc.text(pct+'%',270,ty,{width:50,align:'right'}); ty+=18; });
         doc.y = ty + 10;
 
-        // Limites vs Gastos (se fornecido orçamento em opts.budgets)
+        // Limites vs Gastos
         if (opts.budgets) {
-            doc.fontSize(14).fillColor('#0F172A').text('🎯 Análise de Limites vs Gastos',40,doc.y); doc.moveDown(0.5);
-            const perPlan = sortedPlans.slice(0,12);
+            doc.addPage();
+            doc.fontSize(14).fillColor('#0F172A').text('🎯 Análise de Limites vs Gastos / Comparativo Tetos',40,50); doc.moveDown(0.5);
+            const perPlan = sortedPlans2.slice(0,25);
             let ly = doc.y;
             perPlan.forEach(([p,v])=>{ const teto = opts.budgets[p]||0; const pct = teto>0?(v/teto*100):0; if(ly>doc.page.height-70){ doc.addPage(); ly=60; }
                 doc.fontSize(9).fillColor('#111827').text(`Plano ${p}: R$ ${v.toLocaleString('pt-BR',{minimumFractionDigits:2})} / Teto R$ ${teto.toLocaleString('pt-BR',{minimumFractionDigits:2})} (${pct.toFixed(1)}%)`,40,ly,{width:doc.page.width-80});
-                // Barra
-                const barW = doc.page.width-160; const used = Math.min(1,pct/100); doc.rect(40,ly+12,barW,6).fill('#E5E7EB'); doc.rect(40,ly+12,Math.max(4,barW*used),6).fill(pct>=100?'#DC2626':pct>=90?'#D97706':pct>=70?'#2563EB':'#10B981'); ly+=24; });
+                const barW = doc.page.width-160; const used = Math.min(1,pct/100); doc.rect(40,ly+12,barW,6).fill('#E5E7EB'); doc.rect(40,ly+12,Math.max(4,barW*used),6).fill(pct>100?'#DC2626':pct>=90?'#D97706':pct>=70?'#2563EB':'#10B981'); ly+=24; });
             doc.y = ly + 5;
+            // Prévia dos Limites Monitorados
+            doc.addPage();
+            doc.fontSize(14).fillColor('#0F172A').text('🎯 Prévia dos Limites Monitorados:',40,50);
+            const usage = Object.entries(opts.budgets).map(([p,t])=>{ const spent=byPlan[p]||0; const pct=t>0?spent/t*100:0; return {p,spent,t,pct}; }).filter(o=>o.t>0).sort((a,b)=> b.pct - a.pct);
+            const preview = usage.slice(0,8);
+            let uy=80; preview.forEach(u=>{ if(uy>doc.page.height-70){ doc.addPage(); uy=60; }
+                const emoji = u.pct>100?'🔴':(u.pct>=90?'🟡':'🟢');
+                doc.fontSize(11).fillColor('#1F2937').text(`Plano ${u.p}:`,40,uy); doc.fontSize(11).fillColor('#1F2937').text(`${emoji} ${u.pct.toFixed(1)}%`,140,uy); uy+=20; });
+            const remaining = usage.length - preview.length; if(remaining>0){ doc.fontSize(11).fillColor('#475569').text(`... e mais ${remaining} planos no relatório completo`,40,uy+5); }
         }
 
-        // Alertas e Recomendações
-        doc.fontSize(14).fillColor('#0F172A').text('⚠️ Alertas & Recomendações',40,doc.y); doc.moveDown(0.5);
-        const alerts = []; if (opts.budgets){ sortedPlans.forEach(([p,v])=>{ const teto=opts.budgets[p]; if(teto){ const pct=v/teto*100; if(pct>=100) alerts.push({level:'CRIT', msg:`Plano ${p} estourou o teto (${pct.toFixed(1)}%)`}); else if(pct>=90) alerts.push({level:'RISK', msg:`Plano ${p} em risco (${pct.toFixed(1)}%)`}); } }); }
+        // Alertas & Recomendações
+        doc.addPage();
+        doc.fontSize(14).fillColor('#0F172A').text('⚠️ Alertas & Recomendações',40,50); doc.moveDown(0.5);
+        const alerts = []; if (opts.budgets){ Object.entries(byPlan).forEach(([p,v])=>{ const teto=opts.budgets[p]; if(teto){ const pct=v/teto*100; if(pct>100) alerts.push({level:'CRIT', msg:`Plano ${p} estourou o teto (${pct.toFixed(1)}%)`}); else if(pct>=90) alerts.push({level:'RISK', msg:`Plano ${p} em risco (${pct.toFixed(1)}%)`}); } }); }
         if(alerts.length===0) { doc.fontSize(10).fillColor('#059669').text('Nenhum alerta crítico encontrado.'); }
-        else { alerts.slice(0,8).forEach(a=>{ doc.fontSize(10).fillColor(a.level==='CRIT'?'#B91C1C':'#D97706').text(`• ${a.msg}`,40,doc.y); doc.y+=14; }); }
+        else { alerts.slice(0,15).forEach(a=>{ if(doc.y>doc.page.height-70){ doc.addPage(); doc.fontSize(14).fillColor('#0F172A').text('⚠️ Alertas (cont.)',40,50); doc.y+=10;} doc.fontSize(10).fillColor(a.level==='CRIT'?'#B91C1C':'#D97706').text(`• ${a.msg}`,40,doc.y); doc.y+=14; }); }
         doc.moveDown(0.5);
+        // Recomendações básicas
+        const recs = [];
+        alerts.filter(a=>a.level==='CRIT').forEach(a=>{ const plan=a.msg.match(/Plano (\d+)/); if(plan) recs.push(`Reduzir ou revisar gastos do Plano ${plan[1]} imediatamente.`); });
+        if(totalEmp>0 && totalEmp/total>0.5) recs.push('Avaliar migração de parte dos custos empresariais para contratos/planos mais eficientes.');
+        if(recs.length===0) recs.push('Manter a disciplina atual e revisar planos próximos de 90% do teto.');
+        doc.fontSize(12).fillColor('#1F2937').text('Recomendações:',40,doc.y+10); doc.moveDown(0.3);
+        doc.fontSize(10).fillColor('#334155'); recs.slice(0,8).forEach(r=>{ doc.text('• '+r,{width:doc.page.width-80}); doc.moveDown(0.2); });
 
         // Gastos por Conta
-        doc.fontSize(14).fillColor('#0F172A').text('🏦 Gastos por Conta',40,doc.y); doc.moveDown(0.5);
-        const byAccount={}; safeExpenses.forEach(e=>{const c=e.account||'Sem Conta'; byAccount[c]=(byAccount[c]||0)+parseFloat(e.amount||0);});
-        Object.entries(byAccount).sort((a,b)=>b[1]-a[1]).slice(0,10).forEach(([c,v])=>{ doc.fontSize(10).fillColor('#111827').text(`• ${c}: R$ ${v.toLocaleString('pt-BR',{minimumFractionDigits:2})}`,40,doc.y); doc.y+=14; });
+        doc.addPage();
+        doc.fontSize(14).fillColor('#0F172A').text('🏦 Gastos por Conta',40,50); doc.moveDown(0.5);
+        Object.entries(byAccount).sort((a,b)=>b[1]-a[1]).forEach(([c,v])=>{ if(doc.y>doc.page.height-60){ doc.addPage(); doc.fontSize(14).fillColor('#0F172A').text('🏦 Gastos por Conta (cont.)',40,50); doc.y+=10; }
+            doc.fontSize(10).fillColor('#111827').text(`• ${c}: R$ ${v.toLocaleString('pt-BR',{minimumFractionDigits:2})}`,40,doc.y); doc.y+=14; });
 
         // Detalhamento Empresarial
         doc.addPage();
         doc.fontSize(16).fillColor('#1F2937').text('💼 Detalhamento de Gastos Empresariais',40,50);
         const emp = safeExpenses.filter(e=>e.is_business_expense); let ey=90;
-        emp.slice(0,40).forEach((e,i)=>{ if(ey>doc.page.height-60){ doc.addPage(); ey=50; doc.fontSize(12).text('Continuação Empresarial',40,ey); ey+=30; }
+        emp.slice(0,150).forEach((e,i)=>{ if(ey>doc.page.height-60){ doc.addPage(); ey=50; doc.fontSize(12).text('Continuação Empresarial',40,ey); ey+=30; }
             const dt=new Date(e.transaction_date).toLocaleDateString('pt-BR'); const val=parseFloat(e.amount||0).toLocaleString('pt-BR',{minimumFractionDigits:2});
             doc.fontSize(9).fillColor('#111827').text(`${i+1}. ${dt} • R$ ${val} • ${(e.description||'').slice(0,60)} (Plano ${e.account_plan_code||'-'})`,40,ey,{width:doc.page.width-80}); ey+=14; });
 
@@ -3848,8 +3915,7 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
             if (expenses && Array.isArray(expenses) && expenses.length > 0 && total !== undefined && startDate && endDate) {
                 console.log('📊 [FALLBACK] Dados suficientes disponíveis, gerando PDF simplificado...');
                 
-                const simpleDoc = generateSimplePDF(expenses, total, startDate, endDate, contaNome, year, month);
-                
+                const simpleDoc = await generateSimplePDF(expenses, total, startDate, endDate, contaNome, year, month, { budgets: tetos });
                 simpleDoc.end();
                 res.setHeader('Content-Type', 'application/pdf');
                 res.setHeader('Content-Disposition', `attachment; filename=relatorio-simplificado-${year}-${month}${account ? '-' + account : ''}.pdf`);
