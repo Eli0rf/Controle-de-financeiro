@@ -7319,119 +7319,96 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Helper: normaliza a resposta do backend para o formato esperado pelos gráficos/tabela
     function normalizeRecurringPixBoletoBI(biData) {
-        if (!biData || typeof biData !== 'object') return {
-            summary: { totalPlanned: 0, avgActual: 0, overallReliability: 0 },
-            monthlyHistory: [],
-            categoryBreakdown: [],
-            trendsSummary: { increasing: 0, decreasing: 0, stable: 0 },
-            projections: { nextMonth: 0, threeMonths: 0, yearEnd: 0 },
-            expenses: []
-        };
-
-        const period = biData.period || {};
-        let results = Array.isArray(biData.expenses) ? biData.expenses : [];
-        // === Filtro de contas elegíveis ===
-        // Mantemos apenas registros referentes às contas PIX/Boleto (qualquer variação histórica)
-        try {
-            const normalize = acc => (acc||'').toString().trim().toUpperCase().replace(/\s|-/g,'');
-            const isPixLike = acc => {
-                const n = normalize(acc);
-                return n.includes('PIX') || n.includes('BOLETO');
-            };
-            const before = results.length;
-            results = results.filter(r => isPixLike(r.account || r.accountName || r.conta));
-            if(results.length === 0) console.warn('⚠️ Nenhum registro após filtro PIX/Boleto. Contas originais de exemplo:', (Array.isArray(biData.expenses)? biData.expenses.slice(0,5).map(x=>x.account):[]));
-            else console.log(`Filtro PIX/Boleto reduziu ${before} -> ${results.length}`);
-        } catch (e) { console.warn('Filtro PIX/BOLETO falhou:', e.message); }
-        const summaryRaw = biData.summary || {};
-
-        // KPIs
-        const summary = {
-            totalPlanned: Number(summaryRaw.totalPlanned || 0),
-            avgActual: Number(summaryRaw.totalActualAvg || 0),
-            overallReliability: Number(summaryRaw.avgReliability || 0)
-        };
-
-        // Monthly history agregado (últimos 12 meses)
-        const monthlyHistory = [];
-        const baseYear = Number(period.year) || new Date().getFullYear();
-        const baseMonth = Number(period.month) || (new Date().getMonth() + 1);
-        for (let i = 11; i >= 0; i--) {
-            const date = new Date(baseYear, baseMonth - 1 - i);
-            const y = date.getFullYear();
-            const m = date.getMonth() + 1;
-            let totalPlanned = 0;
-            let totalActual = 0;
-            for (const r of results) {
-                const hist = Array.isArray(r.history) ? r.history : [];
-                // cada item da history tem planned/actual/ year/month
-                const hm = hist.find(h => h.year === y && h.month === m);
-                if (hm) {
-                    totalPlanned += Number(hm.planned || r.plannedAmount || 0);
-                    totalActual += Number(hm.actual || 0);
-                } else {
-                    // fallback: usa o valor planejado do recorrente
-                    totalPlanned += Number(r.plannedAmount || 0);
-                }
-            }
-            const variationPercent = totalPlanned > 0 ? ((totalActual - totalPlanned) / totalPlanned) * 100 : 0;
-            monthlyHistory.push({
-                year: y,
-                month: m,
-                monthLabel: date.toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' }),
-                totalPlanned,
-                totalActual,
-                variationPercent
-            });
+        // Versão refatorada: reconstrói série mensal usando valores reais + recorrentes
+        if (!biData || typeof biData !== 'object') {
+            return { summary:{ totalPlanned:47, avgActual:0, overallReliability:0 }, monthlyHistory:[], categoryBreakdown:[], trendsSummary:{increasing:0,decreasing:0,stable:0}, projections:{ nextMonth:0, threeMonths:0, yearEnd:0 }, expenses:[] };
         }
 
-        // Category breakdown em array
-        const cb = summaryRaw.categoryBreakdown || {};
-        const categoryBreakdown = Object.keys(cb).map(k => ({
-            category: k,
-            totalPlanned: Number(cb[k]?.planned || 0),
-            avgActual: Number(cb[k]?.avgActual || 0),
-            count: Number(cb[k]?.count || 0)
-        })).sort((a,b)=> b.totalPlanned - a.totalPlanned);
+        const period = biData.period || {};
+        const baseYear = Number(period.year) || new Date().getFullYear();
+        const baseMonth = Number(period.month) || (new Date().getMonth()+1);
+        const rawExpenses = Array.isArray(biData.expenses) ? biData.expenses : [];
 
-        // Tendências
-        const trendsSummary = summaryRaw.trends || { increasing: 0, decreasing: 0, stable: 0 };
+        // Se backend já forneceu monthlyHistory consolidado, usaremos como fonte principal
+        const backendMonthlyHistory = Array.isArray(biData.monthlyHistory) ? biData.monthlyHistory : null;
 
-        // Projeções agregadas (soma das projeções por item)
-        const projections = results.reduce((acc, r) => {
-            const p = r.projections || {};
-            acc.nextMonth += Number(p.nextMonth || 0);
-            acc.threeMonths += Number(p.next3Months || p.nextThreeMonths || 0);
-            acc.yearEnd += Number(p.yearEnd || 0);
-            return acc;
-        }, { nextMonth: 0, threeMonths: 0, yearEnd: 0 });
+        // Normalizar e filtrar contas PIX/Boleto
+        const norm = s => (s||'').toString().trim().toUpperCase().replace(/[\s\-]/g,'');
+        const isPixLike = acc => { const n=norm(acc); return n.includes('PIX') || n.includes('BOLETO'); };
+        const filtered = rawExpenses.filter(r => isPixLike(r.account || r.accountName || r.conta || r.descricaoConta));
 
-        // Adaptar itens para tabela esperada
-        const adaptedExpenses = results.map(r => {
+        // Construir mapa de histórico mensal real (somando actual de cada recorrente)
+        const monthlyHistory = backendMonthlyHistory ? backendMonthlyHistory : (() => {
+            const arr = [];
+            for (let i=11;i>=0;i--) {
+                const d = new Date(baseYear, baseMonth-1 - i,1);
+                const y = d.getFullYear();
+                const m = d.getMonth()+1;
+                const monthLabel = d.toLocaleDateString('pt-BR',{ month:'short', year:'numeric' });
+                let totalPlanned=0,totalActual=0;
+                filtered.forEach(r=>{ const hist=Array.isArray(r.history)?r.history:[]; const hm=hist.find(h=>h.year===y&&h.month===m); totalPlanned+=Number(hm?.planned||r.plannedAmount||0); totalActual+=Number(hm?.actual||0); });
+                const variationPercent = totalPlanned>0?((totalActual-totalPlanned)/totalPlanned)*100:0;
+                arr.push({year:y,month:m,monthLabel,totalPlanned,totalActual,variationPercent});
+            }
+            return arr;
+        })();
+
+        // Incorporar discrepância caso backend envie
+        const discrepancy = biData.discrepancy || null;
+
+        // KPIs derivados
+        const totalPlannedCurrent = monthlyHistory.length ? monthlyHistory[monthlyHistory.length-1].totalPlanned : 0;
+        const avgActual12 = monthlyHistory.length ? monthlyHistory.reduce((s,m)=>s+m.totalActual,0)/monthlyHistory.length : 0;
+        const avgVariationAbs = monthlyHistory.length ? monthlyHistory.reduce((s,m)=> s + Math.abs(m.variationPercent||0),0)/monthlyHistory.length : 0;
+        const reliability = Math.max(0, Math.min(100, 100 - avgVariationAbs));
+        const summary = { totalPlanned: totalPlannedCurrent, avgActual: avgActual12, overallReliability: reliability };
+
+        // Category breakdown (último mês com dados reais >0, se não o atual)
+        const refMonth = [...monthlyHistory].reverse().find(m=> m.totalActual>0) || monthlyHistory[monthlyHistory.length-1];
+        const catAgg = {};
+        filtered.forEach(r => {
+            const hist = Array.isArray(r.history)? r.history:[];
+            const hm = hist.find(h=> h.year===refMonth.year && h.month===refMonth.month);
+            const cat = r.category || 'Outros';
+            if(!catAgg[cat]) catAgg[cat] = { planned:0, actual:0, count:0 };
+            catAgg[cat].planned += Number(hm?.planned || r.plannedAmount || 0);
+            catAgg[cat].actual  += Number(hm?.actual || 0);
+            catAgg[cat].count++;
+        });
+        const categoryBreakdown = Object.entries(catAgg).map(([category,v])=> ({ category, totalPlanned:v.planned, avgActual:v.actual, count:v.count }))
+            .sort((a,b)=> b.totalPlanned - a.totalPlanned);
+
+        // Tendências simples: comparar média final 3 meses vs inicial 3 meses
+        const sliceStart = monthlyHistory.slice(0,3).reduce((s,m)=>s+m.totalActual,0)/3 || 0;
+        const sliceEnd = monthlyHistory.slice(-3).reduce((s,m)=>s+m.totalActual,0)/3 || 0;
+        let trendDirection = 'stable';
+        if (sliceEnd > sliceStart * 1.08) trendDirection = 'increasing'; else if (sliceEnd < sliceStart * 0.92) trendDirection = 'decreasing';
+        const trendsSummary = { increasing: trendDirection==='increasing'?1:0, decreasing: trendDirection==='decreasing'?1:0, stable: trendDirection==='stable'?1:0 };
+
+        // Projeções: usar média últimos 3 meses e extrapolar
+        const last3Avg = monthlyHistory.slice(-3).reduce((s,m)=>s+m.totalActual,0)/ (monthlyHistory.slice(-3).length || 1);
+        const projections = { nextMonth: last3Avg, threeMonths: last3Avg*3, yearEnd: last3Avg * (12 - (baseMonth-1)) };
+
+        // Adaptar despesas (uso atual: tabela)
+        const adaptedExpenses = filtered.map(r => {
+            const hist = Array.isArray(r.history)? r.history:[];
+            const currentHist = hist.find(h=> h.year===baseYear && h.month===baseMonth);
             const stats = r.statistics || {};
-            // pegar atual do mês do período
-            let currentMonthActual = 0;
-            const hist = Array.isArray(r.history) ? r.history : [];
-            const hm = hist.find(h => h.year === baseYear && h.month === baseMonth);
-            if (hm) currentMonthActual = Number(hm.actual || 0);
-            // mapear direção
-            const dir = stats.trendDirection;
-            const trend = dir === 'up' ? 'increasing' : dir === 'down' ? 'decreasing' : 'stable';
             return {
                 id: r.id,
                 description: r.description,
                 category: r.category,
-                paymentDay: r.dayOfMonth,
-                plannedAmount: Number(r.plannedAmount || 0),
+                paymentDay: r.dayOfMonth || r.day_of_month,
+                plannedAmount: Number(currentHist?.planned || r.plannedAmount || r.amount || 0),
                 avgActual: Number(stats.avgActual || 0),
                 variationPercent: Number(stats.avgVariation || 0),
-                reliability: Number(stats.reliability || 0),
-                trend,
-                currentMonthActual
+                reliability: Number(stats.reliability || reliability || 0),
+                trend: stats.trendDirection || trendDirection,
+                currentMonthActual: Number(currentHist?.actual || 0)
             };
         });
 
-        return { summary, monthlyHistory, categoryBreakdown, trendsSummary, projections, expenses: adaptedExpenses };
+        return { summary, monthlyHistory, categoryBreakdown, trendsSummary, projections, expenses: adaptedExpenses, discrepancy };
     }
 
     // Carregar dados BI de gastos recorrentes PIX/Boleto
@@ -7813,6 +7790,12 @@ document.addEventListener('DOMContentLoaded', function() {
         const labels = monthlyHistory.map(m => m.monthLabel);
         const plannedData = monthlyHistory.map(m => m.totalPlanned);
         const actualData = monthlyHistory.map(m => m.totalActual);
+        // Média móvel 3 meses sobre realizado
+        const movingAvg = actualData.map((v,i,arr)=>{
+            const slice = arr.slice(Math.max(0,i-2), i+1);
+            const sum = slice.reduce((s,x)=>s+x,0);
+            return sum / slice.length;
+        });
 
         chartRegistry.recurringPlannedVsActualChart = new Chart(ctx, {
             type: 'line',
@@ -7836,6 +7819,17 @@ document.addEventListener('DOMContentLoaded', function() {
                         borderWidth: 3,
                         fill: false,
                         tension: 0.1
+                    },
+                    {
+                        label: '📈 Média Móvel (3m)',
+                        data: movingAvg,
+                        borderColor: 'rgba(234,179,8,0.9)',
+                        backgroundColor: 'rgba(234,179,8,0.15)',
+                        borderDash: [6,4],
+                        borderWidth: 2,
+                        pointRadius: 0,
+                        fill: false,
+                        tension: 0.2
                     }
                 ]
             },

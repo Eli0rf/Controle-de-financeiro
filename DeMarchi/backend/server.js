@@ -5235,11 +5235,59 @@ app.get('/api/recurring-pix-boleto', authenticateToken, async (req, res) => {
         const combined = recurringMonthActual + nonRecurringMonthActual;
         const recurringShare = combined > 0 ? (recurringMonthActual / combined) * 100 : 0;
 
+        // 6. MonthlyHistory agregado (SUM por mês de planned e actual reais) - últimos 12 meses
+        const monthlyHistory = [];
+        for (let i = 11; i >= 0; i--) {
+            const refDate = new Date(currentYear, currentMonth - 1 - i, 1);
+            const y = refDate.getFullYear();
+            const m = refDate.getMonth() + 1;
+            // Planned: soma dos plannedAmount (valor recorrente cadastrado) dos itens ativos (simplificação)
+            const totalPlanned = results.reduce((s, r) => s + Number(r.plannedAmount || 0), 0);
+            // Actual: somar todos os actual daquele mês a partir do history dos resultados
+            let totalActual = 0;
+            for (const r of results) {
+                const h = (r.history || []).find(hh => hh.year === y && hh.month === m);
+                if (h) totalActual += Number(h.actual || 0);
+            }
+            const variationPercent = totalPlanned > 0 ? ((totalActual - totalPlanned) / totalPlanned) * 100 : 0;
+            monthlyHistory.push({
+                year: y,
+                month: m,
+                monthLabel: refDate.toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' }),
+                totalPlanned,
+                totalActual,
+                variationPercent
+            });
+        }
+
+        // 7. Discrepância: comparar soma de actual no mês corrente via history vs agregação direta de despesas
+        let directActualMonth = 0;
+        try {
+            const [directRows] = await pool.query(`
+                SELECT SUM(amount) as total FROM expenses
+                WHERE user_id = ?
+                  AND YEAR(transaction_date) = ? AND MONTH(transaction_date) = ?
+                  AND (
+                        UPPER(REPLACE(REPLACE(REPLACE(account,' ',''),'-',''),'\\n','')) REGEXP 'PIX|BOLETO'
+                     OR UPPER(account) REGEXP 'PIX'
+                     OR UPPER(account) REGEXP 'BOLETO'
+                  )
+            `, [userId, currentYear, currentMonth]);
+            directActualMonth = Number(directRows[0]?.total || 0);
+        } catch (aggErr) {
+            console.warn('Falha ao agregar despesas diretas PIX/Boleto (discrepância):', aggErr.message);
+        }
+        const historyActualMonth = monthlyHistory.find(m => m.year === currentYear && m.month === currentMonth)?.totalActual || 0;
+        const discrepancyValue = directActualMonth - historyActualMonth;
+        const discrepancyPercent = historyActualMonth > 0 ? (discrepancyValue / historyActualMonth) * 100 : (directActualMonth ? 100 : 0);
+
         const responsePayload = {
             period: { year: currentYear, month: currentMonth },
             summary,
             expenses: results,
-            comparison: { recurringMonthActual, nonRecurringMonthActual, recurringShare }
+            comparison: { recurringMonthActual, nonRecurringMonthActual, recurringShare },
+            monthlyHistory,
+            discrepancy: { directActualMonth, historyActualMonth, discrepancyValue, discrepancyPercent }
         };
 
         if (debug === '1') {
@@ -5257,7 +5305,8 @@ app.get('/api/recurring-pix-boleto', authenticateToken, async (req, res) => {
                     counts: {
                         recurringFetched: recurringExpenses.length,
                         expensesMatched: results.length,
-                        distinctExpenseAccounts: distinctExpenseAccounts.length
+                        distinctExpenseAccounts: distinctExpenseAccounts.length,
+                        monthlyHistoryLength: monthlyHistory.length
                     }
                 };
                 console.log('🔍 DEBUG recurring-pix-boleto:', responsePayload.debug);
@@ -5297,6 +5346,6 @@ app.use((error, req, res, next) => {
 });
 
 // --- ROTA PARA ARQUIVOS ESTÁTICOS ---
-// Nota: Arquivos de fatura agora são servidos através do endpoint autenticado /api/invoice/:id
+// Nota: A  d
 
 module.exports = app;
