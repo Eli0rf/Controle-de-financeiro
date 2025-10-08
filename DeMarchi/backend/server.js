@@ -4815,66 +4815,76 @@ app.get('/api/business/advanced-analysis', authenticateToken, async (req, res) =
 
 // API para calcular gastos previstos e parcelas futuras
 app.get('/api/business/predictions', authenticateToken, async (req, res) => {
+    const started = Date.now();
     try {
         const userId = req.user.id;
-        const { year, month } = req.query;
-        
+        const { year, month, debug } = req.query;
+
         const currentYear = year ? parseInt(year) : new Date().getFullYear();
         const currentMonth = month ? parseInt(month) : new Date().getMonth() + 1;
-        
-        // 1. Buscar gastos recorrentes empresariais
+
+        // 1. Buscar gastos recorrentes empresariais ativos
         const [recurringExpenses] = await pool.query(`
-            SELECT * FROM recurring_expenses 
+            SELECT id, description, amount, category FROM recurring_expenses 
             WHERE user_id = ? AND is_business_expense = 1 AND is_active = 1
         `, [userId]);
-        
-        const predictedFromRecurring = recurringExpenses.reduce((sum, exp) => 
-            sum + parseFloat(exp.amount), 0);
-        
-        // 2. Calcular média histórica dos últimos 3 meses (excluindo mês atual)
+        const predictedFromRecurring = recurringExpenses.reduce((sum, exp) => sum + parseFloat(exp.amount || 0), 0);
+
+        // 2. Média histórica dos 3 meses anteriores completos (exclui mês atual)
         const [historicalData] = await pool.query(`
-            SELECT AVG(monthly_total) as avg_amount
-            FROM (
-                SELECT SUM(amount) as monthly_total
-                FROM expenses 
-                WHERE user_id = ? AND is_business_expense = 1
-                AND (
-                    (YEAR(transaction_date) = ? AND MONTH(transaction_date) < ?) OR
-                    (YEAR(transaction_date) = ? AND MONTH(transaction_date) >= ?)
-                )
-                GROUP BY YEAR(transaction_date), MONTH(transaction_date)
-                ORDER BY YEAR(transaction_date) DESC, MONTH(transaction_date) DESC
-                LIMIT 3
-            ) as monthly_data
-        `, [userId, currentYear, currentMonth, currentYear - 1, currentMonth]);
-        
+            SELECT AVG(month_total) AS avg_amount FROM (
+               SELECT YEAR(transaction_date) y, MONTH(transaction_date) m, SUM(amount) AS month_total
+               FROM expenses
+               WHERE user_id=? AND is_business_expense=1
+                 AND DATE(CONCAT(YEAR(transaction_date),'-',LPAD(MONTH(transaction_date),2,'0'),'-01')) < DATE(CONCAT(?, '-', LPAD(?,2,'0'), '-01'))
+               GROUP BY y,m
+               ORDER BY y DESC, m DESC
+               LIMIT 3
+            ) t;
+        `, [userId, currentYear, currentMonth]);
         const historicalAverage = parseFloat(historicalData[0]?.avg_amount) || 0;
-        
-        // 3. Calcular previsão combinada (70% recorrente + 30% histórico)
-        const predictedExpenses = (predictedFromRecurring * 0.7) + (historicalAverage * 0.3);
-        
-        // 4. Calcular parcelas futuras
+
+        // 3. Previsão combinada (ajustável no futuro via pesos)
+        const WEIGHT_RECURRING = 0.7;
+        const WEIGHT_HIST = 0.3;
+        const predictedExpenses = (predictedFromRecurring * WEIGHT_RECURRING) + (historicalAverage * WEIGHT_HIST);
+
+        // 4. Parcelas futuras (corrigido: usar installment_number no lugar de current_installment)
         const [futureInstallments] = await pool.query(`
-            SELECT 
-                SUM(amount * (total_installments - COALESCE(current_installment, 1))) as future_total
-            FROM expenses 
-            WHERE user_id = ? AND is_business_expense = 1
-            AND total_installments > 1
-            AND COALESCE(current_installment, 1) < total_installments
+            SELECT SUM(amount * (total_installments - COALESCE(installment_number,1))) AS future_total
+            FROM expenses
+            WHERE user_id=? AND is_business_expense=1
+              AND total_installments > 1
+              AND COALESCE(installment_number,1) < total_installments
         `, [userId]);
-        
         const futureTotal = parseFloat(futureInstallments[0]?.future_total) || 0;
-        
-        res.json({
+
+        const payload = {
+            period: { year: currentYear, month: currentMonth },
             predicted: predictedExpenses,
             recurring: predictedFromRecurring,
             historical: historicalAverage,
-            futureInstallments: futureTotal
-        });
-        
+            futureInstallments: futureTotal,
+            weights: { recurring: WEIGHT_RECURRING, historical: WEIGHT_HIST },
+            elapsedMs: Date.now() - started
+        };
+
+        if (debug === '1') {
+            payload.debug = {
+                recurringCount: recurringExpenses.length,
+                sampleRecurring: recurringExpenses.slice(0,5),
+                queryWindow: '3 meses anteriores completos',
+                rawHistorical: historicalData,
+                futureInstallmentsRaw: futureInstallments
+            };
+            console.log('🔍 /api/business/predictions debug payload:', payload.debug);
+        }
+
+        res.json(payload);
+
     } catch (error) {
         console.error('Erro ao calcular previsões:', error);
-        res.status(500).json({ message: 'Erro ao calcular previsões.' });
+        res.status(500).json({ message: 'Erro ao calcular previsões.', detail: error.message });
     }
 });
 
