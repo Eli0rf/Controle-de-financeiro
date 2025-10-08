@@ -7333,11 +7333,15 @@ document.addEventListener('DOMContentLoaded', function() {
         // === Filtro de contas elegíveis ===
         // Mantemos apenas registros referentes às contas PIX/Boleto (qualquer variação histórica)
         try {
+            const normalize = acc => (acc||'').toString().trim().toUpperCase().replace(/\s|-/g,'');
             const isPixLike = acc => {
-                const a = (acc||'').toString().toUpperCase();
-                return a === 'PIX/BOLETO' || a === 'PIX' || a === 'BOLETO' || a === 'PIX-BOLETO';
+                const n = normalize(acc);
+                return n.includes('PIX') || n.includes('BOLETO');
             };
+            const before = results.length;
             results = results.filter(r => isPixLike(r.account || r.accountName || r.conta));
+            if(results.length === 0) console.warn('⚠️ Nenhum registro após filtro PIX/Boleto. Contas originais de exemplo:', (Array.isArray(biData.expenses)? biData.expenses.slice(0,5).map(x=>x.account):[]));
+            else console.log(`Filtro PIX/Boleto reduziu ${before} -> ${results.length}`);
         } catch (e) { console.warn('Filtro PIX/BOLETO falhou:', e.message); }
         const summaryRaw = biData.summary || {};
 

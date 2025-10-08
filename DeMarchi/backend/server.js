@@ -5077,13 +5077,18 @@ app.get('/api/recurring-pix-boleto', authenticateToken, async (req, res) => {
         const currentYear = year ? parseInt(year) : new Date().getFullYear();
         const currentMonth = month ? parseInt(month) : new Date().getMonth() + 1;
 
-        // 1. Buscar gastos recorrentes PIX/Boleto
-        const [recurringExpenses] = await pool.query(`
-            SELECT * FROM recurring_expenses 
-            WHERE user_id = ? AND (account = 'PIX/Boleto' OR account = 'PIX' OR account = 'Boleto')
-            AND is_active = 1
-            ORDER BY day_of_month, description
-        `, [userId]);
+                // 1. Buscar gastos recorrentes PIX/Boleto (normalização tolerante a variações / espaços / hífens)
+                const [recurringExpenses] = await pool.query(`
+                        SELECT * FROM recurring_expenses 
+                        WHERE user_id = ? 
+                            AND is_active = 1
+                            AND (
+                                        UPPER(REPLACE(REPLACE(REPLACE(account,' ',''),'-',''),'\\\n','')) REGEXP 'PIX|BOLETO'
+                                 OR UPPER(account) REGEXP 'PIX'
+                                 OR UPPER(account) REGEXP 'BOLETO'
+                            )
+                        ORDER BY day_of_month, description
+                `, [userId]);
 
         // 2. Buscar histórico dos últimos 12 meses para cada recorrente
         const results = [];
@@ -5205,7 +5210,11 @@ app.get('/api/recurring-pix-boleto', authenticateToken, async (req, res) => {
             const [nonRecRows] = await pool.query(`
                 SELECT amount FROM expenses 
                 WHERE user_id = ? 
-                  AND (account = 'PIX/Boleto' OR account = 'PIX' OR account = 'Boleto')
+                  AND (
+                        UPPER(REPLACE(REPLACE(REPLACE(account,' ',''),'-',''),'\\\n','')) REGEXP 'PIX|BOLETO'
+                     OR UPPER(account) REGEXP 'PIX'
+                     OR UPPER(account) REGEXP 'BOLETO'
+                  )
                   AND YEAR(transaction_date) = ? AND MONTH(transaction_date) = ?
                   AND (recurring_expense_id IS NULL OR recurring_expense_id = 0)
             `, [userId, currentYear, currentMonth]);
