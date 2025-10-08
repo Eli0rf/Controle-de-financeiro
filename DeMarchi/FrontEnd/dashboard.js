@@ -7435,7 +7435,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     // Carregar dados BI de gastos recorrentes PIX/Boleto
-    async function loadRecurringPixBoletoBI(force = false) {
+    async function loadRecurringPixBoletoBI(force = false, debug = false) {
             try {
                 const yearSel = document.getElementById('recurring-year')?.value || '';
                 const monthSel = document.getElementById('recurring-month')?.value || '';
@@ -7448,7 +7448,8 @@ document.addEventListener('DOMContentLoaded', function() {
                     return;
                 }
             console.log('🔄 Iniciando carregamento de dados BI PIX/Boleto...');
-            const response = await authenticatedFetch(`${API_BASE_URL}/api/recurring-pix-boleto`);
+            const url = `${API_BASE_URL}/api/recurring-pix-boleto${debug ? '?debug=1' : ''}`;
+            const response = await authenticatedFetch(url);
             
             if (!response.ok) {
                 console.error('❌ Erro na resposta da API:', response.status, response.statusText);
@@ -7457,6 +7458,13 @@ document.addEventListener('DOMContentLoaded', function() {
             
             const raw = await response.json();
             console.log('📊 Dados BI recebidos (raw):', raw);
+            if (raw?.debug) {
+                console.group('🔍 Debug Recurring PIX/Boleto');
+                console.log('Contas recorrentes:', raw.debug.recurringAccounts);
+                console.log('Contas despesas últimos 12m:', raw.debug.expenseAccountsLast12M);
+                console.log('Contagens:', raw.debug.counts);
+                console.groupEnd();
+            }
             const biData = normalizeRecurringPixBoletoBI(raw);
             console.log('📊 Dados BI normalizados:', biData);
 
@@ -8297,9 +8305,10 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     // Botão de forçar atualização ignorando cache
-    document.getElementById('force-refresh-recurring')?.addEventListener('click', () => {
-        showNotification('Forçando atualização BI...', 'info');
-        loadRecurringPixBoletoBI(true);
+    document.getElementById('force-refresh-recurring')?.addEventListener('click', (e) => {
+        const debug = e.shiftKey;
+        showNotification(debug ? 'Forçando atualização BI (debug)...' : 'Forçando atualização BI...', 'info');
+        loadRecurringPixBoletoBI(true, debug);
     });
             } catch (e) {
                 console.error('Fallback (filtros) falhou:', e);

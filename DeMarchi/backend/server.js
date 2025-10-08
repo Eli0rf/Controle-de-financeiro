@@ -5073,7 +5073,7 @@ app.post('/api/recurring-expenses/process', authenticateToken, async (req, res) 
 app.get('/api/recurring-pix-boleto', authenticateToken, async (req, res) => {
     try {
         const userId = req.user.id;
-        const { year, month } = req.query;
+        const { year, month, debug } = req.query;
         const currentYear = year ? parseInt(year) : new Date().getFullYear();
         const currentMonth = month ? parseInt(month) : new Date().getMonth() + 1;
 
@@ -5225,12 +5225,38 @@ app.get('/api/recurring-pix-boleto', authenticateToken, async (req, res) => {
         const combined = recurringMonthActual + nonRecurringMonthActual;
         const recurringShare = combined > 0 ? (recurringMonthActual / combined) * 100 : 0;
 
-        res.json({
+        const responsePayload = {
             period: { year: currentYear, month: currentMonth },
             summary,
             expenses: results,
             comparison: { recurringMonthActual, nonRecurringMonthActual, recurringShare }
-        });
+        };
+
+        if (debug === '1') {
+            // Distinct accounts (recorrentes + despesas últimos 12 meses) para diagnóstico
+            try {
+                const [distinctExpenseAccounts] = await pool.query(`
+                    SELECT DISTINCT account FROM expenses 
+                    WHERE user_id = ? 
+                      AND transaction_date >= DATE_SUB(CURDATE(), INTERVAL 12 MONTH)
+                    ORDER BY account
+                `, [userId]);
+                responsePayload.debug = {
+                    recurringAccounts: [...new Set(recurringExpenses.map(r => r.account))],
+                    expenseAccountsLast12M: distinctExpenseAccounts.map(r => r.account),
+                    counts: {
+                        recurringFetched: recurringExpenses.length,
+                        expensesMatched: results.length,
+                        distinctExpenseAccounts: distinctExpenseAccounts.length
+                    }
+                };
+                console.log('🔍 DEBUG recurring-pix-boleto:', responsePayload.debug);
+            } catch (diagErr) {
+                console.warn('Falha debug recurring-pix-boleto:', diagErr.message);
+            }
+        }
+
+        res.json(responsePayload);
 
     } catch (error) {
         console.error('Erro ao buscar gastos recorrentes PIX/Boleto:', error);
