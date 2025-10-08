@@ -747,6 +747,13 @@
                                 </svg>
                                 Atualizar BI
                             </button>
+                            <button id="force-refresh-recurring" 
+                                    class="bg-white bg-opacity-20 hover:bg-opacity-30 text-white px-4 py-2 rounded-lg transition-all flex items-center" title="Ignora cache e refaz todas as consultas">
+                                <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                                Forçar Atualização
+                            </button>
                             <button id="export-recurring-report" 
                                     class="bg-white bg-opacity-20 hover:bg-opacity-30 text-white px-4 py-2 rounded-lg transition-all flex items-center">
                                 <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -758,7 +765,7 @@
                     </div>
                     
                     <!-- KPIs Principais -->
-                    <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <div class="grid grid-cols-1 md:grid-cols-5 gap-4">
                         <div class="bg-gradient-to-br from-green-500 to-blue-500 p-4 rounded-xl shadow-md">
                             <div class="flex items-center gap-3">
                                 <span class="text-3xl">📊</span>
@@ -798,6 +805,40 @@
                                     <p class="text-xs opacity-75">Recorrentes</p>
                                 </div>
                             </div>
+                        </div>
+                        <div class="bg-gradient-to-br from-indigo-500 to-sky-500 p-4 rounded-xl shadow-md">
+                            <div class="flex items-center gap-3">
+                                <span class="text-3xl">✅</span>
+                                <div>
+                                    <p class="text-sm opacity-90">% Executado</p>
+                                    <p id="recurring-execution-rate" class="text-xl font-bold">0%</p>
+                                    <p class="text-xs opacity-75">Realizado / Planejado</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Comparação Recorrente vs Não Recorrente -->
+                    <div id="recurring-nonrecurring-comparison" class="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div class="bg-white/20 backdrop-blur p-4 rounded-lg shadow flex items-center justify-between">
+                            <div>
+                                <p class="text-sm opacity-80">Realizado Recorrente</p>
+                                <p id="recurring-month-actual" class="text-lg font-bold">R$ 0,00</p>
+                            </div>
+                            <span class="text-2xl">🔄</span>
+                        </div>
+                        <div class="bg-white/20 backdrop-blur p-4 rounded-lg shadow flex items-center justify-between">
+                            <div>
+                                <p class="text-sm opacity-80">Não Recorrente</p>
+                                <p id="nonrecurring-month-actual" class="text-lg font-bold">R$ 0,00</p>
+                            </div>
+                            <span class="text-2xl">🆓</span>
+                        </div>
+                        <div class="bg-white/20 backdrop-blur p-4 rounded-lg shadow flex items-center justify-between">
+                            <div>
+                                <p class="text-sm opacity-80">Participação Recorrente</p>
+                                <p id="recurring-share" class="text-lg font-bold">0%</p>
+                            </div>
+                            <span class="text-2xl">📊</span>
                         </div>
                     </div>
                 </div>
@@ -947,6 +988,21 @@
                                     <th class="p-3 font-medium">Tendência</th>
                                     <th class="p-3 font-medium">Status Atual</th>
                                     <th class="p-3 font-medium">Ações</th>
+                                </tr>
+                            </thead>
+                            <thead>
+                                <tr class="text-xs sm:text-sm text-gray-600 bg-gray-50">
+                                    <th class="p-2 text-left">Descrição</th>
+                                    <th class="p-2">Dia</th>
+                                    <th class="p-2 text-right">Planejado</th>
+                                    <th class="p-2 text-right">Média Real</th>
+                                    <th class="p-2 text-right">Valor Atual Mês</th>
+                                    <th class="p-2 text-right">Variação</th>
+                                    <th class="p-2">Confiab.</th>
+                                    <th class="p-2">Tend.</th>
+                                    <th class="p-2">Pago?</th>
+                                    <th class="p-2">Status</th>
+                                    <th class="p-2">Ações</th>
                                 </tr>
                             </thead>
                             <tbody id="recurring-expenses-table">

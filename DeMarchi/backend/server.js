@@ -5194,10 +5194,33 @@ app.get('/api/recurring-pix-boleto', authenticateToken, async (req, res) => {
             }
         };
 
+        // 5. Comparação recorrente vs não recorrente (mês corrente)
+        let recurringMonthActual = 0;
+        for (const r of results) {
+            const h = (r.history || []).find(hm => hm.year === currentYear && hm.month === currentMonth);
+            if (h) recurringMonthActual += Number(h.actual || 0);
+        }
+        let nonRecurringMonthActual = 0;
+        try {
+            const [nonRecRows] = await pool.query(`
+                SELECT amount FROM expenses 
+                WHERE user_id = ? 
+                  AND (account = 'PIX/Boleto' OR account = 'PIX' OR account = 'Boleto')
+                  AND YEAR(transaction_date) = ? AND MONTH(transaction_date) = ?
+                  AND (recurring_expense_id IS NULL OR recurring_expense_id = 0)
+            `, [userId, currentYear, currentMonth]);
+            nonRecurringMonthActual = nonRecRows.reduce((s,r)=> s + Number(r.amount||0),0);
+        } catch(e) {
+            console.warn('Falha ao calcular não recorrentes mês corrente:', e.message);
+        }
+        const combined = recurringMonthActual + nonRecurringMonthActual;
+        const recurringShare = combined > 0 ? (recurringMonthActual / combined) * 100 : 0;
+
         res.json({
             period: { year: currentYear, month: currentMonth },
             summary,
-            expenses: results
+            expenses: results,
+            comparison: { recurringMonthActual, nonRecurringMonthActual, recurringShare }
         });
 
     } catch (error) {

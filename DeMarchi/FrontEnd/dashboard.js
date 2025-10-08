@@ -121,6 +121,29 @@ document.addEventListener('DOMContentLoaded', function() {
     let currentRecurringExpenses = [];
     let currentSortCriteria = null;
     let currentSortDirection = 'desc'; // 'asc' or 'desc'
+    // Cache BI recorrente (chave: year|month ou 'latest')
+    const recurringBICache = new Map();
+    let lastRecurringBILoad = 0;
+    const RECURRING_BI_CACHE_TTL_MS = 2 * 60 * 1000; // 2 minutos
+    // Restaura cache do sessionStorage se válido
+    try {
+        const persisted = sessionStorage.getItem('recurringBICache');
+        if (persisted) {
+            const parsed = JSON.parse(persisted);
+            const now = Date.now();
+            Object.entries(parsed).forEach(([k,v])=>{
+                if (v && v.timestamp && (now - v.timestamp) < RECURRING_BI_CACHE_TTL_MS) {
+                    recurringBICache.set(k,v);
+                }
+            });
+            if (recurringBICache.size) console.log('♻️ Cache BI restaurado:', recurringBICache.size, 'entradas');
+        }
+    } catch(e){ console.warn('Falha ao restaurar cache BI', e); }
+    function persistRecurringBICache(){
+        const obj = {};
+        recurringBICache.forEach((v,k)=> obj[k]=v);
+        try { sessionStorage.setItem('recurringBICache', JSON.stringify(obj)); } catch(e) { /* ignore */ }
+    }
 
     // ========== SISTEMA DE INSIGHTS ==========
     const refreshInsightsBtn = document.getElementById('refresh-insights-btn');
@@ -7307,24 +7330,15 @@ document.addEventListener('DOMContentLoaded', function() {
 
         const period = biData.period || {};
         let results = Array.isArray(biData.expenses) ? biData.expenses : [];
-        // === Filtro customizado ===
-        // Objetivo: Para a seção PIX/Boleto, restringimos a análise à conta PIX/BOLETO (incluindo variações 'PIX', 'BOLETO', 'PIX-BOLETO').
-        // Além disso, se existirem lançamentos categorizados como "Alimentação" (substring 'aliment'), priorizamos somente esses.
-        // Caso não haja registros de Alimentação, mantemos todos os registros de contas PIX/BOLETO para não zerar a visualização.
+        // === Filtro de contas elegíveis ===
+        // Mantemos apenas registros referentes às contas PIX/Boleto (qualquer variação histórica)
         try {
             const isPixLike = acc => {
                 const a = (acc||'').toString().toUpperCase();
                 return a === 'PIX/BOLETO' || a === 'PIX' || a === 'BOLETO' || a === 'PIX-BOLETO';
             };
-            const onlyPix = results.filter(r => isPixLike(r.account || r.accountName || r.conta));
-            // Preferir apenas categoria Alimentação (case insensitive) se houver pelo menos um registro
-            const alimentaçãoSet = onlyPix.filter(r => (r.category || r.categoria || '').toString().toLowerCase().includes('aliment'));
-            if (alimentaçãoSet.length > 0) {
-                results = alimentaçãoSet;
-            } else {
-                results = onlyPix; // fallback: mantém só pix/boleto
-            }
-        } catch (e) { console.warn('Filtro PIX/BOLETO Alimentação falhou:', e.message); }
+            results = results.filter(r => isPixLike(r.account || r.accountName || r.conta));
+        } catch (e) { console.warn('Filtro PIX/BOLETO falhou:', e.message); }
         const summaryRaw = biData.summary || {};
 
         // KPIs
@@ -7417,8 +7431,18 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     // Carregar dados BI de gastos recorrentes PIX/Boleto
-    async function loadRecurringPixBoletoBI() {
-        try {
+    async function loadRecurringPixBoletoBI(force = false) {
+            try {
+                const yearSel = document.getElementById('recurring-year')?.value || '';
+                const monthSel = document.getElementById('recurring-month')?.value || '';
+                const cacheKey = (yearSel && monthSel) ? `${yearSel}|${monthSel}` : 'latest';
+                const now = Date.now();
+                const cached = recurringBICache.get(cacheKey);
+                if (!force && cached && (now - cached.timestamp) < RECURRING_BI_CACHE_TTL_MS) {
+                    console.log('⚡ Usando cache BI recorrente para', cacheKey);
+                    applyRecurringBIToUI(cached.data);
+                    return;
+                }
             console.log('🔄 Iniciando carregamento de dados BI PIX/Boleto...');
             const response = await authenticatedFetch(`${API_BASE_URL}/api/recurring-pix-boleto`);
             
@@ -7460,24 +7484,9 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
             }
 
-            // Atualizar KPIs principais
-            updateRecurringKPIs(biData);
-            
-            // Renderizar gráficos BI
-            renderRecurringPlannedVsActualChart(biData.monthlyHistory);
-            renderRecurringVariationChart(biData.monthlyHistory);
-            renderRecurringCategoryChart(biData.categoryBreakdown);
-            
-            // Atualizar análise de tendências
-            updateTrendsAnalysis(biData.trendsSummary);
-            
-            // Atualizar projeções (com verificação de segurança)
-            const safeProjections = biData.projections || { nextMonth: 0, threeMonths: 0, yearEnd: 0 };
-            console.log('📊 Projeções dos dados BI:', safeProjections);
-            updateProjections(safeProjections);
-            
-            // Renderizar tabela inteligente
-            renderRecurringExpensesTable(biData.expenses);
+            applyRecurringBIToUI(biData);
+            recurringBICache.set(cacheKey, { data: biData, timestamp: Date.now() });
+            persistRecurringBICache();
             
             // Popular filtros de anos
             populateRecurringYearFilter();
@@ -7502,6 +7511,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     console.log('📊 Projeções do fallback de emergência:', safeProjections);
                     updateProjections(safeProjections);
                     renderRecurringExpensesTable(fb.expenses);
+                    await updateNonRecurringComparison(fb);
                     showNotification('Exibindo dados PIX/Boleto via fallback de emergência', 'warning');
                     return;
                 }
@@ -7512,12 +7522,43 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
+    async function updateNonRecurringComparison(biData){
+        try {
+            const recActualEl = document.getElementById('recurring-month-actual');
+            const nonRecEl = document.getElementById('nonrecurring-month-actual');
+            const shareEl = document.getElementById('recurring-share');
+            if(!recActualEl || !nonRecEl || !shareEl) return;
+            if(biData && biData.comparison){
+                recActualEl.textContent = formatCurrency(biData.comparison.recurringMonthActual||0);
+                nonRecEl.textContent = formatCurrency(biData.comparison.nonRecurringMonthActual||0);
+                shareEl.textContent = (biData.comparison.recurringShare||0).toFixed(1)+'%';
+                return;
+            }
+            const monthlyHistory = Array.isArray(biData?.monthlyHistory)? biData.monthlyHistory: [];
+            if(!monthlyHistory.length) return;
+            const target = monthlyHistory[monthlyHistory.length-1];
+            const params = new URLSearchParams({year: target.year, month: target.month, account: 'PIX/Boleto', include_recurring: 'true'});
+            const resp = await authenticatedFetch(`${API_BASE_URL}/api/expenses?${params.toString()}`);
+            let nonRec = 0;
+            if(resp.ok){
+                const list = await resp.json();
+                nonRec = list.filter(e=> !e.recurring_expense_id).reduce((s,e)=> s + Number(e.amount||0),0);
+            }
+            const recAct = target.totalActual||0;
+            const combined = recAct + nonRec;
+            const share = combined>0? (recAct/combined)*100:0;
+            recActualEl.textContent = formatCurrency(recAct);
+            nonRecEl.textContent = formatCurrency(nonRec);
+            shareEl.textContent = share.toFixed(1)+'%';
+        } catch(e){ console.warn('updateNonRecurringComparison falhou:', e.message); }
+    }
+
     // Atualizar KPIs principais do dashboard
     function updateRecurringKPIs(biData) {
         console.log('📊 Atualizando KPIs com dados:', biData);
         
-        // Total mensal REALIZADO (PIX/Boleto) exibido no card "Total Programado"
-        // Regra: se houver período selecionado, usa aquele mês/ano; caso contrário, usa o mês mais recente da série
+        // Total Programado: soma planejada (não o realizado) do mês alvo
+        // Regra: se houver período selecionado, usa aquele mês/ano; senão, último mês da série
         const totalPlannedEl = document.getElementById('recurring-total-planned');
         if (totalPlannedEl) {
             const monthlyHistory = Array.isArray(biData?.monthlyHistory) ? biData.monthlyHistory : [];
@@ -7537,12 +7578,12 @@ document.addEventListener('DOMContentLoaded', function() {
                 console.log('📊 Target padrão (último):', target);
             }
 
-            const monthlyActual = Number(target?.totalActual || 0);
-            console.log('📊 Valor mensal calculado:', monthlyActual);
-            totalPlannedEl.textContent = formatCurrency(monthlyActual);
+            const monthlyPlanned = Number(target?.totalPlanned || 0);
+            console.log('📊 Valor planejado mensal calculado:', monthlyPlanned);
+            totalPlannedEl.textContent = formatCurrency(monthlyPlanned);
         }
 
-        // Média realizada
+    // Média realizada (últimos 12 meses)
         const avgActualEl = document.getElementById('recurring-avg-actual');
         if (avgActualEl && biData.summary) {
             const avgValue = biData.summary.avgActual || 0;
@@ -7570,6 +7611,24 @@ document.addEventListener('DOMContentLoaded', function() {
             countEl.textContent = count.toString();
         }
         
+        // % Executado (mês alvo)
+        const execRateEl = document.getElementById('recurring-execution-rate');
+        if (execRateEl) {
+            const monthlyHistory = Array.isArray(biData?.monthlyHistory) ? biData.monthlyHistory : [];
+            let selectedYear = Number(document.getElementById('recurring-year')?.value || 0) || null;
+            let selectedMonth = Number(document.getElementById('recurring-month')?.value || 0) || null;
+            let target = null;
+            if (selectedYear && selectedMonth) {
+                target = monthlyHistory.find(m => m.year === selectedYear && m.month === selectedMonth) || null;
+            }
+            if (!target && monthlyHistory.length) target = monthlyHistory[monthlyHistory.length - 1];
+            const planned = Number(target?.totalPlanned || 0);
+            const actual = Number(target?.totalActual || 0);
+            const rate = planned > 0 ? (actual / planned) * 100 : 0;
+            execRateEl.textContent = rate.toFixed(1) + '%';
+            execRateEl.className = 'text-xl font-bold ' + (rate >= 100 ? 'text-green-300' : rate >= 80 ? 'text-yellow-200' : 'text-red-200');
+        }
+
         console.log('✅ KPIs atualizados');
     }
 
@@ -7618,16 +7677,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 all = Array.isArray(list) ? list : [];
                 console.log('🔧 Despesas PIX/Boleto da rota genérica:', all.length);
             }
-
-            // Filtrar apenas categoria Alimentação se houver pelo menos um registro dessa categoria
-            try {
-                // Se existirem despesas categorizadas como Alimentação, restringimos o fallback somente a elas.
-                // Isso mantém consistência com a regra aplicada na função de normalização principal.
-                const alimentacao = all.filter(e => (e.category || e.categoria || '').toString().toLowerCase().includes('aliment'));
-                if (alimentacao.length > 0) {
-                    all = alimentacao;
-                }
-            } catch (e) { console.warn('Filtro Alimentação fallback falhou:', e.message); }
+            // Removido filtro por categoria "Alimentação" para não distorcer totais
 
             // Determinar período base
             const baseYear = Number(period?.year) || new Date().getFullYear();
@@ -7707,13 +7757,29 @@ document.addEventListener('DOMContentLoaded', function() {
                 currentMonthActual: 0
             }));
 
+            // Comparação com não recorrentes (mês atual)
+            let nonRecurringMonthActual = 0;
+            try {
+                const params = new URLSearchParams({ year: baseYear, month: baseMonth, account: 'PIX/Boleto', include_recurring: 'true' });
+                const allMonthResp = await authenticatedFetch(`${API_BASE_URL}/api/expenses?${params.toString()}`);
+                if (allMonthResp.ok) {
+                    const monthList = await allMonthResp.json();
+                    nonRecurringMonthActual = monthList.filter(e => !e.recurring_expense_id).reduce((s,e)=> s + Number(e.amount||0),0);
+                }
+            } catch (e) { console.warn('Falha ao calcular não recorrentes mês alvo:', e.message); }
+            const currentMonthEntry = monthlyHistory.find(m => m.year === baseYear && m.month === baseMonth) || { totalActual: 0 };
+            const recurringMonthActual = currentMonthEntry.totalActual;
+            const combinedMonth = recurringMonthActual + nonRecurringMonthActual;
+            const recurringShare = combinedMonth > 0 ? (recurringMonthActual / combinedMonth) * 100 : 0;
+
             const result = {
                 summary: { totalPlanned: plannedSum, avgActual, overallReliability: reliability },
                 monthlyHistory,
                 categoryBreakdown,
                 trendsSummary: { increasing: 0, decreasing: 0, stable: expensesRows.length },
                 projections,
-                expenses: expensesRows
+                expenses: expensesRows,
+                comparison: { recurringMonthActual, nonRecurringMonthActual, recurringShare }
             };
             
             console.log('🔧 Fallback construído com sucesso:', result);
@@ -7994,6 +8060,14 @@ document.addEventListener('DOMContentLoaded', function() {
             const reliabilityColor = getReliabilityColor(expense.reliability);
             const trendIcon = getTrendIcon(expense.trend);
 
+            const paidThisMonth = !!expense.currentMonthActual && expense.currentMonthActual > 0;
+            const paidIcon = paidThisMonth ? '✅' : '⏳';
+            const paidTitle = paidThisMonth ? 'Pago neste mês' : 'Ainda não pago';
+            const currentMonth = expense.currentMonthActual || 0;
+            const execRate = expense.plannedAmount > 0 ? (currentMonth / expense.plannedAmount) * 100 : 0;
+            const barColor = execRate >= 100 ? 'bg-green-600' : execRate >= 80 ? 'bg-emerald-400' : execRate >= 50 ? 'bg-yellow-400' : 'bg-red-400';
+            const overCap = execRate > 100;
+            const barExtraStyle = overCap ? 'background-image: repeating-linear-gradient(45deg, rgba(255,255,255,0.45) 0 6px, rgba(255,255,255,0.15) 6px 12px);' : '';
             row.innerHTML = `
                 <td class="p-3">
                     <div class="font-medium">${expense.description || 'N/A'}</div>
@@ -8002,6 +8076,15 @@ document.addEventListener('DOMContentLoaded', function() {
                 <td class="p-3 text-center">${expense.paymentDay || 'Variável'}</td>
                 <td class="p-3 text-right font-medium">${formatCurrency(expense.plannedAmount || 0)}</td>
                 <td class="p-3 text-right">${formatCurrency(expense.avgActual || 0)}</td>
+                <td class="p-3 text-right">
+                    <div class="flex flex-col items-end gap-1">
+                        <span class="text-sm font-medium" title="Realizado mês atual">${formatCurrency(currentMonth)}</span>
+                        <div class="w-28 h-2 rounded bg-gray-200 overflow-hidden" title="${formatCurrency(currentMonth)} / ${formatCurrency(expense.plannedAmount || 0)} = ${execRate.toFixed(1)}%">
+                            <div class="h-full ${barColor}" style="width:${Math.min(execRate,130).toFixed(1)}%;${barExtraStyle}"></div>
+                        </div>
+                        <span class="text-[10px] text-gray-500" title="Percentual executado">${execRate.toFixed(1)}%</span>
+                    </div>
+                </td>
                 <td class="p-3 text-right">
                     <span class="font-medium ${expense.variationPercent >= 0 ? 'text-red-600' : 'text-green-600'}">
                         ${expense.variationPercent >= 0 ? '+' : ''}${(expense.variationPercent || 0).toFixed(1)}%
@@ -8013,6 +8096,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     </span>
                 </td>
                 <td class="p-3 text-center">${trendIcon}</td>
+                <td class="p-3 text-center" title="${paidTitle}">${paidIcon}</td>
                 <td class="p-3">
                     <div class="flex items-center gap-2">
                         <div class="w-3 h-3 rounded-full ${statusClass}"></div>
@@ -8146,6 +8230,16 @@ document.addEventListener('DOMContentLoaded', function() {
                 url += '?' + params.toString();
             }
 
+            // Tenta cache primeiro
+            const cacheKey = (year && month) ? `${year}|${month}` : 'latest';
+            const cached = recurringBICache.get(cacheKey);
+            const now = Date.now();
+            if (cached && (now - cached.timestamp) < RECURRING_BI_CACHE_TTL_MS) {
+                console.log('⚡ Usando cache em filtros para', cacheKey);
+                applyRecurringBIToUI(cached.data);
+                showNotification('Filtros aplicados (cache)', 'success');
+                return;
+            }
             const response = await authenticatedFetch(url);
             if (!response.ok) throw new Error('Erro ao aplicar filtros');
 
@@ -8169,14 +8263,8 @@ document.addEventListener('DOMContentLoaded', function() {
             }
             
             // Atualizar dashboard com dados filtrados
-            updateRecurringKPIs(biData);
-            renderRecurringPlannedVsActualChart(biData.monthlyHistory);
-            renderRecurringVariationChart(biData.monthlyHistory);
-            renderRecurringCategoryChart(biData.categoryBreakdown);
-            updateTrendsAnalysis(biData.trendsSummary);
-            const safeProjections = biData.projections || { nextMonth: 0, threeMonths: 0, yearEnd: 0 };
-            updateProjections(safeProjections);
-            renderRecurringExpensesTable(biData.expenses);
+            applyRecurringBIToUI(biData);
+            recurringBICache.set(cacheKey, { data: biData, timestamp: Date.now() });
 
             showNotification('Filtros aplicados com sucesso!', 'success');
 
@@ -8186,17 +8274,29 @@ document.addEventListener('DOMContentLoaded', function() {
             try {
                 const fb = await buildRecurringPixBoletoFallback({ year: Number(year), month: Number(month) });
                 if (fb) {
-                    updateRecurringKPIs(fb);
-                    renderRecurringPlannedVsActualChart(fb.monthlyHistory);
-                    renderRecurringVariationChart(fb.monthlyHistory);
-                    renderRecurringCategoryChart(fb.categoryBreakdown);
-                    updateTrendsAnalysis(fb.trendsSummary);
-                    const safeProjections = fb.projections || { nextMonth: 0, threeMonths: 0, yearEnd: 0 };
-                    updateProjections(safeProjections);
-                    renderRecurringExpensesTable(fb.expenses);
+                    applyRecurringBIToUI(fb);
                     showNotification('Filtros aplicados via fallback', 'warning');
                     return;
                 }
+    // Função central para aplicar dados BI na UI
+    function applyRecurringBIToUI(data){
+        if(!data) return;
+        updateRecurringKPIs(data);
+        renderRecurringPlannedVsActualChart(data.monthlyHistory);
+        renderRecurringVariationChart(data.monthlyHistory);
+        renderRecurringCategoryChart(data.categoryBreakdown);
+        updateTrendsAnalysis(data.trendsSummary);
+        const safeProjections = data.projections || { nextMonth: 0, threeMonths: 0, yearEnd: 0 };
+        updateProjections(safeProjections);
+        renderRecurringExpensesTable(data.expenses);
+        updateNonRecurringComparison(data); // sem await para não bloquear
+    }
+
+    // Botão de forçar atualização ignorando cache
+    document.getElementById('force-refresh-recurring')?.addEventListener('click', () => {
+        showNotification('Forçando atualização BI...', 'info');
+        loadRecurringPixBoletoBI(true);
+    });
             } catch (e) {
                 console.error('Fallback (filtros) falhou:', e);
             }
