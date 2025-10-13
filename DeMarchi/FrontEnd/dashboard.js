@@ -5388,7 +5388,9 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // ========== SISTEMA DE TABS (DRY, delega em switchMainTab) ==========
     function initializeTabs() {
-        const tabButtons = document.querySelectorAll('.tab-button[data-tab]');
+        // Seleciona apenas botões de abas principais, ignorando botões do sistema de insights
+        const tabButtons = Array.from(document.querySelectorAll('.tab-button[data-tab]'))
+            .filter(btn => !btn.classList.contains('insight-tab-btn'));
         if (!tabButtons || tabButtons.length === 0) return;
 
         // Evita múltiplos event listeners em re-inicializações
@@ -5398,8 +5400,8 @@ document.addEventListener('DOMContentLoaded', function() {
             button.dataset.tabInit = '1';
         });
 
-        // Ativa uma aba inicial de forma centralizada
-        const initiallyActive = document.querySelector('.tab-button.active[data-tab]') || tabButtons[0];
+        // Ativa uma aba inicial de forma centralizada (apenas entre as abas principais)
+        const initiallyActive = document.querySelector('.tab-button.active[data-tab]:not(.insight-tab-btn)') || tabButtons[0];
         if (initiallyActive) {
             // Centraliza a troca e os carregamentos condicionais
             switchMainTab(initiallyActive.dataset.tab);
