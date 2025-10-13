@@ -5354,6 +5354,8 @@ document.addEventListener('DOMContentLoaded', function() {
                     }
                     await analyzeChartUsage();
                 }
+                // Também carregar o centro de inteligência (alertas, status, riscos, recomendações)
+                await refreshAllInsights();
             } catch (autoErr) {
                 console.warn('Falha ao executar análise automática de categorias:', autoErr);
             }
