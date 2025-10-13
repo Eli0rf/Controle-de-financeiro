@@ -11306,18 +11306,19 @@ document.addEventListener('DOMContentLoaded', function() {
         // Agrupar por categoria (PlanoContasDescricao ou PlanoContasID)
         normalizedExpenses.forEach(expense => {
             // Priorizar a coluna 'category' vinda do backend quando disponível
-            const category = expense.category || expense.accountPlanDescription || expense.accountPlanCode || 'Sem Categoria';
-            
-            if (!categoriesMap.has(category)) {
-                categoriesMap.set(category, {
-                    name: category,
+            const rawCategory = expense.category || expense.accountPlanDescription || expense.accountPlanCode || 'Sem Categoria';
+            const categoryKey = (rawCategory === null || rawCategory === undefined) ? 'Sem Categoria' : String(rawCategory);
+
+            if (!categoriesMap.has(categoryKey)) {
+                categoriesMap.set(categoryKey, {
+                    name: categoryKey,
                     frequency: 0,
                     totalAmount: 0,
                     expenses: []
                 });
             }
-            
-            const categoryData = categoriesMap.get(category);
+
+            const categoryData = categoriesMap.get(categoryKey);
             categoryData.frequency++;
             categoryData.totalAmount += expense.amount;
             categoryData.expenses.push(expense);
@@ -11615,8 +11616,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 break;
         }
         
-        // Insight sobre categorização
-        if (data.categories.some(cat => cat.name.includes('Sem Categoria'))) {
+        // Insight sobre categorização (garantir nome string)
+        if (data.categories.some(cat => typeof cat.name === 'string' && cat.name.includes('Sem Categoria'))) {
             insights.push({
                 icon: '⚠️',
                 title: 'Problema de Categorização',
