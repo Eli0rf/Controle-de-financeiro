@@ -789,13 +789,8 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
         
-        // Event listeners para navegação das abas principais
-        const mainTabBtns = document.querySelectorAll('.tab-button[data-tab]');
-        mainTabBtns.forEach(btn => {
-            btn.addEventListener('click', function() {
-                switchMainTab(this.dataset.tab);
-            });
-        });
+        // Navegação principal: delegada ao initializeTabs para evitar binds duplicados
+        // initializeTabs() cuidará de associar os handlers chamando switchMainTab
     }
 
     async function handleLogin(e) {
@@ -5391,45 +5386,23 @@ document.addEventListener('DOMContentLoaded', function() {
 
     window.deleteRecurringExpense = deleteRecurringExpense;
 
-    // ========== SISTEMA DE TABS ==========
+    // ========== SISTEMA DE TABS (DRY, delega em switchMainTab) ==========
     function initializeTabs() {
-        const tabButtons = document.querySelectorAll('.tab-button');
-        const tabContents = document.querySelectorAll('.tab-content');
+        const tabButtons = document.querySelectorAll('.tab-button[data-tab]');
+        if (!tabButtons || tabButtons.length === 0) return;
 
+        // Evita múltiplos event listeners em re-inicializações
         tabButtons.forEach(button => {
-            button.addEventListener('click', () => {
-                const targetTab = button.dataset.tab;
-                
-                // Remove active class from all buttons and contents
-                tabButtons.forEach(btn => btn.classList.remove('active', 'bg-blue-50', 'text-blue-600', 'border-b-2', 'border-blue-500'));
-                tabContents.forEach(content => content.classList.add('hidden'));
-                
-                // Add active class to clicked button
-                button.classList.add('active', 'bg-blue-50', 'text-blue-600', 'border-b-2', 'border-blue-500');
-                
-                // Show target tab content
-                const targetContent = document.getElementById(`${targetTab}-tab`);
-                if (targetContent) {
-                    targetContent.classList.remove('hidden');
-                    
-                    // Load specific content based on tab
-                    if (targetTab === 'business-analysis') {
-                        console.log('🏢 Carregando aba: Análise Empresarial');
-                        loadBusinessAnalysis();
-                    } else if (targetTab === 'reports') {
-                        console.log('📊 Carregando aba: Dashboard Executivo');
-                        console.log('🎯 DEBUG: Aba reports ativada - iniciando loadReportsData');
-                        loadReportsData();
-                    } else {
-                        console.log(`📋 Aba ativada: ${targetTab}`);
-                    }
-                }
-            });
+            if (button.dataset.tabInit === '1') return;
+            button.addEventListener('click', () => switchMainTab(button.dataset.tab));
+            button.dataset.tabInit = '1';
         });
 
-        // Initialize first tab as active
-        if (tabButtons.length > 0) {
-            tabButtons[0].click();
+        // Ativa uma aba inicial de forma centralizada
+        const initiallyActive = document.querySelector('.tab-button.active[data-tab]') || tabButtons[0];
+        if (initiallyActive) {
+            // Centraliza a troca e os carregamentos condicionais
+            switchMainTab(initiallyActive.dataset.tab);
         }
     }
 
