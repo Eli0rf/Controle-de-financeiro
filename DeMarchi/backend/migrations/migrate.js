@@ -75,6 +75,7 @@ async function createDatabase() {
         transaction_date DATE NOT NULL,
         amount DECIMAL(10,2) NOT NULL,
         description VARCHAR(255) NOT NULL,
+        category VARCHAR(255) DEFAULT NULL,
     account ENUM('Nu Bank Ketlyn','Nu Vainer','Ourocard Ketlyn','PicPay Vainer','PIX','Boleto','PIX/Boleto') NOT NULL,
         is_business_expense TINYINT(1) DEFAULT 0,
         account_plan_code INT(11) DEFAULT NULL,
@@ -85,8 +86,10 @@ async function createDatabase() {
         installment_number INT(11) DEFAULT NULL,
         total_installments INT(11) DEFAULT NULL,
         is_recurring_expense TINYINT(1) DEFAULT 0,
+        recurring_expense_id INT(11) DEFAULT NULL,
         PRIMARY KEY (id),
         KEY user_id (user_id),
+        KEY recurring_expense_id (recurring_expense_id),
         CONSTRAINT expenses_ibfk_1 FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
     `);
@@ -99,6 +102,7 @@ async function createDatabase() {
         description VARCHAR(255) NOT NULL,
         amount DECIMAL(10,2) NOT NULL,
         account ENUM('Nu Bank Ketlyn','Nu Vainer','Ourocard Ketlyn','PicPay Vainer','PIX','Boleto','PIX/Boleto') NOT NULL,
+        category VARCHAR(255) DEFAULT NULL,
         account_plan_code INT(11) DEFAULT NULL,
         is_business_expense TINYINT(1) DEFAULT 0,
         day_of_month INT(2) DEFAULT 1,
@@ -120,6 +124,31 @@ async function createDatabase() {
       console.log('✓ ENUM de account atualizado para incluir PIX/Boleto');
     } catch (e) {
       console.log('⚠️  Aviso ao alterar ENUM de account:', e.message);
+    }
+
+    // Garantir colunas novas em bancos existentes
+    try {
+      await connection.query(`ALTER TABLE recurring_expenses ADD COLUMN IF NOT EXISTS category VARCHAR(255) NULL AFTER account`);
+    } catch (e) {
+      if (!/Duplicate column/i.test(e.message)) {
+        console.log('⚠️  Aviso ao adicionar coluna category em recurring_expenses:', e.message);
+      }
+    }
+
+    try {
+      await connection.query(`ALTER TABLE expenses ADD COLUMN IF NOT EXISTS category VARCHAR(255) NULL AFTER description`);
+    } catch (e) {
+      if (!/Duplicate column/i.test(e.message)) {
+        console.log('⚠️  Aviso ao adicionar coluna category em expenses:', e.message);
+      }
+    }
+
+    try {
+      await connection.query(`ALTER TABLE expenses ADD COLUMN IF NOT EXISTS recurring_expense_id INT(11) NULL AFTER is_recurring_expense`);
+    } catch (e) {
+      if (!/Duplicate column/i.test(e.message)) {
+        console.log('⚠️  Aviso ao adicionar coluna recurring_expense_id em expenses:', e.message);
+      }
     }
     
     // Criar tabela recurring_expense_processing
@@ -157,6 +186,10 @@ async function createDatabase() {
       
       if (!indexNames.includes('idx_expenses_account_date')) {
         await connection.query(`CREATE INDEX idx_expenses_account_date ON expenses(account, transaction_date)`);
+      }
+
+      if (!indexNames.includes('recurring_expense_id')) {
+        await connection.query(`CREATE INDEX idx_expenses_recurring_id ON expenses(recurring_expense_id)`);
       }
       
       // Para recurring_expenses
