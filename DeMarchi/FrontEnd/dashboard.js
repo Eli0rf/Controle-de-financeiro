@@ -467,15 +467,43 @@ document.addEventListener('DOMContentLoaded', function() {
             const resp = await authenticatedFetch(`${API_BASE_URL}/api/business/quarterly-comparison`);
             if(!resp.ok) throw new Error('Falha quarterly API');
             const payload = await resp.json();
-            const last3 = payload.last3 || [];
-            const labels = last3.map(r=> ('0'+r.month).slice(-2)+ '/' + r.year);
-            const totals = last3.map(r=> r.total);
+            const monthsAbbr = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+            const now = new Date();
+            const nowKey = now.getFullYear()*12 + (now.getMonth()+1);
+            // Garantir que só meses passados/atuais entrem (evita qualquer dado futuro/ruído)
+            const pastOrCurrent = (payload.last3 || []).filter(r => (r.year*12 + r.month) <= nowKey);
+            const past3 = pastOrCurrent.slice(-3);
+            const labels = past3.map(r=> `${monthsAbbr[r.month-1]}/${String(r.year).slice(-2)}`);
+            const totals = past3.map(r=> r.total);
             if(qcEl){
                 if(chartRegistry.quarterlyComparison) chartRegistry.quarterlyComparison.destroy();
                 chartRegistry.quarterlyComparison = new Chart(qcEl.getContext('2d'), {
                     type:'bar',
-                    data:{ labels, datasets:[{ label:'Gastos Empresariais (R$)', data: totals, backgroundColor:['#3b82f6','#6366f1','#8b5cf6'], borderRadius:6 }]},
-                    options:{ plugins:{ title:{display:true,text:'Últimos 3 Meses (Empresarial)'}, legend:{display:false}}, scales:{ y:{ beginAtZero:true }}}
+                    data:{ labels, datasets:[{ label:'Gastos (R$)', data: totals, backgroundColor:['#3b82f6','#6366f1','#8b5cf6'], borderRadius:6 }]},
+                    options:{ 
+                        plugins:{ 
+                            title:{display:true,text:'Últimos 3 Meses (Empresarial)'}, 
+                            legend:{display:false},
+                            tooltip:{
+                                callbacks:{
+                                    label: (ctx)=> {
+                                        const val = ctx.parsed.y || 0;
+                                        const fmt = new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL',notation:'compact',maximumFractionDigits:1});
+                                        return fmt.format(val);
+                                    }
+                                }
+                            }
+                        }, 
+                        scales:{ 
+                            x: { ticks: { maxRotation: 0, minRotation: 0 } },
+                            y:{ 
+                                beginAtZero:true,
+                                ticks: {
+                                    callback: (value)=> new Intl.NumberFormat('pt-BR',{notation:'compact',maximumFractionDigits:1}).format(value)
+                                }
+                            }
+                        }
+                    }
                 });
             }
             if(projEl){
@@ -483,8 +511,31 @@ document.addEventListener('DOMContentLoaded', function() {
                 const projVals = payload.projectionNext3 || [];
                 chartRegistry.expenseProjection = new Chart(projEl.getContext('2d'), {
                     type:'line',
-                    data:{ labels:['+1 mês','+2 meses','+3 meses'], datasets:[{label:'Projeção (R$)', data: projVals, borderColor:'#10b981', backgroundColor:'rgba(16,185,129,0.25)', fill:true, tension:0.3 }]},
-                    options:{ plugins:{ title:{display:true,text:'Projeção Próximos 3 Meses'}, legend:{display:false}}, scales:{ y:{ beginAtZero:true }}}
+                    data:{ labels:['+1m','+2m','+3m'], datasets:[{label:'Projeção', data: projVals, borderColor:'#10b981', backgroundColor:'rgba(16,185,129,0.25)', fill:true, tension:0.3 }]},
+                    options:{ 
+                        plugins:{ 
+                            title:{display:true,text:'Projeção Próximos 3 Meses'}, 
+                            legend:{display:false},
+                            tooltip:{
+                                callbacks:{
+                                    label: (ctx)=> {
+                                        const val = ctx.parsed.y || 0;
+                                        const fmt = new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL',notation:'compact',maximumFractionDigits:1});
+                                        return fmt.format(val);
+                                    }
+                                }
+                            }
+                        },
+                        scales:{ 
+                            x: { ticks: { maxRotation: 0, minRotation: 0 } },
+                            y:{ 
+                                beginAtZero:true,
+                                ticks: {
+                                    callback: (value)=> new Intl.NumberFormat('pt-BR',{notation:'compact',maximumFractionDigits:1}).format(value)
+                                }
+                            }
+                        }
+                    }
                 });
                 updateFinancialStatusAI(totals, payload.futureInstallments || 0, projVals);
             }
