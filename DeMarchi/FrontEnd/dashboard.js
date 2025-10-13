@@ -5712,11 +5712,14 @@ document.addEventListener('DOMContentLoaded', function() {
         try {
             const currentDate = new Date();
             const filters = getBusinessFilters();
-            
-            const businessData = await fetchBusinessData(
-                filters.year || currentDate.getFullYear(),
-                filters.month || null
-            );
+            // Preferir filtros globais se não houver seleção explícita
+            const fallbackYear = (filterYear && filterYear.value) ? parseInt(filterYear.value, 10) : currentDate.getFullYear();
+            const fallbackMonth = (filterMonth && filterMonth.value) ? parseInt(filterMonth.value, 10) : (currentDate.getMonth() + 1);
+
+            const yearToUse = filters.year || fallbackYear;
+            const monthToUse = (typeof filters.month === 'number' ? filters.month : (filters.month || fallbackMonth));
+
+            const businessData = await fetchBusinessData(yearToUse, monthToUse);
             
             await updateBusinessAccountChart(businessData);
             await updateBusinessCategoryChart(businessData);
@@ -5874,7 +5877,10 @@ document.addEventListener('DOMContentLoaded', function() {
     async function fetchBusinessData(year, month) {
         try {
             // Usar a nova API de resumo empresarial
-            const response = await authenticatedFetch(`${API_BASE_URL}/api/business/summary?year=${year}&month=${month}`);
+            const params = new URLSearchParams();
+            if (year) params.append('year', year);
+            if (month) params.append('month', month);
+            const response = await authenticatedFetch(`${API_BASE_URL}/api/business/summary?${params.toString()}`);
             
             if (!response.ok) {
                 const error = await response.json();
@@ -5902,7 +5908,10 @@ document.addEventListener('DOMContentLoaded', function() {
             // Fallback para o método antigo se a nova API falhar
             console.log('Tentando método alternativo...');
             
-            const response = await authenticatedFetch(`${API_BASE_URL}/api/expenses?year=${year}&month=${month}`);
+            const altParams = new URLSearchParams();
+            if (year) altParams.append('year', year);
+            if (month) altParams.append('month', month);
+            const response = await authenticatedFetch(`${API_BASE_URL}/api/expenses?${altParams.toString()}`);
             
             if (!response.ok) {
                 const error = await response.json();
