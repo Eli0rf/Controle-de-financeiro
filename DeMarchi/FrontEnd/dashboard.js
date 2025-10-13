@@ -6209,27 +6209,93 @@ document.addEventListener('DOMContentLoaded', function() {
         };
     }
 
-    // Função para buscar dados do dashboard
+    // Função para buscar dados do dashboard (normalizado para o sistema de insights)
     async function fetchDashboardData() {
         try {
             const { year, month } = getCurrentPeriod();
-            
-            console.log(`📊 Buscando dados dashboard: ano=${year}, mês=${month}`);
-            
-            const params = new URLSearchParams({ year, month });
+            console.log(`📊 Buscando dados p/ insights: ano=${year}, mês=${month}`);
 
-            const response = await authenticatedFetch(`${API_BASE_URL}/api/dashboard?${params}`);
-            
-            if (!response.ok) {
-                const error = await response.json();
-                throw new Error(error.message || 'Erro ao buscar dados do dashboard.');
+            // Calcular janela de 6 meses para métricas históricas
+            const end = new Date(parseInt(year, 10), parseInt(month, 10) - 1, 1);
+            const start = new Date(end.getFullYear(), end.getMonth() - 5, 1);
+            const startYear = start.getFullYear();
+            const startMonth = start.getMonth() + 1; // 1-12
+            const endYear = end.getFullYear();
+            const endMonth = end.getMonth() + 1; // 1-12
+
+            // Buscar despesas do período atual e histórico agregado em paralelo
+            const [expensesRes, historyRes] = await Promise.all([
+                authenticatedFetch(`${API_BASE_URL}/api/expenses?year=${year}&month=${month}`),
+                authenticatedFetch(`${API_BASE_URL}/api/expenses/history?aggregate=true&startYear=${startYear}&startMonth=${startMonth}&endYear=${endYear}&endMonth=${endMonth}`)
+            ]);
+
+            if (!expensesRes.ok) {
+                const err = await expensesRes.json().catch(() => ({}));
+                throw new Error(err.message || 'Erro ao buscar despesas.');
             }
-            
-            const data = await response.json();
-            return data;
+
+            // expenses: lista detalhada do mês
+            const rawExpenses = await expensesRes.json();
+            const expenses = (rawExpenses || []).map(exp => ({
+                // Campos esperados pelo sistema de insights
+                data: exp.transaction_date,
+                valor: parseFloat(exp.amount) || 0,
+                descricao_conta: exp.description || 'Outros',
+                empresarial: !!exp.is_business_expense,
+                // Extras úteis
+                conta: exp.account,
+                plano: exp.account_plan_code,
+                fatura: !!exp.invoice_path
+            }));
+
+            // history: agregados mensais para calcular médias/variações
+            let monthlyAverage = 0;
+            let growthRate = 0;
+            let variationCoefficient = 0;
+
+            if (historyRes.ok) {
+                const hist = await historyRes.json();
+                const monthsArr = Array.isArray(hist?.months) ? hist.months : [];
+                const totals = monthsArr.map(m => parseFloat(m.total) || 0);
+
+                if (totals.length > 0) {
+                    const mean = totals.reduce((a, b) => a + b, 0) / totals.length;
+                    monthlyAverage = mean;
+                    if (totals.length >= 2) {
+                        const prev = totals[totals.length - 2];
+                        const curr = totals[totals.length - 1];
+                        growthRate = prev > 0 ? ((curr / prev) - 1) * 100 : 0;
+                    }
+                    // Desvio padrão e coeficiente de variação (%): std/mean*100
+                    if (mean > 0 && totals.length >= 2) {
+                        const variance = totals.reduce((s, v) => s + Math.pow(v - mean, 2), 0) / totals.length;
+                        const std = Math.sqrt(variance);
+                        variationCoefficient = (std / mean) * 100;
+                    }
+                }
+            } else {
+                // Fallback simples: usar total do mês atual como média e variação = 0
+                const totalAtual = expenses.reduce((s, e) => s + e.valor, 0);
+                monthlyAverage = totalAtual;
+                growthRate = 0;
+                variationCoefficient = 0;
+            }
+
+            return {
+                expenses,
+                monthlyAverage,
+                growthRate,
+                variationCoefficient
+            };
         } catch (error) {
-            console.error('❌ Erro ao buscar dados do dashboard:', error);
-            return {};
+            console.error('❌ Erro ao montar dados para insights:', error);
+            // Retornar estrutura vazia porém consistente
+            return {
+                expenses: [],
+                monthlyAverage: 0,
+                growthRate: 0,
+                variationCoefficient: 0
+            };
         }
     }
 
