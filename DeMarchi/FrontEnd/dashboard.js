@@ -5818,10 +5818,30 @@ document.addEventListener('DOMContentLoaded', function() {
             period,
             year,
             month,
-            account,
-            category,
-            search,
-            minAmount: minAmount ? parseFloat(minAmount) : null,
+            let businessData = await fetchBusinessData(yearToUse, monthToUse);
+
+            // Se vier completamente vazio com mês informado, tentar novamente no escopo do ano (evita mês nulo/errado)
+            const isEmptyBreakdown = (!businessData || (!businessData.total && !businessData.count) || (
+                Object.keys(businessData.byAccount || {}).length === 0 && Object.keys(businessData.byCategory || {}).length === 0
+            ));
+            if (isEmptyBreakdown && typeof monthToUse === 'number') {
+                console.warn('[BusinessDetails] Nenhum dado no mês informado. Tentando novamente com escopo anual...', { yearToUse, monthToUse });
+                try {
+                    const retryYearOnly = await fetchBusinessData(yearToUse, undefined);
+                    // Apenas substitui se de fato vier algo
+                    const retryHasData = (retryYearOnly && (retryYearOnly.total || retryYearOnly.count ||
+                        Object.keys(retryYearOnly.byAccount || {}).length > 0 || Object.keys(retryYearOnly.byCategory || {}).length > 0));
+                    if (retryHasData) {
+                        businessData = retryYearOnly;
+                        showNotification('Exibindo dados anuais por falta de dados no mês selecionado.', 'info', 2500);
+                    }
+                } catch (retryErr) {
+                    console.debug('[BusinessDetails] Falha no retry anual:', retryErr);
+                }
+            }
+
+            await updateBusinessAccountChart(businessData);
+            await updateBusinessCategoryChart(businessData);
             maxAmount: maxAmount ? parseFloat(maxAmount) : null,
             invoiceStatus
         };
@@ -5883,20 +5903,28 @@ document.addEventListener('DOMContentLoaded', function() {
         try {
             // Usar a nova API de resumo empresarial
             const params = new URLSearchParams();
-            if (typeof year === 'number' && !Number.isNaN(year)) params.append('year', String(year));
-            if (typeof month === 'number' && !Number.isNaN(month)) params.append('month', String(month));
-            const response = await authenticatedFetch(`${API_BASE_URL}/api/business/summary?${params.toString()}`);
+            const hasYear = typeof year === 'number' && !Number.isNaN(year);
+            const hasMonth = typeof month === 'number' && !Number.isNaN(month);
+            if (hasYear) params.append('year', String(year));
+            if (hasMonth) params.append('month', String(month));
+
+            const url = `${API_BASE_URL}/api/business/summary?${params.toString()}`;
+            console.debug('[BusinessDetails] fetchBusinessData -> GET', url);
+            const response = await authenticatedFetch(url);
             
             if (!response.ok) {
                 const error = await response.json();
-                throw new Error(error.message || 'Erro ao buscar dados empresariais');
+                // Se for 401/403, orientar login
+                if (response.status === 401 || response.status === 403) {
+                    showNotification('Sessão expirada. Faça login novamente para ver os dados empresariais.', 'warning', 4000);
+                }
+                throw new Error(error.message || `Erro ao buscar dados empresariais (HTTP ${response.status})`);
             }
             
             const businessSummary = await response.json();
             
             console.log('Resumo empresarial da API:', businessSummary);
-            
-            return {
+            let result = {
                 total: parseFloat(businessSummary.total) || 0,
                 count: parseInt(businessSummary.count) || 0,
                 average: parseFloat(businessSummary.average) || 0,
@@ -5905,8 +5933,45 @@ document.addEventListener('DOMContentLoaded', function() {
                 invoiced_count: parseInt(businessSummary.invoiced_count) || 0,
                 non_invoiced_count: parseInt(businessSummary.non_invoiced_count) || 0,
                 byAccount: businessSummary.byAccount || {},
-                byCategory: businessSummary.byCategory || {}
+                byCategory: businessSummary.byCategory || {},
+                byPlan: businessSummary.byPlan || {}
             };
+
+            // Caso não haja dados no mês (mas haja ano) e exista breakdown vazio, tentar automaticamente ano-only
+            const breakdownEmpty = (Object.keys(result.byAccount).length === 0 && Object.keys(result.byCategory).length === 0 && Object.keys(result.byPlan).length === 0);
+            if (hasYear && hasMonth && result.total === 0 && result.count === 0 && breakdownEmpty) {
+                console.debug('[BusinessDetails] Resultado vazio para mês específico. Tentando novamente com apenas ano...', { year });
+                try {
+                    const retryParams = new URLSearchParams();
+                    retryParams.append('year', String(year));
+                    const retryUrl = `${API_BASE_URL}/api/business/summary?${retryParams.toString()}`;
+                    const retryResp = await authenticatedFetch(retryUrl);
+                    if (retryResp.ok) {
+                        const retryJson = await retryResp.json();
+                        const retryResult = {
+                            total: parseFloat(retryJson.total) || 0,
+                            count: parseInt(retryJson.count) || 0,
+                            average: parseFloat(retryJson.average) || 0,
+                            invoiced: parseFloat(retryJson.invoiced_total) || 0,
+                            nonInvoiced: parseFloat(retryJson.non_invoiced_total) || 0,
+                            invoiced_count: parseInt(retryJson.invoiced_count) || 0,
+                            non_invoiced_count: parseInt(retryJson.non_invoiced_count) || 0,
+                            byAccount: retryJson.byAccount || {},
+                            byCategory: retryJson.byCategory || {},
+                            byPlan: retryJson.byPlan || {}
+                        };
+                        const retryHasAny = (retryResult.total || retryResult.count || Object.keys(retryResult.byAccount).length > 0 || Object.keys(retryResult.byCategory).length > 0 || Object.keys(retryResult.byPlan).length > 0);
+                        if (retryHasAny) {
+                            showNotification('Sem dados no mês selecionado. Exibindo visão anual.', 'info', 2500);
+                            return retryResult;
+                        }
+                    }
+                } catch (e) {
+                    console.debug('[BusinessDetails] Retry anual falhou:', e);
+                }
+            }
+
+            return result;
         } catch (error) {
             console.error('Erro ao buscar dados empresariais:', error);
             
@@ -5935,7 +6000,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 invoiced_count: businessExpenses.filter(exp => exp.invoice_path).length,
                 non_invoiced_count: businessExpenses.filter(exp => !exp.invoice_path).length,
                 byAccount: groupByAccount(businessExpenses),
-                byCategory: groupByCategory(businessExpenses)
+                byCategory: groupByCategory(businessExpenses),
+                byPlan: {}
             };
         }
     }
