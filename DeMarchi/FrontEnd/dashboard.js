@@ -5428,6 +5428,16 @@ document.addEventListener('DOMContentLoaded', function() {
             // Configurar filtros
             setupBusinessFilters();
             
+            // Executar análise de categorias automaticamente para preencher "Detalhes por Categoria"
+            try {
+                const analyzeBtn = document.getElementById('analyze-chart-usage');
+                if (analyzeBtn) {
+                    await analyzeChartUsage();
+                }
+            } catch (autoErr) {
+                console.warn('Falha ao executar análise automática de categorias:', autoErr);
+            }
+
             showNotification('Análise empresarial carregada com sucesso!', 'success', 3000);
 
         } catch (error) {
@@ -11363,16 +11373,28 @@ document.addEventListener('DOMContentLoaded', function() {
     function getPeriodDates(period) {
         const now = new Date();
         let startDate, endDate;
-        
+
+        // Preferir ano/mês selecionados nos filtros globais quando fizer sentido
+        const selectedYear = (typeof filterYear !== 'undefined' && filterYear && filterYear.value) ? parseInt(filterYear.value) : null;
+        const selectedMonth = (typeof filterMonth !== 'undefined' && filterMonth && filterMonth.value) ? parseInt(filterMonth.value) : null;
+
         switch (period) {
-            case 'current-month':
-                startDate = new Date(now.getFullYear(), now.getMonth(), 1);
-                endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+            case 'current-month': {
+                const baseYear = selectedYear ?? now.getFullYear();
+                const baseMonthIdx = (selectedMonth ? selectedMonth - 1 : now.getMonth());
+                startDate = new Date(baseYear, baseMonthIdx, 1);
+                endDate = new Date(baseYear, baseMonthIdx + 1, 0);
                 break;
-            case 'last-month':
-                startDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-                endDate = new Date(now.getFullYear(), now.getMonth(), 0);
+            }
+            case 'last-month': {
+                // Se usuário escolheu um mês nos filtros, usar o mês anterior ao selecionado
+                let y = selectedYear ?? now.getFullYear();
+                let mIdx = (selectedMonth ? selectedMonth - 1 : now.getMonth()) - 1; // mês anterior (0-11)
+                if (mIdx < 0) { mIdx = 11; y -= 1; }
+                startDate = new Date(y, mIdx, 1);
+                endDate = new Date(y, mIdx + 1, 0);
                 break;
+            }
             case 'last-3-months':
                 startDate = new Date(now.getFullYear(), now.getMonth() - 2, 1);
                 endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0);
@@ -11417,7 +11439,8 @@ document.addEventListener('DOMContentLoaded', function() {
         
         // Agrupar por categoria (PlanoContasDescricao ou PlanoContasID)
         normalizedExpenses.forEach(expense => {
-            const category = expense.accountPlanDescription || expense.accountPlanCode || 'Sem Categoria';
+            // Priorizar a coluna 'category' vinda do backend quando disponível
+            const category = expense.category || expense.accountPlanDescription || expense.accountPlanCode || 'Sem Categoria';
             
             if (!categoriesMap.has(category)) {
                 categoriesMap.set(category, {
@@ -11721,7 +11744,18 @@ document.addEventListener('DOMContentLoaded', function() {
         if (!chartDetailsTbody) return;
         
         chartDetailsTbody.innerHTML = '';
-        
+
+        if (!data || !Array.isArray(data.categories) || data.categories.length === 0) {
+            chartDetailsTbody.innerHTML = `
+                <tr>
+                    <td colspan="6" class="text-center py-8 text-gray-500">
+                        <i class="fas fa-info-circle text-2xl mb-2"></i>
+                        <p>Nenhum dado encontrado para o período selecionado.</p>
+                    </td>
+                </tr>`;
+            return;
+        }
+
         data.categories.forEach((category, index) => {
             const row = document.createElement('tr');
             row.className = index % 2 === 0 ? 'bg-white' : 'bg-gray-50';
@@ -11759,6 +11793,7 @@ document.addEventListener('DOMContentLoaded', function() {
             description: item.description || item.Descricao || '',
             account: item.account || item.ContaNome || '',
             type: item.expense_type || item.Tipo || '',
+            category: item.category || item.Categoria || '',
             accountPlanCode: item.account_plan_code || item.PlanoContasID || '',
             accountPlanDescription: item.account_plan_description || item.PlanoContasDescricao || ''
         };
