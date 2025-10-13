@@ -127,6 +127,8 @@ document.addEventListener('DOMContentLoaded', function() {
     const recurringBICache = new Map();
     let lastRecurringBILoad = 0;
     const RECURRING_BI_CACHE_TTL_MS = 2 * 60 * 1000; // 2 minutos
+    // Snapshot atual dos dados de BI recorrentes para exportação/relatórios
+    let currentRecurringBIData = null;
     // Restaura cache do sessionStorage se válido
     try {
         const persisted = sessionStorage.getItem('recurringBICache');
@@ -7653,6 +7655,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 const fb = await buildRecurringPixBoletoFallback(raw?.period);
                 console.log('📊 Dados fallback:', fb);
                 if (fb) {
+                    currentRecurringBIData = fb;
                     // Atualizar KPIs principais
                     updateRecurringKPIs(fb);
                     // Renderizar gráficos BI
@@ -7689,6 +7692,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 const fb = await buildRecurringPixBoletoFallback();
                 console.log('📊 Fallback de emergência:', fb);
                 if (fb) {
+                    currentRecurringBIData = fb;
                     updateRecurringKPIs(fb);
                     renderRecurringPlannedVsActualChart(fb.monthlyHistory);
                     renderRecurringVariationChart(fb.monthlyHistory);
@@ -8380,33 +8384,48 @@ document.addEventListener('DOMContentLoaded', function() {
     function setupRecurringPixBoletoEventHandlers() {
         // Botão de refresh
         const refreshBtn = document.getElementById('refresh-recurring-pix-boleto');
-        if (refreshBtn) {
-            refreshBtn.addEventListener('click', () => {
-                loadRecurringPixBoletoBI();
+        if (refreshBtn && !refreshBtn.dataset.bound) {
+            refreshBtn.dataset.bound = '1';
+            refreshBtn.addEventListener('click', async () => {
+                const original = refreshBtn.innerHTML;
+                refreshBtn.disabled = true;
+                refreshBtn.innerHTML = '🔄 Atualizando...';
+                try { await loadRecurringPixBoletoBI(true); }
+                finally { refreshBtn.disabled = false; refreshBtn.innerHTML = original; }
             });
         }
 
         // Filtros de período
         const applyFiltersBtn = document.getElementById('apply-recurring-filters');
-        if (applyFiltersBtn) {
-            applyFiltersBtn.addEventListener('click', applyRecurringFilters);
+        if (applyFiltersBtn && !applyFiltersBtn.dataset.bound) {
+            applyFiltersBtn.dataset.bound = '1';
+            applyFiltersBtn.addEventListener('click', async (e) => {
+                const original = applyFiltersBtn.innerHTML;
+                applyFiltersBtn.disabled = true;
+                applyFiltersBtn.innerHTML = '⏳ Aplicando...';
+                try { await applyRecurringFilters(); }
+                finally { applyFiltersBtn.disabled = false; applyFiltersBtn.innerHTML = original; }
+            });
         }
 
         // Ordenação da tabela
         const reliabilitySortBtn = document.getElementById('toggle-reliability-sort');
         const variationSortBtn = document.getElementById('toggle-variation-sort');
         
-        if (reliabilitySortBtn) {
+        if (reliabilitySortBtn && !reliabilitySortBtn.dataset.bound) {
+            reliabilitySortBtn.dataset.bound = '1';
             reliabilitySortBtn.addEventListener('click', () => sortRecurringTable('reliability'));
         }
         
-        if (variationSortBtn) {
+        if (variationSortBtn && !variationSortBtn.dataset.bound) {
+            variationSortBtn.dataset.bound = '1';
             variationSortBtn.addEventListener('click', () => sortRecurringTable('variation'));
         }
 
         // Fechar análise detalhada
         const closeDetailedBtn = document.getElementById('close-detailed-analysis');
-        if (closeDetailedBtn) {
+        if (closeDetailedBtn && !closeDetailedBtn.dataset.bound) {
+            closeDetailedBtn.dataset.bound = '1';
             closeDetailedBtn.addEventListener('click', () => {
                 document.getElementById('detailed-analysis-section').classList.add('hidden');
             });
@@ -8414,7 +8433,8 @@ document.addEventListener('DOMContentLoaded', function() {
 
         // Export BI report
         const exportBtn = document.getElementById('export-recurring-report');
-        if (exportBtn) {
+        if (exportBtn && !exportBtn.dataset.bound) {
+            exportBtn.dataset.bound = '1';
             exportBtn.addEventListener('click', exportRecurringReport);
         }
     }
@@ -8454,6 +8474,7 @@ document.addEventListener('DOMContentLoaded', function() {
             if (!hasAnyData) {
                 const fb = await buildRecurringPixBoletoFallback({ year: Number(year), month: Number(month) });
                 if (fb) {
+                    currentRecurringBIData = fb;
                     updateRecurringKPIs(fb);
                     renderRecurringPlannedVsActualChart(fb.monthlyHistory);
                     renderRecurringVariationChart(fb.monthlyHistory);
@@ -8486,6 +8507,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // Função central para aplicar dados BI na UI
     function applyRecurringBIToUI(data){
         if(!data) return;
+        currentRecurringBIData = data;
         updateRecurringKPIs(data);
         renderRecurringPlannedVsActualChart(data.monthlyHistory);
         renderRecurringVariationChart(data.monthlyHistory);
@@ -8612,12 +8634,144 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-    // Exportar relatório BI
-    function exportRecurringReport() {
-        // Implementation for BI report export
-        console.log('Exportando relatório BI de gastos recorrentes...');
-        showNotification('Funcionalidade de export em desenvolvimento', 'info');
-    }
+        // Exportar relatório BI
+        function exportRecurringReport() {
+                try {
+                        if (!currentRecurringBIData) {
+                                showNotification('Sem dados para exportar. Atualize o BI primeiro.', 'warning');
+                                return;
+                        }
+                        const yearSel = document.getElementById('recurring-year')?.value || '';
+                        const monthSel = document.getElementById('recurring-month')?.value || '';
+                        const periodLabel = yearSel ? `${monthSel ? (String(monthSel).padStart(2,'0') + '/') : ''}${yearSel}` : 'Últimos 12 meses';
+
+                        const toImg = (id) => {
+                                const c = document.getElementById(id);
+                                try { return c ? c.toDataURL('image/png') : null; } catch { return null; }
+                        };
+                        const imgPlannedActual = toImg('recurring-planned-vs-actual-chart');
+                        const imgVariation = toImg('recurring-variation-chart');
+                        const imgCategory = toImg('recurring-category-chart');
+
+                        const kpi = {
+                                totalPlanned: currentRecurringBIData?.summary?.totalPlanned || 0,
+                                avgActual: currentRecurringBIData?.summary?.avgActual || 0,
+                                reliability: currentRecurringBIData?.summary?.overallReliability || 0,
+                                count: Array.isArray(currentRecurringBIData?.expenses) ? currentRecurringBIData.expenses.length : 0,
+                                execRate: (() => {
+                                        const mh = Array.isArray(currentRecurringBIData?.monthlyHistory) ? currentRecurringBIData.monthlyHistory : [];
+                                        let target = null;
+                                        if (yearSel && monthSel) {
+                                                target = mh.find(m => String(m.year)===String(yearSel) && String(m.month)===String(monthSel));
+                                        }
+                                        if (!target) target = mh[mh.length-1];
+                                        const p = Number(target?.totalPlanned || 0);
+                                        const a = Number(target?.totalActual || 0);
+                                        return p>0 ? (a/p)*100 : 0;
+                                })()
+                        };
+
+                        const recActText = document.getElementById('recurring-month-actual')?.textContent || 'R$ 0,00';
+                        const nonRecText = document.getElementById('nonrecurring-month-actual')?.textContent || 'R$ 0,00';
+                        const shareText = document.getElementById('recurring-share')?.textContent || '0%';
+
+                        const rowsHtml = (currentRecurringExpenses || []).map(e => `
+                                <tr>
+                                        <td>${e.description || ''}</td>
+                                        <td>${e.category || ''}</td>
+                                        <td style="text-align:center;">${e.paymentDay || 'Variável'}</td>
+                                        <td style="text-align:right;">${formatCurrency(e.plannedAmount || 0)}</td>
+                                        <td style="text-align:right;">${formatCurrency(e.avgActual || 0)}</td>
+                                        <td style="text-align:right;">${(e.variationPercent || 0).toFixed(1)}%</td>
+                                        <td style="text-align:center;">${(e.reliability || 0).toFixed(0)}%</td>
+                                </tr>
+                        `).join('');
+
+                        const win = window.open('', '_blank');
+                        if (!win) {
+                                showNotification('Pop-up bloqueado. Permita pop-ups para exportar.', 'warning');
+                                return;
+                        }
+                        const html = `
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="utf-8" />
+    <title>Relatório BI Recorrentes - PIX/Boleto</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 24px; color: #111827; }
+        h1 { margin: 0 0 8px; }
+        .muted { color: #6B7280; font-size: 12px; }
+        .kpis { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin: 16px 0; }
+        .kpi { background: #F3F4F6; border-radius: 8px; padding: 12px; }
+        .kpi .label { font-size: 12px; color: #6B7280; }
+        .kpi .value { font-weight: bold; font-size: 18px; }
+        .section { margin-top: 20px; }
+        .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+        .card { background: #F9FAFB; border-radius: 8px; padding: 12px; }
+        .charts { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+        img.chart { width: 100%; border: 1px solid #E5E7EB; border-radius: 8px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+        th, td { border: 1px solid #E5E7EB; padding: 8px; font-size: 12px; }
+        th { background: #F3F4F6; text-align: left; }
+        @media print { .no-print { display: none; } }
+    </style>
+    </head>
+<body>
+    <div class="no-print" style="text-align:right; margin-bottom:8px;"><button onclick="window.print()">Imprimir / PDF</button></div>
+    <h1>💳 Relatório BI PIX/Boleto Recorrentes</h1>
+    <div class="muted">Período: ${periodLabel} • Gerado em ${new Date().toLocaleString('pt-BR')}</div>
+
+    <div class="kpis">
+        <div class="kpi"><div class="label">Total Programado (mês)</div><div class="value">${formatCurrency(kpi.totalPlanned)}</div></div>
+        <div class="kpi"><div class="label">Média Realizada (12m)</div><div class="value">${formatCurrency(kpi.avgActual)}</div></div>
+        <div class="kpi"><div class="label">Confiabilidade</div><div class="value">${kpi.reliability.toFixed(1)}%</div></div>
+        <div class="kpi"><div class="label">Gastos Ativos</div><div class="value">${kpi.count}</div></div>
+        <div class="kpi"><div class="label">% Executado</div><div class="value">${kpi.execRate.toFixed(1)}%</div></div>
+    </div>
+
+    <div class="section">
+        <h3>Comparativo (mês alvo)</h3>
+        <div class="cards">
+            <div class="card"><div class="label">Realizado Recorrente</div><div class="value">${recActText}</div></div>
+            <div class="card"><div class="label">Não Recorrente</div><div class="value">${nonRecText}</div></div>
+            <div class="card"><div class="label">Participação Recorrente</div><div class="value">${shareText}</div></div>
+        </div>
+    </div>
+
+    <div class="section">
+        <h3>Gráficos Principais</h3>
+        <div class="charts">
+            ${imgPlannedActual ? `<img class="chart" src="${imgPlannedActual}" alt="Programado vs Realizado" />` : ''}
+            ${imgVariation ? `<img class="chart" src="${imgVariation}" alt="Variação%" />` : ''}
+            ${imgCategory ? `<img class="chart" src="${imgCategory}" alt="Categorias" />` : ''}
+        </div>
+    </div>
+
+    <div class="section">
+        <h3>Gastos Recorrentes</h3>
+        <table>
+            <thead><tr>
+                <th>Descrição</th><th>Categoria</th><th>Dia</th>
+                <th style="text-align:right;">Planejado</th>
+                <th style="text-align:right;">Média Real</th>
+                <th style="text-align:right;">Variação</th>
+                <th style="text-align:center;">Confiabilidade</th>
+            </tr></thead>
+            <tbody>${rowsHtml}</tbody>
+        </table>
+    </div>
+</body>
+</html>`;
+
+                        win.document.open();
+                        win.document.write(html);
+                        win.document.close();
+                } catch (e) {
+                        console.error('Erro ao exportar relatório BI:', e);
+                        showNotification('Falha ao exportar relatório BI', 'error');
+                }
+        }
 
     // Função global para análise detalhada (chamada pelos botões da tabela)
     window.showDetailedAnalysis = function(expenseId) {
