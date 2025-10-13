@@ -4931,8 +4931,14 @@ document.addEventListener('DOMContentLoaded', function() {
             
             // Garantir que o canvas tenha dimensões adequadas
             canvas.style.width = '100%';
-            canvas.style.height = '300px';
-            canvas.style.maxHeight = '400px';
+            // Ajuste específico: cenário pode crescer demais
+            if (canvasId === 'scenario-chart') {
+                canvas.style.height = '240px';
+                canvas.style.maxHeight = '280px';
+            } else {
+                canvas.style.height = '300px';
+                canvas.style.maxHeight = '400px';
+            }
             canvas.width = parentWidth;
             canvas.height = Math.min(300, parentHeight);
         }
@@ -10628,8 +10634,9 @@ document.addEventListener('DOMContentLoaded', function() {
             },
             options: {
                 responsive: true,
-                maintainAspectRatio: true,
-                aspectRatio: 2.5,
+                // Para não estourar a altura em telas menores
+                maintainAspectRatio: false,
+                aspectRatio: 2,
                 plugins: {
                     legend: {
                         position: 'top'
