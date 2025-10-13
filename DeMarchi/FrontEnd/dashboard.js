@@ -5724,11 +5724,33 @@ document.addEventListener('DOMContentLoaded', function() {
             const yearToUse = analysisYear || filters.year || fallbackYear;
             const monthToUse = analysisMonth || (typeof filters.month === 'number' ? filters.month : (filters.month || fallbackMonth));
 
-            const businessData = await fetchBusinessData(yearToUse, monthToUse);
-            
+            console.debug('[BusinessDetails] loadBusinessSecondaryCharts -> params', { yearToUse, monthToUse, filters, analysisMonth, analysisYear, fallbackYear, fallbackMonth });
+
+            let businessData = await fetchBusinessData(yearToUse, monthToUse);
+
+            // Se vier completamente vazio com mês informado, tentar novamente no escopo do ano (evita mês nulo/errado)
+            const isEmptyBreakdown = (!businessData || (!businessData.total && !businessData.count) || (
+                Object.keys(businessData.byAccount || {}).length === 0 && Object.keys(businessData.byCategory || {}).length === 0 && Object.keys(businessData.byPlan || {}).length === 0
+            ));
+            if (isEmptyBreakdown && typeof monthToUse === 'number') {
+                console.warn('[BusinessDetails] Nenhum dado no mês informado. Tentando novamente com escopo anual...', { yearToUse, monthToUse });
+                try {
+                    const retryYearOnly = await fetchBusinessData(yearToUse, undefined);
+                    // Apenas substitui se de fato vier algo
+                    const retryHasData = (retryYearOnly && (retryYearOnly.total || retryYearOnly.count ||
+                        Object.keys(retryYearOnly.byAccount || {}).length > 0 || Object.keys(retryYearOnly.byCategory || {}).length > 0 || Object.keys(retryYearOnly.byPlan || {}).length > 0));
+                    if (retryHasData) {
+                        businessData = retryYearOnly;
+                        showNotification('Exibindo dados anuais por falta de dados no mês selecionado.', 'info', 2500);
+                    }
+                } catch (retryErr) {
+                    console.debug('[BusinessDetails] Falha no retry anual:', retryErr);
+                }
+            }
+
             await updateBusinessAccountChart(businessData);
             await updateBusinessCategoryChart(businessData);
-            
+
         } catch (error) {
             console.error('Erro ao carregar gráficos secundários:', error);
         }
@@ -5785,63 +5807,46 @@ document.addEventListener('DOMContentLoaded', function() {
         const minAmount = document.getElementById('business-min-amount')?.value;
         const maxAmount = document.getElementById('business-max-amount')?.value;
         const invoiceStatus = document.getElementById('business-invoice-status')?.value;
-        
+
         const currentDate = new Date();
         let year = currentDate.getFullYear();
         let month = null;
-        
+
         // Determinar período baseado na seleção
         switch (period) {
             case 'current-month':
                 month = currentDate.getMonth() + 1;
                 break;
-            case 'last-month':
+            case 'last-month': {
                 const lastMonth = currentDate.getMonth();
                 month = lastMonth === 0 ? 12 : lastMonth;
                 year = lastMonth === 0 ? year - 1 : year;
                 break;
+            }
             case 'quarter':
-                const quarter = Math.floor(currentDate.getMonth() / 3);
-                // Para trimestre, não definimos mês específico
+                // Para trimestre, não definimos mês específico (será tratado no backend quando aplicável)
                 break;
             case 'year':
                 // Ano inteiro, month permanece null
                 break;
-            case 'custom':
-                const dateFrom = document.getElementById('business-date-from')?.value;
-                const dateTo = document.getElementById('business-date-to')?.value;
-                // Para custom, precisaríamos de lógica adicional
+            case 'custom': {
+                // Campos custom ainda não aplicados nesta função
+                // const dateFrom = document.getElementById('business-date-from')?.value;
+                // const dateTo = document.getElementById('business-date-to')?.value;
+                break;
+            }
+            default:
                 break;
         }
-        
+
         return {
             period,
             year,
             month,
-            let businessData = await fetchBusinessData(yearToUse, monthToUse);
-
-            // Se vier completamente vazio com mês informado, tentar novamente no escopo do ano (evita mês nulo/errado)
-            const isEmptyBreakdown = (!businessData || (!businessData.total && !businessData.count) || (
-                Object.keys(businessData.byAccount || {}).length === 0 && Object.keys(businessData.byCategory || {}).length === 0
-            ));
-            if (isEmptyBreakdown && typeof monthToUse === 'number') {
-                console.warn('[BusinessDetails] Nenhum dado no mês informado. Tentando novamente com escopo anual...', { yearToUse, monthToUse });
-                try {
-                    const retryYearOnly = await fetchBusinessData(yearToUse, undefined);
-                    // Apenas substitui se de fato vier algo
-                    const retryHasData = (retryYearOnly && (retryYearOnly.total || retryYearOnly.count ||
-                        Object.keys(retryYearOnly.byAccount || {}).length > 0 || Object.keys(retryYearOnly.byCategory || {}).length > 0));
-                    if (retryHasData) {
-                        businessData = retryYearOnly;
-                        showNotification('Exibindo dados anuais por falta de dados no mês selecionado.', 'info', 2500);
-                    }
-                } catch (retryErr) {
-                    console.debug('[BusinessDetails] Falha no retry anual:', retryErr);
-                }
-            }
-
-            await updateBusinessAccountChart(businessData);
-            await updateBusinessCategoryChart(businessData);
+            account,
+            category,
+            search,
+            minAmount: minAmount ? parseFloat(minAmount) : null,
             maxAmount: maxAmount ? parseFloat(maxAmount) : null,
             invoiceStatus
         };
