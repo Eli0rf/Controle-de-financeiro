@@ -77,10 +77,14 @@
         .tab-button {
             border-bottom: 3px solid transparent;
             transition: all 0.3s ease;
+            background: #ffffff;
+            color: #374151; /* ensure readable text for non-active */
+            border-radius: 0.5rem;
         }
         .tab-button.active {
             border-bottom-color: #3b82f6;
             background: linear-gradient(135deg, #3b82f6 0%, #1e40af 100%);
+            color: #ffffff; /* active tab text is white */
         }
         .tab-button:not(.active):hover {
             background: #f3f4f6;
@@ -598,22 +602,22 @@
                 <!-- Botões desktop (ocultos em mobile) -->
                 <div class="hidden sm:flex items-center gap-1 md:gap-2">
                     <button id="monthly-report-btn" class="bg-blue-600 text-white px-2 md:px-4 py-2 rounded-lg flex items-center gap-1 md:gap-2 text-xs md:text-sm btn-touch">
-                        <i class="fas fa-chart-pie"></i><span class="hidden md:inline">📅 Mensal</span>
+                        📅<span class="hidden md:inline"> Mensal</span>
                     </button>
                     <button id="weekly-report-btn" class="bg-teal-500 text-white px-2 md:px-4 py-2 rounded-lg flex items-center gap-1 md:gap-2 text-xs md:text-sm btn-touch">
-                        <i class="fas fa-file-pdf"></i><span class="hidden md:inline">🗓️ Semanal</span>
+                        🗓️<span class="hidden md:inline"> Semanal</span>
                     </button>
                     <button id="interactive-report-btn" class="bg-purple-500 text-white px-2 md:px-4 py-2 rounded-lg flex items-center gap-1 md:gap-2 text-xs md:text-sm btn-touch">
-                        <i class="fas fa-chart-bar"></i><span class="hidden lg:inline">📊 Interativo</span>
+                        📊<span class="hidden lg:inline"> Interativo</span>
                     </button>
                     <button id="recurring-expenses-btn" class="bg-orange-500 text-white px-2 md:px-4 py-2 rounded-lg flex items-center gap-1 md:gap-2 text-xs md:text-sm btn-touch">
-                        <i class="fas fa-sync-alt"></i><span class="hidden lg:inline">🔄 Recorrentes</span>
+                        🔄<span class="hidden lg:inline"> Recorrentes</span>
                     </button>
                     <button id="period-analysis-btn" class="bg-indigo-500 text-white px-2 md:px-4 py-2 rounded-lg flex items-center gap-1 md:gap-2 text-xs md:text-sm btn-touch">
-                        <i class="fas fa-calendar-alt"></i><span class="hidden lg:inline">📊 Período</span>
+                        📊<span class="hidden lg:inline"> Período</span>
                     </button>
                     <button id="logout-button" class="bg-red-500 text-white px-2 md:px-4 py-2 rounded-lg flex items-center gap-1 md:gap-2 text-xs md:text-sm btn-touch">
-                        <i class="bi bi-box-arrow-right"></i><span class="hidden md:inline"> Sair</span>
+                        ↪️<span class="hidden md:inline"> Sair</span>
                     </button>
                 </div>
             </div>
@@ -626,16 +630,16 @@
                     <button class="tab-button active flex-1 px-6 py-4 text-center font-medium transition-all duration-300 bg-blue-500 text-white" data-tab="dashboard">
                         <i class="fas fa-tachometer-alt mr-2"></i>📊 Dashboard
                     </button>
-                    <button class="tab-button flex-1 px-6 py-4 text-center font-medium transition-all duration-300 hover:bg-gray-50" data-tab="pix-boleto">
+                    <button class="tab-button flex-1 px-6 py-4 text-center font-medium transition-all duration-300 bg-white text-gray-700 hover:bg-gray-50" data-tab="pix-boleto">
                         <i class="fas fa-mobile-alt mr-2"></i>💳 PIX & Boleto
                     </button>
-                    <button class="tab-button flex-1 px-6 py-4 text-center font-medium transition-all duration-300 hover:bg-gray-50" data-tab="business-analysis">
+                    <button class="tab-button flex-1 px-6 py-4 text-center font-medium transition-all duration-300 bg-white text-gray-700 hover:bg-gray-50" data-tab="business-analysis">
                         <i class="fas fa-briefcase mr-2"></i>💼 Análise Empresarial
                     </button>
-                    <button class="tab-button flex-1 px-6 py-4 text-center font-medium transition-all duration-300 hover:bg-gray-50" data-tab="expenses">
+                    <button class="tab-button flex-1 px-6 py-4 text-center font-medium transition-all duration-300 bg-white text-gray-700 hover:bg-gray-50" data-tab="expenses">
                         <i class="fas fa-list mr-2"></i>📝 Gastos
                     </button>
-                    <button class="tab-button flex-1 px-6 py-4 text-center font-medium transition-all duration-300 hover:bg-gray-50" data-tab="reports">
+                    <button class="tab-button flex-1 px-6 py-4 text-center font-medium transition-all duration-300 bg-white text-gray-700 hover:bg-gray-50" data-tab="reports">
                         <i class="fas fa-chart-bar mr-2"></i>📈 Relatórios
                     </button>
                 </nav>
