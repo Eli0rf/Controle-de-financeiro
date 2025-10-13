@@ -11209,15 +11209,22 @@ document.addEventListener('DOMContentLoaded', function() {
     // ========== SISTEMA DE ANÁLISE DE PLANO DE CONTAS ==========
     
     async function analyzeChartUsage() {
-        // Garantir defaults para não bloquear geração de "💡 Insights"
-        const period = (chartAnalysisPeriod && chartAnalysisPeriod.value) ? chartAnalysisPeriod.value : 'current-month';
+        // Agora o seletor é mensal (1-12). Se ausente, usa mês do filtro global
+        const selectedMonth = (chartAnalysisPeriod && chartAnalysisPeriod.value)
+            ? parseInt(chartAnalysisPeriod.value, 10)
+            : (filterMonth && filterMonth.value ? parseInt(filterMonth.value, 10) : (new Date().getMonth() + 1));
         const analysisType = (chartAnalysisType && chartAnalysisType.value) ? chartAnalysisType.value : 'usage-frequency';
         
         try {
             showNotification('🔍 Analisando plano de contas...', 'info');
             
-            // Buscar dados baseado no período
-            const { startDate, endDate } = getPeriodDates(period);
+            // Buscar dados do mês selecionado no ano selecionado
+            const baseYear = (filterYear && filterYear.value) ? parseInt(filterYear.value, 10) : new Date().getFullYear();
+            const baseMonthIdx = Math.max(1, Math.min(12, selectedMonth)) - 1; // 0-11
+            const startDateObj = new Date(baseYear, baseMonthIdx, 1);
+            const endDateObj = new Date(baseYear, baseMonthIdx + 1, 0);
+            const startDate = startDateObj.toISOString().split('T')[0];
+            const endDate = endDateObj.toISOString().split('T')[0];
             const expenses = await fetchExpensesForAnalysis(startDate, endDate);
             
             // Processar dados baseado no tipo de análise
