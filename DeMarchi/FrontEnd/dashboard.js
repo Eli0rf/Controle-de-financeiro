@@ -704,8 +704,11 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         
         // Event listeners para alertas de orçamento por plano de contas
-        if (checkChartBudgetBtn) checkChartBudgetBtn.addEventListener('click', checkChartBudgetAlerts);
-        if (analyzeChartUsageBtn) analyzeChartUsageBtn.addEventListener('click', analyzeChartUsage);
+    if (checkChartBudgetBtn) checkChartBudgetBtn.addEventListener('click', checkChartBudgetAlerts);
+    if (analyzeChartUsageBtn) analyzeChartUsageBtn.addEventListener('click', analyzeChartUsage);
+    // Quando o mês ou tipo de análise mudar, recalcular automaticamente
+    if (chartAnalysisPeriod) chartAnalysisPeriod.addEventListener('change', analyzeChartUsage);
+    if (chartAnalysisType) chartAnalysisType.addEventListener('change', analyzeChartUsage);
         
         // Inicializar campos de ano e mês
         initializeBudgetFilters();
@@ -5345,6 +5348,10 @@ document.addEventListener('DOMContentLoaded', function() {
             try {
                 const analyzeBtn = document.getElementById('analyze-chart-usage');
                 if (analyzeBtn) {
+                    // Sincronizar seletor mensal com filtro global, se existir
+                    if (chartAnalysisPeriod && filterMonth && filterMonth.value) {
+                        chartAnalysisPeriod.value = String(parseInt(filterMonth.value, 10));
+                    }
                     await analyzeChartUsage();
                 }
             } catch (autoErr) {
@@ -6133,9 +6140,18 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     // Função para buscar dados do dashboard (normalizado para o sistema de insights)
-    async function fetchDashboardData() {
+    async function fetchDashboardData(yearOverride, monthOverride) {
         try {
-            const { year, month } = getCurrentPeriod();
+            // Permite sobrescrever ano/mês para sincronizar com filtros de análise
+            let year, month;
+            if (yearOverride && monthOverride) {
+                year = String(yearOverride);
+                month = String(monthOverride);
+            } else {
+                const cur = getCurrentPeriod();
+                year = cur.year;
+                month = cur.month;
+            }
             console.log(`📊 Buscando dados p/ insights: ano=${year}, mês=${month}`);
 
             // Calcular janela de 6 meses para métricas históricas
@@ -6219,6 +6235,52 @@ document.addEventListener('DOMContentLoaded', function() {
                 growthRate: 0,
                 variationCoefficient: 0
             };
+        }
+    }
+
+    // Atualiza o 📈 Status Financeiro e ⚠️ Indicadores de Risco para um ano/mês específicos
+    async function updateFinancialStatus(year, month) {
+        try {
+            const statusContainer = document.getElementById('financial-status');
+            const riskContainer = document.getElementById('risk-indicators');
+            if (!statusContainer && !riskContainer) return;
+
+            const data = await fetchDashboardData(year, month);
+            const status = calculateFinancialStatus(data);
+            const risks = calculateRiskIndicators(data);
+
+            if (statusContainer) {
+                statusContainer.innerHTML = `
+                    <div class="flex justify-between items-center">
+                        <span class="text-sm text-gray-600">Saúde Financeira</span>
+                        <span class="font-semibold text-${status.health.color}-600">${status.health.label}</span>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <span class="text-sm text-gray-600">Tendência</span>
+                        <span class="font-semibold text-${status.trend.color}-600">${status.trend.icon} ${status.trend.label}</span>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <span class="text-sm text-gray-600">Liquidez</span>
+                        <span class="font-semibold text-${status.liquidity.color}-600">${status.liquidity.label}</span>
+                    </div>
+                `;
+            }
+
+            if (riskContainer) {
+                riskContainer.innerHTML = risks.map(risk => `
+                    <div class="flex justify-between items-center">
+                        <span class="text-sm text-gray-600">${risk.name}</span>
+                        <div class="flex items-center space-x-2">
+                            <div class="w-16 h-2 bg-gray-200 rounded">
+                                <div class="h-full bg-${risk.color}-500 rounded" style="width: ${risk.value}%"></div>
+                            </div>
+                            <span class="text-xs font-medium text-${risk.color}-600">${risk.value}%</span>
+                        </div>
+                    </div>
+                `).join('');
+            }
+        } catch (e) {
+            console.error('Erro ao atualizar Status Financeiro para período:', e);
         }
     }
 
@@ -11234,6 +11296,9 @@ document.addEventListener('DOMContentLoaded', function() {
             updateChartAnalysisVisualization(analysisData, analysisType);
             updateChartAnalysisInsights(analysisData, analysisType);
             updateChartDetailsTable(analysisData);
+
+            // Sincronizar 📈 Status Financeiro e ⚠️ Riscos com o mesmo filtro de análise
+            await updateFinancialStatus(baseYear, selectedMonth);
             
             showNotification('✅ Análise concluída com sucesso!', 'success');
             
