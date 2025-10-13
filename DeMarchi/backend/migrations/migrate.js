@@ -2,6 +2,35 @@ const { pool } = require('../config/database');
 const fs = require('fs');
 const path = require('path');
 
+// Helpers para garantir colunas e índices de forma idempotente
+async function ensureColumn(connection, tableName, columnName, columnDefinition) {
+  const [rows] = await connection.query(
+    `SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?`,
+    [tableName, columnName]
+  );
+  if (rows.length === 0) {
+    const sql = `ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${columnDefinition}`;
+    await connection.query(sql);
+    console.log(`✓ Coluna adicionada: ${tableName}.${columnName}`);
+  } else {
+    // console.log(`↺ Coluna já existe: ${tableName}.${columnName}`);
+  }
+}
+
+async function ensureIndex(connection, tableName, indexName, indexColumnsClause) {
+  const [rows] = await connection.query(
+    `SELECT 1 FROM INFORMATION_SCHEMA.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND INDEX_NAME = ?`,
+    [tableName, indexName]
+  );
+  if (rows.length === 0) {
+    const sql = `CREATE INDEX ${indexName} ON ${tableName}(${indexColumnsClause})`;
+    await connection.query(sql);
+    console.log(`✓ Índice criado: ${indexName} em ${tableName}`);
+  } else {
+    // console.log(`↺ Índice já existe: ${indexName} em ${tableName}`);
+  }
+}
+
 // Função para executar arquivos SQL
 async function executeSQLFile(filePath) {
   try {
@@ -126,30 +155,10 @@ async function createDatabase() {
       console.log('⚠️  Aviso ao alterar ENUM de account:', e.message);
     }
 
-    // Garantir colunas novas em bancos existentes
-    try {
-      await connection.query(`ALTER TABLE recurring_expenses ADD COLUMN IF NOT EXISTS category VARCHAR(255) NULL AFTER account`);
-    } catch (e) {
-      if (!/Duplicate column/i.test(e.message)) {
-        console.log('⚠️  Aviso ao adicionar coluna category em recurring_expenses:', e.message);
-      }
-    }
-
-    try {
-      await connection.query(`ALTER TABLE expenses ADD COLUMN IF NOT EXISTS category VARCHAR(255) NULL AFTER description`);
-    } catch (e) {
-      if (!/Duplicate column/i.test(e.message)) {
-        console.log('⚠️  Aviso ao adicionar coluna category em expenses:', e.message);
-      }
-    }
-
-    try {
-      await connection.query(`ALTER TABLE expenses ADD COLUMN IF NOT EXISTS recurring_expense_id INT(11) NULL AFTER is_recurring_expense`);
-    } catch (e) {
-      if (!/Duplicate column/i.test(e.message)) {
-        console.log('⚠️  Aviso ao adicionar coluna recurring_expense_id em expenses:', e.message);
-      }
-    }
+    // Garantir colunas novas em bancos existentes (sem IF NOT EXISTS, usando INFORMATION_SCHEMA)
+    await ensureColumn(connection, 'recurring_expenses', 'category', 'VARCHAR(255) NULL');
+    await ensureColumn(connection, 'expenses', 'category', 'VARCHAR(255) NULL');
+    await ensureColumn(connection, 'expenses', 'recurring_expense_id', 'INT(11) NULL');
     
     // Criar tabela recurring_expense_processing
     await connection.query(`
@@ -187,10 +196,8 @@ async function createDatabase() {
       if (!indexNames.includes('idx_expenses_account_date')) {
         await connection.query(`CREATE INDEX idx_expenses_account_date ON expenses(account, transaction_date)`);
       }
-
-      if (!indexNames.includes('recurring_expense_id')) {
-        await connection.query(`CREATE INDEX idx_expenses_recurring_id ON expenses(recurring_expense_id)`);
-      }
+      // Índice para o relacionamento de despesas recorrentes
+      await ensureIndex(connection, 'expenses', 'idx_expenses_recurring_id', 'recurring_expense_id');
       
       // Para recurring_expenses
       const [recurringIndexes] = await connection.query(`
