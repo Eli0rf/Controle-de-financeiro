@@ -1196,45 +1196,13 @@ document.addEventListener('DOMContentLoaded', function() {
                 return false;
             }
 
-            // Definir tetos de cada plano (baseado no código anterior)
-            const tetos = {
-                1: 1000.00, 2: 2782.47, 3: 2431.67, 4: 350.00, 5: 2100.00,
-                6: 586.23, 7: 270.00, 8: 1200.00, 9: 1200.00, 10: 270.00,
-                11: 1895.40, 12: 2027.60, 13: 270.00, 14: 63.54, 15: 129.90,
-                16: 59.90, 17: 4096.09, 18: 1410.36, 19: 300.00, 20: 300.00,
-                21: 150.00, 22: 1134.00, 23: 500.00, 24: 1000.00, 25: 350.00,
-                26: 1000.00, 27: 500.00, 28: 450.00, 29: 285.00, 30: 700.00,
-                31: 274.31, 32: 450.00, 33: 100.00, 34: 54.80, 35: 1.00,
-                36: 1.00, 37: 1.00, 38: 1.00, 39: 300.00, 40: 1.00,
-                41: 1.00, 42: 1.00, 43: 210.00, 44: 1.00, 45: 13061.75,
-                46: 650.00, 47: 650.00
-            };
-
-            // Calcular totais por plano a partir dos dados de despesas
-            const planTotals = {};
-            data.forEach(expense => {
-                const planId = expense.account_plan_code || expense.plan_conta;
-                if (planId) {
-                    planTotals[planId] = (planTotals[planId] || 0) + parseFloat(expense.amount || 0);
-                }
-            });
-
-            console.log('💰 Totais calculados por plano:', planTotals);
-
-            // Criar dados do gráfico apenas para planos que têm gastos ou tetos
-            const chartData = [];
-            Object.keys({...tetos, ...planTotals}).forEach(planId => {
-                const total = planTotals[planId] || 0;
-                const teto = tetos[planId] || 0;
-                
-                if (total > 0 || teto > 0) {
-                    chartData.push({
-                        PlanoContasID: planId,
-                        Total: total,
-                        Teto: teto
-                    });
-                }
-            });
+            // Normalizar dados agregados vindos do backend (PlanoContasID, Total, Teto, Percentual)
+            const chartData = (data || []).map(item => ({
+                PlanoContasID: String(item.PlanoContasID),
+                Total: parseFloat(item.Total) || 0,
+                Teto: parseFloat(item.Teto) || 0,
+                Percentual: parseFloat(item.Percentual) || 0
+            }));
 
             if (chartData.length === 0) {
                 console.log('❌ Nenhum plano com gastos ou limites para exibir');
@@ -1248,8 +1216,8 @@ document.addEventListener('DOMContentLoaded', function() {
             console.log('📊 Dados do gráfico:', sortedData);
 
             const labels = sortedData.map(d => `Plano ${d.PlanoContasID}`);
-            const limitData = sortedData.map(d => parseFloat(d.Teto) || 0);
-            const currentData = sortedData.map(d => parseFloat(d.Total) || 0);
+            const limitData = sortedData.map(d => d.Teto);
+            const currentData = sortedData.map(d => d.Total);
 
             chartRegistry.goalsChart = new Chart(ctx, {
                 type: 'bar',
@@ -1278,20 +1246,14 @@ document.addEventListener('DOMContentLoaded', function() {
                             valueColor: CHART_CONFIG.valueColor,
                             valueFont: CHART_CONFIG.valueFont,
                             backgroundColor: sortedData.map(item => {
-                                const current = parseFloat(item.Total) || 0;
-                                const limit = parseFloat(item.Teto) || 0;
-                                const percentage = limit > 0 ? (current / limit) * 100 : 0;
-                                
-                                if (percentage > 100) return 'rgba(239, 68, 68, 0.8)'; // Vermelho - Ultrapassou
-                                if (percentage >= 90) return 'rgba(251, 146, 60, 0.8)'; // Laranja - Quase no limite
-                                if (percentage >= 70) return 'rgba(250, 204, 21, 0.8)'; // Amarelo - Atenção
-                                return 'rgba(34, 197, 94, 0.8)'; // Verde - Seguro
+                                const percentage = item.Percentual || (item.Teto > 0 ? (item.Total / item.Teto) * 100 : 0);
+                                if (percentage > 100) return 'rgba(239, 68, 68, 0.8)';
+                                if (percentage >= 90) return 'rgba(251, 146, 60, 0.8)';
+                                if (percentage >= 70) return 'rgba(250, 204, 21, 0.8)';
+                                return 'rgba(34, 197, 94, 0.8)';
                             }),
                             borderColor: sortedData.map(item => {
-                                const current = parseFloat(item.Total) || 0;
-                                const limit = parseFloat(item.Teto) || 0;
-                                const percentage = limit > 0 ? (current / limit) * 100 : 0;
-                                
+                                const percentage = item.Percentual || (item.Teto > 0 ? (item.Total / item.Teto) * 100 : 0);
                                 if (percentage > 100) return 'rgba(239, 68, 68, 1)';
                                 if (percentage >= 90) return 'rgba(251, 146, 60, 1)';
                                 if (percentage >= 70) return 'rgba(250, 204, 21, 1)';
@@ -1342,9 +1304,7 @@ document.addEventListener('DOMContentLoaded', function() {
                                     const value = context.parsed.y;
                                     const index = context.dataIndex;
                                     const item = sortedData[index];
-                                    const current = parseFloat(item.Total) || 0;
-                                    const limit = parseFloat(item.Teto) || 0;
-                                    const percentage = limit > 0 ? ((current / limit) * 100).toFixed(1) : '0.0';
+                                    const percentage = (item.Percentual || (item.Teto > 0 ? (item.Total / item.Teto) * 100 : 0)).toFixed(1);
                                     
                                     if (context.dataset.label.includes('Teto')) {
                                         return `${context.dataset.label}: ${formatCurrency(value)}`;
@@ -1356,10 +1316,8 @@ document.addEventListener('DOMContentLoaded', function() {
                                     if (context.length > 0) {
                                         const index = context[0].dataIndex;
                                         const item = sortedData[index];
-                                        const current = parseFloat(item.Total) || 0;
-                                        const limit = parseFloat(item.Teto) || 0;
-                                        const remaining = Math.max(0, limit - current);
-                                        const percentage = limit > 0 ? ((current / limit) * 100).toFixed(1) : '0.0';
+                                        const remaining = Math.max(0, item.Teto - item.Total);
+                                        const percentage = (item.Percentual || (item.Teto > 0 ? (item.Total / item.Teto) * 100 : 0)).toFixed(1);
                                         
                                         let status = '';
                                         if (current > limit) {
@@ -1393,9 +1351,7 @@ document.addEventListener('DOMContentLoaded', function() {
                                 } else {
                                     const index = context.dataIndex;
                                     const item = sortedData[index];
-                                    const current = parseFloat(item.Total) || 0;
-                                    const limit = parseFloat(item.Teto) || 0;
-                                    const percentage = limit > 0 ? ((current / limit) * 100).toFixed(0) : '0';
+                                    const percentage = (item.Percentual || (item.Teto > 0 ? (item.Total / item.Teto) * 100 : 0)).toFixed(0);
                                     return value > 0 ? `${percentage}%` : '';
                                 }
                             }
@@ -1485,43 +1441,13 @@ document.addEventListener('DOMContentLoaded', function() {
                 return false;
             }
 
-            // Definir tetos de cada plano (baseado no código anterior)
-            const tetos = {
-                1: 1000.00, 2: 2782.47, 3: 2431.67, 4: 350.00, 5: 2100.00,
-                6: 586.23, 7: 270.00, 8: 1200.00, 9: 1200.00, 10: 270.00,
-                11: 1895.40, 12: 2027.60, 13: 270.00, 14: 63.54, 15: 129.90,
-                16: 59.90, 17: 4096.09, 18: 1410.36, 19: 300.00, 20: 300.00,
-                21: 150.00, 22: 1134.00, 23: 500.00, 24: 1000.00, 25: 350.00,
-                26: 1000.00, 27: 500.00, 28: 450.00, 29: 285.00, 30: 700.00,
-                31: 274.31, 32: 450.00, 33: 100.00, 34: 54.80, 35: 1.00,
-                36: 1.00, 37: 1.00, 38: 1.00, 39: 300.00, 40: 1.00, 41: 1.00, 
-                42: 1.00, 43: 210.00, 44: 1.00, 45: 13061.75,
-                46: 600.00, 47: 600.00
-            };
-
-            // Calcular totais por plano a partir dos dados de despesas
-            const planTotals = {};
-            data.forEach(expense => {
-                const planId = expense.account_plan_code || expense.plan_conta;
-                if (planId) {
-                    planTotals[planId] = (planTotals[planId] || 0) + parseFloat(expense.amount || 0);
-                }
-            });
-
-            // Criar dados apenas para planos que têm gastos ou tetos
-            const chartData = [];
-            Object.keys({...tetos, ...planTotals}).forEach(planId => {
-                const total = planTotals[planId] || 0;
-                const teto = tetos[planId] || 0;
-                
-                if (total > 0 || teto > 0) {
-                    chartData.push({
-                        PlanoContasID: planId,
-                        Total: total,
-                        Teto: teto
-                    });
-                }
-            });
+            // Normalizar dados já agregados pelo backend (PlanoContasID, Total, Teto, Percentual)
+            const chartData = (data || []).map(item => ({
+                PlanoContasID: String(item.PlanoContasID),
+                Total: parseFloat(item.Total) || 0,
+                Teto: parseFloat(item.Teto) || 0,
+                Percentual: parseFloat(item.Percentual) || 0
+            }));
 
             if (chartData.length === 0) {
                 console.log('❌ Nenhum plano com dados para exibir');
@@ -1533,8 +1459,8 @@ document.addEventListener('DOMContentLoaded', function() {
             const filteredData = sortedData; // Para usar no subtitle
 
             const labels = sortedData.map(d => `Plano ${d.PlanoContasID}`);
-            const limitData = sortedData.map(d => parseFloat(d.Teto) || 0);
-            const currentData = sortedData.map(d => parseFloat(d.Total) || 0);
+            const limitData = sortedData.map(d => d.Teto);
+            const currentData = sortedData.map(d => d.Total);
 
             charts['goalsPlanChart'] = new Chart(ctx, {
                 type: 'bar',
@@ -1552,20 +1478,14 @@ document.addEventListener('DOMContentLoaded', function() {
                             label: '💰 Gasto Atual',
                             data: currentData,
                             backgroundColor: sortedData.map(item => {
-                                const current = parseFloat(item.Total) || 0;
-                                const limit = parseFloat(item.Teto) || 0;
-                                const percentage = limit > 0 ? (current / limit) * 100 : 0;
-                                
-                                if (percentage > 100) return 'rgba(239, 68, 68, 0.8)'; // Vermelho - Ultrapassou
-                                if (percentage >= 90) return 'rgba(251, 146, 60, 0.8)'; // Laranja - Quase no limite
-                                if (percentage >= 70) return 'rgba(250, 204, 21, 0.8)'; // Amarelo - Atenção
-                                return 'rgba(59, 130, 246, 0.8)'; // Azul - Normal
+                                const percentage = item.Percentual || (item.Teto > 0 ? (item.Total / item.Teto) * 100 : 0);
+                                if (percentage > 100) return 'rgba(239, 68, 68, 0.8)';
+                                if (percentage >= 90) return 'rgba(251, 146, 60, 0.8)';
+                                if (percentage >= 70) return 'rgba(250, 204, 21, 0.8)';
+                                return 'rgba(59, 130, 246, 0.8)';
                             }),
                             borderColor: sortedData.map(item => {
-                                const current = parseFloat(item.Total) || 0;
-                                const limit = parseFloat(item.Teto) || 0;
-                                const percentage = limit > 0 ? (current / limit) * 100 : 0;
-                                
+                                const percentage = item.Percentual || (item.Teto > 0 ? (item.Total / item.Teto) * 100 : 0);
                                 if (percentage > 100) return 'rgba(239, 68, 68, 1)';
                                 if (percentage >= 90) return 'rgba(251, 146, 60, 1)';
                                 if (percentage >= 70) return 'rgba(250, 204, 21, 1)';
@@ -1617,9 +1537,7 @@ document.addEventListener('DOMContentLoaded', function() {
                                     const value = context.parsed.y;
                                     const index = context.dataIndex;
                                     const item = sortedData[index];
-                                    const current = parseFloat(item.Total) || 0;
-                                    const limit = parseFloat(item.Teto) || 0;
-                                    const percentage = limit > 0 ? ((current / limit) * 100).toFixed(1) : '0.0';
+                                    const percentage = (item.Percentual || (item.Teto > 0 ? (item.Total / item.Teto) * 100 : 0)).toFixed(1);
                                     
                                     if (context.dataset.label.includes('Limite')) {
                                         return `${context.dataset.label}: ${formatCurrency(value)}`;
@@ -1631,14 +1549,11 @@ document.addEventListener('DOMContentLoaded', function() {
                                     if (context.length > 0) {
                                         const index = context[0].dataIndex;
                                         const item = sortedData[index];
-                                        const current = parseFloat(item.Total) || 0;
-                                        const limit = parseFloat(item.Teto) || 0;
-                                        
-                                        if (current > limit) {
-                                            const excess = current - limit;
+                                        if (item.Total > item.Teto) {
+                                            const excess = item.Total - item.Teto;
                                             return `⚠️ Excesso: R$ ${excess.toFixed(2)}`;
                                         } else {
-                                            const remaining = limit - current;
+                                            const remaining = item.Teto - item.Total;
                                             return `✅ Disponível: R$ ${remaining.toFixed(2)}`;
                                         }
                                     }
@@ -1660,9 +1575,7 @@ document.addEventListener('DOMContentLoaded', function() {
                                 } else {
                                     const index = context.dataIndex;
                                     const item = sortedData[index];
-                                    const current = parseFloat(item.Total) || 0;
-                                    const limit = parseFloat(item.Teto) || 0;
-                                    const percentage = limit > 0 ? ((current / limit) * 100).toFixed(0) : '0';
+                                    const percentage = (item.Percentual || (item.Teto > 0 ? (item.Total / item.Teto) * 100 : 0)).toFixed(0);
                                     return value > 0 ? `${percentage}%` : '';
                                 }
                             }
@@ -10996,59 +10909,29 @@ document.addEventListener('DOMContentLoaded', function() {
     function updateBudgetSummary(budgetData) {
         if (!budgetSummary) return;
         
-        // Definir tetos de cada plano (baseado no código anterior)
-        const tetos = {
-            1: 1000.00, 2: 2782.47, 3: 2431.67, 4: 350.00, 5: 2100.00,
-                6: 586.23, 7: 270.00, 8: 1200.00, 9: 1200.00, 10: 270.00,
-                11: 1895.40, 12: 2027.60, 13: 270.00, 14: 63.54, 15: 129.90,
-                16: 59.90, 17: 4096.09, 18: 1410.36, 19: 300.00, 20: 300.00,
-                21: 150.00, 22: 1134.00, 23: 500.00, 24: 1000.00, 25: 350.00,
-                26: 1000.00, 27: 500.00, 28: 450.00, 29: 285.00, 30: 700.00,
-                31: 274.31, 32: 450.00, 33: 100.00, 34: 54.80, 35: 1.00,
-                36: 1.00, 37: 1.00, 38: 1.00, 39: 300.00, 40: 1.00, 41: 1.00, 
-                42: 1.00, 43: 210.00, 44: 1.00, 45: 13061.75,
-                46: 600.00, 47: 600.00
-        };
-        
-        // Calcular estatísticas dos planos de contas
-        const totalPlanos = Object.keys(tetos).length;
-        const totalOrcamento = Object.values(tetos).reduce((sum, val) => sum + val, 0);
-        
-        // Processar dados de gastos por plano
-        const planTotals = {};
-        budgetData.forEach(expense => {
-            const planId = expense.account_plan_code || expense.plan_conta;
-            if (planId) {
-                planTotals[planId] = (planTotals[planId] || 0) + parseFloat(expense.amount || 0);
-            }
-        });
-        
-        // Calcular estatísticas
-        let planosComGastos = 0;
-        let totalGasto = 0;
+        // Usar dados agregados do backend (cada item contém PlanoContasID, Total, Teto, Percentual)
+        const normalized = (budgetData || []).map(item => ({
+            PlanoContasID: String(item.PlanoContasID),
+            Total: parseFloat(item.Total) || 0,
+            Teto: parseFloat(item.Teto) || 0,
+            Percentual: parseFloat(item.Percentual) || 0
+        }));
+
+        const totalPlanos = normalized.length;
+        const totalOrcamento = normalized.reduce((sum, it) => sum + it.Teto, 0);
+        const totalGasto = normalized.reduce((sum, it) => sum + it.Total, 0);
+
         let planosAcimaTeto = 0;
         let planosProximoTeto = 0;
         let planosDentroTeto = 0;
-        
-        Object.keys(tetos).forEach(planId => {
-            const teto = tetos[planId];
-            const gasto = planTotals[planId] || 0;
-            
-            if (gasto > 0) {
-                planosComGastos++;
-                totalGasto += gasto;
-                
-                const percentage = (gasto / teto) * 100;
-                if (percentage > 100) {
-                    planosAcimaTeto++;
-                } else if (percentage >= 80) {
-                    planosProximoTeto++;
-                } else {
-                    planosDentroTeto++;
-                }
-            }
+        normalized.forEach(it => {
+            const p = it.Percentual || (it.Teto > 0 ? (it.Total / it.Teto) * 100 : 0);
+            if (p > 100) planosAcimaTeto++;
+            else if (p >= 80) planosProximoTeto++;
+            else planosDentroTeto++;
         });
-        
+
+        const planosComGastos = normalized.filter(it => it.Total > 0).length;
         const utilizacaoOrcamento = totalOrcamento > 0 ? ((totalGasto / totalOrcamento) * 100).toFixed(1) : 0;
         
         budgetSummary.innerHTML = `
@@ -11091,21 +10974,7 @@ document.addEventListener('DOMContentLoaded', function() {
     function updateChartBudgetAlerts(budgetData) {
         if (!chartBudgetAlertsContainer) return;
         
-        // Definir tetos de cada plano
-        const tetos = {
-            1: 1000.00, 2: 2782.47, 3: 2431.67, 4: 350.00, 5: 2100.00,
-                6: 586.23, 7: 270.00, 8: 1200.00, 9: 1200.00, 10: 270.00,
-                11: 1895.40, 12: 2027.60, 13: 270.00, 14: 63.54, 15: 129.90,
-                16: 59.90, 17: 4096.09, 18: 1410.36, 19: 300.00, 20: 300.00,
-                21: 150.00, 22: 1134.00, 23: 500.00, 24: 1000.00, 25: 350.00,
-                26: 1000.00, 27: 500.00, 28: 450.00, 29: 285.00, 30: 700.00,
-                31: 274.31, 32: 450.00, 33: 100.00, 34: 54.80, 35: 1.00,
-                36: 1.00, 37: 1.00, 38: 1.00, 39: 300.00, 40: 1.00, 41: 1.00, 
-                42: 1.00, 43: 210.00, 44: 1.00, 45: 13061.75,
-                46: 600.00, 47: 600.00
-        };
-        
-        // Nomes descritivos dos planos de contas
+        // Nomes descritivos dos planos de contas (opcional, manter mapeamento simples local)
         const planosNomes = {
             1: 'Alimentação Geral', 2: 'Veículos e Transporte', 3: 'Moradia e Habitação',
             4: 'Comunicações', 5: 'Saúde e Bem-estar', 6: 'Educação e Cultura',
@@ -11122,15 +10991,14 @@ document.addEventListener('DOMContentLoaded', function() {
             37: 'IPTU', 38: 'IPVA', 39: 'Seguro Auto', 40: 'Seguro Residencial'
         };
         
-        // Processar dados de gastos por plano
-        const planTotals = {};
-        budgetData.forEach(expense => {
-            const planId = expense.account_plan_code || expense.plan_conta;
-            if (planId) {
-                planTotals[planId] = (planTotals[planId] || 0) + parseFloat(expense.amount || 0);
-            }
-        });
-        
+        // Usar dados agregados do backend diretamente
+        const normalized = (budgetData || []).map(item => ({
+            PlanoContasID: String(item.PlanoContasID),
+            Total: parseFloat(item.Total) || 0,
+            Teto: parseFloat(item.Teto) || 0,
+            Percentual: parseFloat(item.Percentual) || 0
+        }));
+
         // Categorizar planos por status
         const categorizedPlans = {
             'Acima do Limite': [],
@@ -11139,22 +11007,21 @@ document.addEventListener('DOMContentLoaded', function() {
             'Sem Gastos': []
         };
         
-        Object.keys(tetos).forEach(planId => {
-            const teto = tetos[planId];
-            const gasto = planTotals[planId] || 0;
+        normalized.forEach(item => {
+            const planId = item.PlanoContasID;
             const nome = planosNomes[planId] || `Plano ${planId}`;
-            const percentage = gasto > 0 ? (gasto / teto) * 100 : 0;
-            
+            const percentage = item.Percentual || (item.Teto > 0 ? (item.Total / item.Teto) * 100 : 0);
+
             const planData = {
                 id: planId,
                 nome: nome,
-                teto: teto,
-                gasto: gasto,
+                teto: item.Teto,
+                gasto: item.Total,
                 percentage: percentage,
-                remaining: Math.max(0, teto - gasto)
+                remaining: Math.max(0, item.Teto - item.Total)
             };
-            
-            if (gasto === 0) {
+
+            if (item.Total === 0) {
                 categorizedPlans['Sem Gastos'].push(planData);
             } else if (percentage > 100) {
                 categorizedPlans['Acima do Limite'].push(planData);
@@ -11342,10 +11209,9 @@ document.addEventListener('DOMContentLoaded', function() {
     // ========== SISTEMA DE ANÁLISE DE PLANO DE CONTAS ==========
     
     async function analyzeChartUsage() {
-        if (!chartAnalysisPeriod || !chartAnalysisType) return;
-        
-        const period = chartAnalysisPeriod.value;
-        const analysisType = chartAnalysisType.value;
+        // Garantir defaults para não bloquear geração de "💡 Insights"
+        const period = (chartAnalysisPeriod && chartAnalysisPeriod.value) ? chartAnalysisPeriod.value : 'current-month';
+        const analysisType = (chartAnalysisType && chartAnalysisType.value) ? chartAnalysisType.value : 'usage-frequency';
         
         try {
             showNotification('🔍 Analisando plano de contas...', 'info');
@@ -11501,6 +11367,19 @@ document.addEventListener('DOMContentLoaded', function() {
         // Destruir gráfico anterior se existir
         if (chartAnalysisChart) {
             chartAnalysisChart.destroy();
+        }
+
+        // Fallback quando não há categorias
+        if (!data || !Array.isArray(data.categories) || data.categories.length === 0) {
+            if (chartUsageInsights) {
+                chartUsageInsights.innerHTML = `
+                    <div class="text-center text-gray-500 py-8">
+                        <i class="fas fa-info-circle text-2xl mb-2"></i>
+                        <p>Sem dados para o período selecionado.</p>
+                    </div>
+                `;
+            }
+            return;
         }
         
         const ctx = chartUsageChart.getContext('2d');
@@ -11670,6 +11549,16 @@ document.addEventListener('DOMContentLoaded', function() {
     
     function generateChartInsights(data, analysisType) {
         const insights = [];
+        if (!data || !Array.isArray(data.categories) || data.categories.length === 0) {
+            return [{
+                icon: 'ℹ️',
+                title: 'Sem dados',
+                description: 'Não há transações no período selecionado para gerar insights.',
+                color: 'border-gray-400',
+                recommendation: null
+            }];
+        }
+
         const topCategory = data.categories[0];
         const bottomCategory = data.categories[data.categories.length - 1];
         
