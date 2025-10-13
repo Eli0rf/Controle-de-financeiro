@@ -4653,13 +4653,12 @@ app.get('/api/business/summary', authenticateToken, async (req, res) => {
         accountQuery += ' GROUP BY account ORDER BY total DESC';
         const [accountData] = await pool.query(accountQuery, accountParams);
         
-        // Query para dados por categoria
+        // Query para dados por categoria (descrição) - mantido para compatibilidade
         let categoryQuery = `
             SELECT description as category, SUM(amount) as total
             FROM expenses 
             WHERE user_id = ? AND is_business_expense = 1
         `;
-        
         const categoryParams = [userId];
         if (year) {
             categoryQuery += ' AND YEAR(transaction_date) = ?';
@@ -4669,9 +4668,26 @@ app.get('/api/business/summary', authenticateToken, async (req, res) => {
             categoryQuery += ' AND MONTH(transaction_date) = ?';
             categoryParams.push(month);
         }
-        
         categoryQuery += ' GROUP BY description ORDER BY total DESC LIMIT 10';
         const [categoryData] = await pool.query(categoryQuery, categoryParams);
+
+        // Query para dados por plano de contas (account_plan_code) - novo
+        let planQuery = `
+            SELECT account_plan_code AS plan_code, SUM(amount) AS total
+            FROM expenses
+            WHERE user_id = ? AND is_business_expense = 1
+        `;
+        const planParams = [userId];
+        if (year) {
+            planQuery += ' AND YEAR(transaction_date) = ?';
+            planParams.push(year);
+        }
+        if (month) {
+            planQuery += ' AND MONTH(transaction_date) = ?';
+            planParams.push(month);
+        }
+        planQuery += ' GROUP BY account_plan_code ORDER BY total DESC LIMIT 15';
+        const [planData] = await pool.query(planQuery, planParams);
         
         // Organizar dados
         const byAccount = {};
@@ -4682,6 +4698,11 @@ app.get('/api/business/summary', authenticateToken, async (req, res) => {
         const byCategory = {};
         categoryData.forEach(item => {
             byCategory[item.category] = parseFloat(item.total);
+        });
+        const byPlan = {};
+        planData.forEach(item => {
+            const key = (item.plan_code === null || item.plan_code === undefined) ? 'Sem Plano' : String(item.plan_code);
+            byPlan[key] = parseFloat(item.total);
         });
         
         const result = {
@@ -4694,7 +4715,8 @@ app.get('/api/business/summary', authenticateToken, async (req, res) => {
             invoiced_count: parseInt(summary[0]?.invoiced_count) || 0,
             non_invoiced_count: parseInt(summary[0]?.non_invoiced_count) || 0,
             byAccount,
-            byCategory
+            byCategory,
+            byPlan
         };
         
         res.json(result);
@@ -4789,11 +4811,17 @@ app.get('/api/business/advanced-analysis', authenticateToken, async (req, res) =
             byAccount[account] = (byAccount[account] || 0) + parseFloat(exp.amount);
         });
         
-        // Agrupar por categoria
+        // Agrupar por categoria (descrição)
         const byCategory = {};
         expenses.forEach(exp => {
             const category = exp.description || 'Sem categoria';
             byCategory[category] = (byCategory[category] || 0) + parseFloat(exp.amount);
+        });
+        // Agrupar por plano de contas (account_plan_code)
+        const byPlan = {};
+        expenses.forEach(exp => {
+            const code = (exp.account_plan_code === null || exp.account_plan_code === undefined) ? 'Sem Plano' : String(exp.account_plan_code);
+            byPlan[code] = (byPlan[code] || 0) + parseFloat(exp.amount);
         });
         
         res.json({
@@ -4803,7 +4831,8 @@ app.get('/api/business/advanced-analysis', authenticateToken, async (req, res) =
                 count,
                 average,
                 byAccount,
-                byCategory
+                byCategory,
+                byPlan
             }
         });
         

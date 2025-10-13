@@ -5716,8 +5716,13 @@ document.addEventListener('DOMContentLoaded', function() {
             const fallbackYear = (filterYear && filterYear.value) ? parseInt(filterYear.value, 10) : currentDate.getFullYear();
             const fallbackMonth = (filterMonth && filterMonth.value) ? parseInt(filterMonth.value, 10) : (currentDate.getMonth() + 1);
 
-            const yearToUse = filters.year || fallbackYear;
-            const monthToUse = (typeof filters.month === 'number' ? filters.month : (filters.month || fallbackMonth));
+            // Se existir seletor do sistema de análise de plano de contas, sincronizar com ele
+            const analysisMonth = (typeof chartAnalysisPeriod !== 'undefined' && chartAnalysisPeriod && chartAnalysisPeriod.value)
+                ? parseInt(chartAnalysisPeriod.value, 10) : null;
+            const analysisYear = (filterYear && filterYear.value) ? parseInt(filterYear.value, 10) : null;
+
+            const yearToUse = analysisYear || filters.year || fallbackYear;
+            const monthToUse = analysisMonth || (typeof filters.month === 'number' ? filters.month : (filters.month || fallbackMonth));
 
             const businessData = await fetchBusinessData(yearToUse, monthToUse);
             
@@ -5878,8 +5883,8 @@ document.addEventListener('DOMContentLoaded', function() {
         try {
             // Usar a nova API de resumo empresarial
             const params = new URLSearchParams();
-            if (year) params.append('year', year);
-            if (month) params.append('month', month);
+            if (typeof year === 'number' && !Number.isNaN(year)) params.append('year', String(year));
+            if (typeof month === 'number' && !Number.isNaN(month)) params.append('month', String(month));
             const response = await authenticatedFetch(`${API_BASE_URL}/api/business/summary?${params.toString()}`);
             
             if (!response.ok) {
@@ -5909,8 +5914,8 @@ document.addEventListener('DOMContentLoaded', function() {
             console.log('Tentando método alternativo...');
             
             const altParams = new URLSearchParams();
-            if (year) altParams.append('year', year);
-            if (month) altParams.append('month', month);
+            if (typeof year === 'number' && !Number.isNaN(year)) altParams.append('year', String(year));
+            if (typeof month === 'number' && !Number.isNaN(month)) altParams.append('month', String(month));
             const response = await authenticatedFetch(`${API_BASE_URL}/api/expenses?${altParams.toString()}`);
             
             if (!response.ok) {
@@ -9548,16 +9553,25 @@ document.addEventListener('DOMContentLoaded', function() {
         }
 
         try {
-            const categories = Object.keys(data.byCategory || {});
-            const values = Object.values(data.byCategory || {});
+            // Prefer plan-of-accounts breakdown when available for business detailing
+            const usePlan = data.byPlan && Object.keys(data.byPlan).length > 0;
+            const categories = usePlan ? Object.keys(data.byPlan) : Object.keys(data.byCategory || {});
+            const values = usePlan ? Object.values(data.byPlan) : Object.values(data.byCategory || {});
 
             if (categories.length === 0) {
                 displayChartFallback(canvasId, 'Nenhum dado de categoria empresarial disponível');
                 return;
             }
 
+            // Amigável: quando usamos byPlan (códigos numéricos), prefixar rótulos
+            const friendlyLabels = (usePlan ? categories.map(c => {
+                const trimmed = String(c).trim();
+                if (!trimmed || trimmed.toLowerCase() === 'sem plano') return 'Sem Plano';
+                return /^\d+$/.test(trimmed) ? `Plano ${trimmed}` : trimmed;
+            }) : categories);
+
             const chartData = {
-                labels: categories,
+                labels: friendlyLabels,
                 datasets: [{
                     label: 'Valor por Categoria',
                     data: values,
@@ -9576,7 +9590,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     plugins: {
                         title: {
                             display: true,
-                            text: 'Gastos por Categoria Empresarial'
+                            text: usePlan ? 'Gastos por Plano de Contas (Empresarial)' : 'Gastos por Categoria Empresarial'
                         },
                         legend: { 
                             display: false 
