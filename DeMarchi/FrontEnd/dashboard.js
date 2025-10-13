@@ -121,6 +121,8 @@ document.addEventListener('DOMContentLoaded', function() {
     let currentRecurringExpenses = [];
     let currentSortCriteria = null;
     let currentSortDirection = 'desc'; // 'asc' or 'desc'
+    // Cache da lista atual de gastos empresariais (para exportações)
+    let currentBusinessExpenses = [];
     // Cache BI recorrente (chave: year|month ou 'latest')
     const recurringBICache = new Map();
     let lastRecurringBILoad = 0;
@@ -5397,6 +5399,9 @@ document.addEventListener('DOMContentLoaded', function() {
             
             // Carregar gráficos secundários
             await loadBusinessSecondaryCharts();
+
+            // Carregar tabela de gastos empresariais (detalhamento)
+            await loadBusinessExpensesList();
             
             // Configurar filtros
             setupBusinessFilters();
@@ -10001,20 +10006,47 @@ document.addEventListener('DOMContentLoaded', function() {
     async function loadBusinessExpensesList() {
         try {
             if (!checkAuthentication()) return;
+            // Alinhar período com a análise/seletores globais, evitando month=null
+            const now = new Date();
+            const fallbackYear = (filterYear && filterYear.value) ? parseInt(filterYear.value, 10) : now.getFullYear();
+            const fallbackMonth = (filterMonth && filterMonth.value) ? parseInt(filterMonth.value, 10) : (now.getMonth() + 1);
+            const analysisMonth = (typeof chartAnalysisPeriod !== 'undefined' && chartAnalysisPeriod && chartAnalysisPeriod.value)
+                ? parseInt(chartAnalysisPeriod.value, 10) : null;
+            const analysisYear = (filterYear && filterYear.value) ? parseInt(filterYear.value, 10) : null;
+            const yearToUse = analysisYear || fallbackYear;
+            const monthToUse = analysisMonth || fallbackMonth;
 
-            const year = filterYear.value;
-            const month = filterMonth.value;
-            
-            const response = await authenticatedFetch(`${API_BASE_URL}/api/expenses?year=${year}&month=${month}`);
+            const params = new URLSearchParams();
+            if (typeof yearToUse === 'number' && !Number.isNaN(yearToUse)) params.append('year', String(yearToUse));
+            if (typeof monthToUse === 'number' && !Number.isNaN(monthToUse)) params.append('month', String(monthToUse));
+
+            let response = await authenticatedFetch(`${API_BASE_URL}/api/expenses?${params.toString()}`);
             
             if (!response.ok) {
                 const error = await response.json();
                 throw new Error(error.message || 'Erro ao buscar gastos');
             }
             
-            const expenses = await response.json();
-            const businessExpenses = expenses.filter(exp => exp.is_business_expense);
+            let expenses = await response.json();
+            let businessExpenses = expenses.filter(exp => exp.is_business_expense);
+
+            // Se mês selecionado estiver vazio, tentar ano inteiro
+            if (businessExpenses.length === 0 && params.has('month')) {
+                const yearOnly = new URLSearchParams();
+                yearOnly.append('year', String(yearToUse));
+                const retryResp = await authenticatedFetch(`${API_BASE_URL}/api/expenses?${yearOnly.toString()}`);
+                if (retryResp.ok) {
+                    const retryExpenses = await retryResp.json();
+                    const retryBusiness = retryExpenses.filter(exp => exp.is_business_expense);
+                    if (retryBusiness.length > 0) {
+                        businessExpenses = retryBusiness;
+                        showNotification('Sem dados para o mês. Exibindo gastos empresariais do ano.', 'info', 2500);
+                    }
+                }
+            }
             
+            // Guardar cache para exportações
+            currentBusinessExpenses = businessExpenses;
             displayBusinessExpensesList(businessExpenses);
         } catch (error) {
             console.error('Erro ao carregar lista de gastos empresariais:', error);
@@ -10058,6 +10090,18 @@ document.addEventListener('DOMContentLoaded', function() {
 
         container.innerHTML = html;
         updateBusinessStats(expenses);
+
+        // Atrelar exportações, se botões existirem
+        const btnCsv = document.getElementById('business-export-csv');
+        const btnPdf = document.getElementById('business-export-pdf');
+        if (btnCsv && !btnCsv.dataset.bound) {
+            btnCsv.addEventListener('click', () => exportBusinessExpensesCSV());
+            btnCsv.dataset.bound = '1';
+        }
+        if (btnPdf && !btnPdf.dataset.bound) {
+            btnPdf.addEventListener('click', () => exportBusinessExpensesPDF());
+            btnPdf.dataset.bound = '1';
+        }
     }
 
     function updateBusinessStats(expenses) {
@@ -10076,6 +10120,87 @@ document.addEventListener('DOMContentLoaded', function() {
         if (filteredCount) filteredCount.textContent = count.toString();
         if (filteredAverage) filteredAverage.textContent = `R$ ${average.toFixed(2)}`;
         if (filteredInvoicePercentage) filteredInvoicePercentage.textContent = `${invoicePercentage.toFixed(1)}%`;
+    }
+
+    // Exportar CSV do detalhamento empresarial
+    function exportBusinessExpensesCSV() {
+        try {
+            const rows = [
+                ['Data', 'Descrição', 'Valor', 'Conta', 'Categoria', 'Nota Fiscal', 'Período Fatura']
+            ];
+            currentBusinessExpenses.forEach(exp => {
+                rows.push([
+                    new Date(exp.transaction_date).toLocaleDateString('pt-BR'),
+                    exp.description || '',
+                    (parseFloat(exp.amount) || 0).toFixed(2).replace('.', ','),
+                    exp.account || '',
+                    exp.category || '',
+                    exp.invoice_path ? 'Com NF' : 'Sem NF',
+                    getBillingPeriod(exp.transaction_date, exp.account) || ''
+                ]);
+            });
+
+            const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(';')).join('\n');
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `gastos_empresariais_${Date.now()}.csv`;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            URL.revokeObjectURL(url);
+        } catch (e) {
+            console.error('Erro ao exportar CSV de gastos empresariais:', e);
+            showNotification('Erro ao exportar CSV', 'error');
+        }
+    }
+
+    // Exportar PDF simples (impressão) do detalhamento empresarial
+    function exportBusinessExpensesPDF() {
+        try {
+            const w = window.open('', '_blank');
+            if (!w) {
+                showNotification('Bloqueio de pop-up: permita abrir nova aba para exportar PDF.', 'warning');
+                return;
+            }
+            const rowsHtml = currentBusinessExpenses.map(exp => `
+                <tr>
+                    <td>${new Date(exp.transaction_date).toLocaleDateString('pt-BR')}</td>
+                    <td>${exp.description || ''}</td>
+                    <td style="text-align:right;">R$ ${(parseFloat(exp.amount) || 0).toFixed(2)}</td>
+                    <td>${exp.account || ''}</td>
+                    <td>${exp.category || ''}</td>
+                    <td>${exp.invoice_path ? 'Com NF' : 'Sem NF'}</td>
+                    <td>${getBillingPeriod(exp.transaction_date, exp.account) || ''}</td>
+                </tr>
+            `).join('');
+            w.document.write(`
+                <html><head><title>Gastos Empresariais</title>
+                <style>
+                    body{font-family: Arial, sans-serif; padding: 16px;}
+                    table{width:100%; border-collapse: collapse;}
+                    th,td{border:1px solid #ddd; padding:8px; font-size:12px}
+                    th{text-align:left; background:#f5f5f5}
+                </style>
+                </head><body>
+                <h2>Detalhamento de Gastos Empresariais</h2>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Data</th><th>Descrição</th><th>Valor</th><th>Conta</th><th>Categoria</th><th>Nota Fiscal</th><th>Período Fatura</th>
+                        </tr>
+                    </thead>
+                    <tbody>${rowsHtml}</tbody>
+                </table>
+                <script>window.onload = function(){ window.print(); }<\/script>
+                </body></html>
+            `);
+            w.document.close();
+        } catch (e) {
+            console.error('Erro ao exportar PDF de gastos empresariais:', e);
+            showNotification('Erro ao exportar PDF', 'error');
+        }
     }
 
     function getBillingPeriod(transactionDate, account) {
