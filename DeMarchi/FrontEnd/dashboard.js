@@ -6317,7 +6317,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 46: 600.00, 47: 600.00
         };
 
-        if (!expenses || expenses.length === 0) {
+    if (!expenses || expenses.length === 0) {
             console.warn('⚠️ Nenhum dado de despesas para atualizar indicadores');
             // Atualizar UI com valores zero
             const safePlansEl = document.getElementById('safe-plans');
@@ -6329,7 +6329,8 @@ document.addEventListener('DOMContentLoaded', function() {
             if (safePlansEl) safePlansEl.textContent = '0';
             if (warningPlansEl) warningPlansEl.textContent = '0';
             if (exceededPlansEl) exceededPlansEl.textContent = '0';
-            if (generalUsageEl) generalUsageEl.textContent = '0%';
+            // O símbolo % já está no HTML fora do span
+            if (generalUsageEl) generalUsageEl.textContent = '0';
             if (totalBudgetEl) totalBudgetEl.textContent = 'R$ 0,00';
             
             console.log('📊 Indicadores zerados');
@@ -6349,23 +6350,25 @@ document.addEventListener('DOMContentLoaded', function() {
             });
         }
 
-        const currentMonth = new Date().getMonth() + 1;
-        const currentYear = new Date().getFullYear();
-        
-        console.log(`📅 Filtrando para mês/ano: ${currentMonth}/${currentYear}`);
-        
-        // Filtrar gastos do mês atual - usar transaction_date se date não existir
+        // Usar período selecionado nos filtros (com fallback seguro)
+        const { year: selectedYear, month: selectedMonth } = getCurrentPeriod();
+        const targetYear = parseInt(selectedYear, 10);
+        const targetMonth = parseInt(selectedMonth, 10);
+
+        console.log(`📅 Filtrando para mês/ano selecionados: ${targetMonth}/${targetYear}`);
+
+        // Filtrar gastos do período selecionado - usar transaction_date se date não existir
         const monthlyExpenses = expenses.filter(expense => {
             const dateField = expense.transaction_date || expense.date;
             if (!dateField) {
                 console.warn('⚠️ Despesa sem data:', expense);
                 return false;
             }
-            
+
             const expenseDate = new Date(dateField);
-            const matchesMonth = expenseDate.getMonth() + 1 === currentMonth;
-            const matchesYear = expenseDate.getFullYear() === currentYear;
-            
+            const matchesMonth = (expenseDate.getMonth() + 1) === targetMonth;
+            const matchesYear = expenseDate.getFullYear() === targetYear;
+
             return matchesMonth && matchesYear;
         });
 
@@ -6417,7 +6420,8 @@ document.addEventListener('DOMContentLoaded', function() {
         if (safePlansEl) safePlansEl.textContent = safePlans;
         if (warningPlansEl) warningPlansEl.textContent = warningPlans;
         if (exceededPlansEl) exceededPlansEl.textContent = exceededPlans;
-        if (generalUsageEl) generalUsageEl.textContent = Math.round((totalSpent / totalBudget) * 100);
+    // Apenas número; o símbolo % está no HTML
+    if (generalUsageEl) generalUsageEl.textContent = Math.round((totalSpent / totalBudget) * 100);
         if (totalBudgetEl) totalBudgetEl.textContent = formatCurrency(totalBudget);
 
         console.log('📊 Indicadores atualizados:', { safePlans, warningPlans, exceededPlans, totalBudget, totalSpent });
@@ -6514,14 +6518,17 @@ document.addEventListener('DOMContentLoaded', function() {
             return;
         }
         
-        const currentMonth = new Date().getMonth() + 1;
-        const currentYear = new Date().getFullYear();
-        
-        // Filtrar gastos do mês atual
+        // Usar período selecionado nos filtros
+        const { year: selectedYear, month: selectedMonth } = getCurrentPeriod();
+        const targetYear = parseInt(selectedYear, 10);
+        const targetMonth = parseInt(selectedMonth, 10);
+
+        // Filtrar gastos do período selecionado
         const monthlyExpenses = expenses.filter(expense => {
-            const expenseDate = new Date(expense.date);
-            return expenseDate.getMonth() + 1 === currentMonth && 
-                   expenseDate.getFullYear() === currentYear;
+            const dateField = expense.transaction_date || expense.date;
+            const expenseDate = dateField ? new Date(dateField) : null;
+            return expenseDate && (expenseDate.getMonth() + 1) === targetMonth && 
+                   expenseDate.getFullYear() === targetYear;
         });
 
         const totalGastos = monthlyExpenses.reduce((sum, expense) => sum + parseFloat(expense.amount), 0);
@@ -6529,8 +6536,13 @@ document.addEventListener('DOMContentLoaded', function() {
         const ticketMedio = numTransacoes > 0 ? totalGastos / numTransacoes : 0;
 
         // Análise por tipo
-        const pessoal = monthlyExpenses.filter(e => e.type === 'pessoal').reduce((sum, e) => sum + parseFloat(e.amount), 0);
-        const profissional = monthlyExpenses.filter(e => e.type === 'profissional').reduce((sum, e) => sum + parseFloat(e.amount), 0);
+        // Determinar tipo usando is_business_expense quando 'type' não existir
+        const pessoal = monthlyExpenses
+            .filter(e => (typeof e.type === 'string' ? e.type === 'pessoal' : !e.is_business_expense))
+            .reduce((sum, e) => sum + parseFloat(e.amount || 0), 0);
+        const profissional = monthlyExpenses
+            .filter(e => (typeof e.type === 'string' ? e.type === 'profissional' : !!e.is_business_expense))
+            .reduce((sum, e) => sum + parseFloat(e.amount || 0), 0);
 
         analysisContent.innerHTML = `
             <div class="space-y-4">
@@ -6619,21 +6631,25 @@ document.addEventListener('DOMContentLoaded', function() {
             return;
         }
 
-        const currentMonth = new Date().getMonth() + 1;
-        const currentYear = new Date().getFullYear();
-        
-        // Filtrar gastos do mês atual
+        // Usar período selecionado nos filtros
+        const { year: selectedYear, month: selectedMonth } = getCurrentPeriod();
+        const targetYear = parseInt(selectedYear, 10);
+        const targetMonth = parseInt(selectedMonth, 10);
+
+        // Filtrar gastos do período selecionado
         const monthlyExpenses = expenses.filter(expense => {
-            const expenseDate = new Date(expense.date);
-            return expenseDate.getMonth() + 1 === currentMonth && 
-                   expenseDate.getFullYear() === currentYear;
+            const dateField = expense.transaction_date || expense.date;
+            const expenseDate = dateField ? new Date(dateField) : null;
+            return expenseDate && (expenseDate.getMonth() + 1) === targetMonth && 
+                   expenseDate.getFullYear() === targetYear;
         });
 
         // Calcular totais por plano
         const planTotals = {};
         monthlyExpenses.forEach(expense => {
-            const planId = expense.plan_conta;
-            planTotals[planId] = (planTotals[planId] || 0) + parseFloat(expense.amount);
+            const planId = expense.account_plan_code || expense.plan_conta;
+            if (!planId) return; // ignorar sem categoria, pois não há teto mapeado
+            planTotals[planId] = (planTotals[planId] || 0) + parseFloat(expense.amount || 0);
         });
 
         // Gerar alertas
@@ -6824,6 +6840,14 @@ document.addEventListener('DOMContentLoaded', function() {
             if (budgetOptimizerBtn) {
                 budgetOptimizerBtn.addEventListener('click', () => {
                     showBudgetOptimizer();
+                });
+            }
+
+            // Botão de projeção mensal (gera PDF de tendências)
+            const budgetProjectionBtn = document.getElementById('budget-projection');
+            if (budgetProjectionBtn) {
+                budgetProjectionBtn.addEventListener('click', async () => {
+                    await showBudgetProjection();
                 });
             }
 
