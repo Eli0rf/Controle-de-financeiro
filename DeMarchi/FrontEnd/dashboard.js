@@ -6455,6 +6455,14 @@ document.addEventListener('DOMContentLoaded', function() {
             }
 
             console.log(`📅 Buscando dados para: ${filterYear.value}/${filterMonth.value}`);
+            // Atualiza badge de período no header da aba Relatórios
+            const periodBadge = document.getElementById('reports-period');
+            if (periodBadge) {
+                const y = filterYear.value;
+                const m = parseInt(filterMonth.value, 10);
+                const monthName = isNaN(m) ? '' : new Date(2000, m - 1, 1).toLocaleString('pt-BR', { month: 'long' });
+                periodBadge.textContent = m ? `Período: ${monthName} de ${y}` : `Ano: ${y}`;
+            }
 
             // Aguardar Chart.js estar carregado
             if (!await waitForChartJs()) {
@@ -6974,6 +6982,14 @@ document.addEventListener('DOMContentLoaded', function() {
                     renderGoalsPlanChart(expenses);
                 });
             }
+
+            // Exportar gráfico de distribuição como PNG
+            const exportDistributionBtn = document.getElementById('export-distribution-btn');
+            if (exportDistributionBtn) {
+                exportDistributionBtn.addEventListener('click', () => {
+                    exportChartAsImage('goals-plan-chart');
+                });
+            }
             
             const refreshCategoryBtn = document.getElementById('refresh-category-btn');
             if (refreshCategoryBtn) {
@@ -7012,6 +7028,54 @@ document.addEventListener('DOMContentLoaded', function() {
                 refreshAlertsBtn.addEventListener('click', async () => {
                     console.log('🔄 Atualizando alertas...');
                     await loadReportsData();
+                });
+            }
+
+            // Exportar alertas como CSV
+            const exportAlertsBtn = document.getElementById('export-alerts-btn');
+            if (exportAlertsBtn) {
+                exportAlertsBtn.addEventListener('click', () => {
+                    try {
+                        const table = document.querySelector('#alerts-table table');
+                        if (!table) {
+                            showNotification('Tabela de alertas não encontrada.', 'warning');
+                            return;
+                        }
+                        const rows = Array.from(table.querySelectorAll('tr'));
+                        const csv = rows.map(row => Array.from(row.querySelectorAll('th,td')).map(cell => {
+                            const text = cell.innerText.replace(/\n/g, ' ').trim();
+                            return '"' + text.replace(/"/g, '""') + '"';
+                        }).join(',')).join('\n');
+                        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = `alertas_orcamento_${new Date().toISOString().slice(0,10)}.csv`;
+                        document.body.appendChild(a); a.click(); a.remove();
+                        URL.revokeObjectURL(url);
+                        showNotification('📄 Alertas exportados com sucesso!', 'success');
+                    } catch (e) {
+                        console.error('Erro ao exportar alertas:', e);
+                        showNotification('Erro ao exportar alertas', 'error');
+                    }
+                });
+            }
+
+            // Atualização manual do header do dashboard de relatórios
+            const refreshReportsDashboardBtn = document.getElementById('refresh-reports-dashboard');
+            if (refreshReportsDashboardBtn) {
+                refreshReportsDashboardBtn.addEventListener('click', async () => {
+                    refreshReportsDashboardBtn.disabled = true;
+                    const original = refreshReportsDashboardBtn.textContent;
+                    refreshReportsDashboardBtn.textContent = 'Atualizando...';
+                    try {
+                        await loadReportsData();
+                    } finally {
+                        setTimeout(() => {
+                            refreshReportsDashboardBtn.disabled = false;
+                            refreshReportsDashboardBtn.textContent = original;
+                        }, 800);
+                    }
                 });
             }
 
