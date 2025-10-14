@@ -6246,6 +6246,54 @@ document.addEventListener('DOMContentLoaded', function() {
     // Tornar função global para uso nos botões
     window.generatePDFReport = generatePDFReport;
 
+    // Exportação print-friendly do Relatório Completo (aba Relatórios)
+    function exportFullReportsPrint(){
+        try {
+            const { year, month } = getCurrentPeriod();
+            const periodLabel = `${String(month).padStart(2,'0')}/${year}`;
+            // Capturar imagens dos principais gráficos
+            const chartIds = ['goals-plan-chart','plan-chart'];
+            const images = chartIds.map(id=>{ try { const c=document.getElementById(id); return c? c.toDataURL('image/png'): null; } catch { return null; } });
+            // Tabela de alertas (HTML)
+            const alertsHtml = (document.querySelector('#alerts-table')?.innerHTML)||'<em>Sem alertas</em>';
+            const win = window.open('', '_blank');
+            if(!win){ showNotification('Pop-up bloqueado. Permita pop-ups para exportar.', 'warning'); return; }
+            const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8"/>
+            <title>Relatório Completo - ${periodLabel}</title>
+            <style>
+                body{font-family:Arial, sans-serif; margin:24px; color:#111827}
+                h1{margin:0 0 4px 0}
+                .muted{color:#6b7280}
+                .kpis{display:grid; grid-template-columns: repeat(4,1fr); gap:12px; margin:16px 0}
+                .card{border:1px solid #e5e7eb; border-radius:8px; padding:12px}
+                .section{margin:24px 0}
+                img.chart{max-width:100%; border:1px solid #e5e7eb; border-radius:6px}
+                @media print { .pagebreak { page-break-before: always; } }
+            </style>
+            </head><body>
+            <header>
+                <h1>Relatório Completo</h1>
+                <div class="muted">Período: ${periodLabel}</div>
+            </header>
+            <section class="section">
+                <h2>Distribuição por Plano</h2>
+                ${images[0] ? `<img class="chart" src="${images[0]}"/>` : '<div class="muted">Gráfico indisponível</div>'}
+            </section>
+            <section class="section pagebreak">
+                <h2>Análise por Categoria</h2>
+                ${images[1] ? `<img class="chart" src="${images[1]}"/>` : '<div class="muted">Gráfico indisponível</div>'}
+            </section>
+            <section class="section pagebreak">
+                <h2>Alertas de Orçamento</h2>
+                <div>${alertsHtml}</div>
+            </section>
+            <script>window.onload = function(){ setTimeout(function(){ window.print(); }, 300); };</script>
+            </body></html>`;
+            win.document.open(); win.document.write(html); win.document.close();
+        } catch(e){ console.error('Erro ao exportar Relatório Completo:', e); showNotification('Falha ao exportar relatório para impressão', 'error'); }
+    }
+    window.exportFullReportsPrint = exportFullReportsPrint;
+
     // ========== CARREGAMENTO DE DADOS DA ABA RELATÓRIOS ==========
     
     // Função para buscar dados de despesas (faltava essa função)
@@ -7129,9 +7177,12 @@ document.addEventListener('DOMContentLoaded', function() {
                             comparativos de orçamento e recomendações estratégicas.
                         </p>
                     </div>
-                    <div class="text-center">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <button onclick="exportFullReportsPrint()" class="bg-indigo-600 text-white px-6 py-3 rounded-lg hover:bg-indigo-700">
+                            🖨️ Visualizar Impressão (Completo)
+                        </button>
                         <button onclick="generatePDFReport()" class="bg-green-600 text-white px-6 py-3 rounded-lg hover:bg-green-700">
-                            📄 Gerar PDF Completo
+                            📄 Gerar PDF (Servidor)
                         </button>
                     </div>
                 </div>
@@ -8444,6 +8495,58 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
+    // Utilitário: limpar cache do BI recorrente
+    function clearRecurringBICache(){
+        try {
+            recurringBICache.clear();
+            sessionStorage.removeItem('recurringBICache');
+            console.log('🧹 Cache BI recorrente limpo');
+        } catch(e){ console.warn('Falha ao limpar cache BI:', e); }
+    }
+
+    // Exportar CSV da tabela de recorrentes (usa snapshot para consistência)
+    function exportRecurringCSV(){
+        const data = Array.isArray(currentRecurringBIData?.expenses) ? currentRecurringBIData.expenses : [];
+        if(!data.length){ showNotification('Sem dados para exportar', 'warning'); return; }
+        const headers = [
+            'Descrição','Categoria','Dia','Planejado','Média Real','Valor Atual Mês','Execução (%)','Variação (%)','Confiabilidade (%)','Tendência','Pago?'
+        ];
+        const rows = data.map(e=>{
+            const planned = Number(e.plannedAmount||0);
+            const current = Number(e.currentMonthActual||0);
+            const exec = planned>0? (current/planned)*100:0;
+            const paid = current>0? 'sim':'nao';
+            const trend = (e.trend||'').toString();
+            return [
+                (e.description||'').toString().replace(/\n/g,' '),
+                (e.category||'').toString().replace(/\n/g,' '),
+                (e.paymentDay!=null? e.paymentDay : ''),
+                planned.toFixed(2).replace('.',','),
+                Number(e.avgActual||0).toFixed(2).replace('.',','),
+                current.toFixed(2).replace('.',','),
+                exec.toFixed(1).replace('.',','),
+                Number(e.variationPercent||0).toFixed(1).replace('.',','),
+                Number(e.reliability||0).toFixed(0),
+                trend,
+                paid
+            ];
+        });
+        const csv = [headers, ...rows].map(r=> r.map(cell=>{
+            const s = String(cell);
+            if(/[";,\n]/.test(s)) return '"'+s.replace(/"/g,'""')+'"';
+            return s;
+        }).join(';')).join('\n');
+        const blob = new Blob(["\uFEFF"+csv], {type:'text/csv;charset=utf-8;'});
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        const y = document.getElementById('recurring-year')?.value || '';
+        const m = document.getElementById('recurring-month')?.value || '';
+        a.href = url; a.download = `recorrentes_pix_boleto_${y}-${m||'mm'}.csv`;
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        showNotification('CSV exportado com sucesso', 'success');
+    }
+
     // Configurar event handlers para BI de gastos recorrentes
     function setupRecurringPixBoletoEventHandlers() {
         // Botão de refresh
@@ -8500,6 +8603,33 @@ document.addEventListener('DOMContentLoaded', function() {
         if (exportBtn && !exportBtn.dataset.bound) {
             exportBtn.dataset.bound = '1';
             exportBtn.addEventListener('click', exportRecurringReport);
+        }
+
+        // Botão de forçar atualização (ignorar cache)
+        const forceBtn = document.getElementById('force-refresh-recurring');
+        if (forceBtn && !forceBtn.dataset.bound) {
+            forceBtn.dataset.bound = '1';
+            forceBtn.addEventListener('click', async () => {
+                const original = forceBtn.innerHTML;
+                forceBtn.disabled = true;
+                forceBtn.innerHTML = '⏱️ Forçando...';
+                try {
+                    clearRecurringBICache();
+                    await loadRecurringPixBoletoBI(true, true);
+                } finally {
+                    forceBtn.disabled = false;
+                    forceBtn.innerHTML = original;
+                }
+            });
+        }
+
+        // Exportar CSV da tabela de recorrentes
+        const exportCsvBtn = document.getElementById('export-recurring-csv');
+        if (exportCsvBtn && !exportCsvBtn.dataset.bound) {
+            exportCsvBtn.dataset.bound = '1';
+            exportCsvBtn.addEventListener('click', () => {
+                try { exportRecurringCSV(); } catch (e) { console.error('CSV export failed:', e); showNotification('Falha ao exportar CSV', 'error'); }
+            });
         }
     }
 
