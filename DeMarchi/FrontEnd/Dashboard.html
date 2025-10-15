@@ -907,6 +907,22 @@
                     </div>
                 </div>
 
+                <!-- Soma de Gastos por Plano (PIX/Boleto) -->
+                <div class="bg-white p-6 rounded-lg shadow-md mb-8">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="text-xl font-semibold text-gray-700">📘 Soma por Plano (PIX/Boleto)</h3>
+                        <div class="flex items-center gap-2">
+                            <label for="pix-plan-filter" class="text-sm text-gray-600">Plano:</label>
+                            <input id="pix-plan-filter" type="text" inputmode="numeric" pattern="[0-9]*" class="border rounded px-2 py-1 w-28" placeholder="ex: 12">
+                            <button id="apply-plan-filter" class="bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700">Aplicar</button>
+                        </div>
+                    </div>
+                    <div style="height: 300px;">
+                        <canvas id="pix-boleto-plan-sum-chart" style="height: 100%; width: 100%;"></canvas>
+                    </div>
+                    <p class="text-xs text-gray-500 mt-2">Respeita os filtros de Ano/Mês acima e o Plano informado.</p>
+                </div>
+
                 <!-- Análise de Tendências e Confiabilidade -->
                 <div class="grid grid-cols-1 xl:grid-cols-3 gap-6 mb-8">
                     <!-- Distribuição por Categoria -->

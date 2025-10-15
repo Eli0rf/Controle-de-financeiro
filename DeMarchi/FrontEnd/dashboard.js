@@ -8388,6 +8388,8 @@ document.addEventListener('DOMContentLoaded', function() {
             if (resp.ok) {
                 const payload = await resp.json();
                 list = Array.isArray(payload?.expenses) ? payload.expenses : Array.isArray(payload) ? payload : [];
+                // Guardar lista para reuso em gráficos por plano
+                currentPixBoletoExpenses = list;
             } else if (resp.status === 404) {
                 // Fallback para API genérica
                 const genParams = new URLSearchParams({ account: 'PIX/Boleto' });
@@ -8462,6 +8464,93 @@ document.addEventListener('DOMContentLoaded', function() {
         } catch (e) {
             console.error('Falha ao renderizar Soma de Gastos PIX/Boleto:', e);
             displayChartFallback('recurring-active-plans-sum-chart', 'Erro ao carregar dados');
+        }
+    }
+
+    // Gráfico: Soma de Gastos PIX/Boleto filtrado por Plano de Conta
+    async function renderPixBoletoPlanSumChart() {
+        const canvas = document.getElementById('pix-boleto-plan-sum-chart');
+        if (!canvas) return;
+
+        const ctx = canvas.getContext('2d');
+        destroyChart('pixBoletoPlanSumChart');
+
+        const yearSel = Number(document.getElementById('recurring-year')?.value || 0) || null;
+        const monthSel = Number(document.getElementById('recurring-month')?.value || 0) || null;
+        const planInput = document.getElementById('pix-plan-filter');
+        const planId = planInput ? String(planInput.value || '').trim() : '';
+
+        try {
+            // Garantir que temos dados da conta PIX/Boleto com os mesmos filtros
+            if (!Array.isArray(currentPixBoletoExpenses) || currentPixBoletoExpenses.length === 0) {
+                const params = new URLSearchParams();
+                if (yearSel) params.append('year', String(yearSel));
+                if (monthSel) params.append('month', String(monthSel));
+                let url = `${API_BASE_URL}/api/expenses/pix-boleto`;
+                if (params.toString()) url += `?${params.toString()}`;
+                const resp = await authenticatedFetch(url);
+                if (resp.ok) {
+                    const payload = await resp.json();
+                    currentPixBoletoExpenses = Array.isArray(payload?.expenses) ? payload.expenses : Array.isArray(payload) ? payload : [];
+                }
+            }
+
+            let list = currentPixBoletoExpenses.slice();
+            // Filtrar por plano se informado
+            if (planId) {
+                list = list.filter(e => String(e.account_plan_code || '') === planId);
+            }
+
+            // Agregar por mês
+            const agg = new Map();
+            list.forEach(e => {
+                const dt = new Date(e.transaction_date || e.date);
+                const y = dt.getFullYear();
+                const m = dt.getMonth() + 1;
+                const key = `${y}-${String(m).padStart(2,'0')}`;
+                const amt = Number(e.amount || e.valor || e.value || 0);
+                agg.set(key, round2((agg.get(key) || 0) + amt));
+            });
+
+            const entries = Array.from(agg.entries()).map(([k,v])=>[k, round2(v)]).sort((a,b)=> a[0].localeCompare(b[0]));
+            const labels = entries.map(([key]) => {
+                const [y,m] = key.split('-').map(Number);
+                return new Date(y, m-1, 1).toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' });
+            });
+            const data = entries.map(([,sum]) => sum);
+
+            if (!labels.length) {
+                displayChartFallback('pix-boleto-plan-sum-chart', planId ? 'Sem dados para o plano no período' : 'Informe um plano de conta para filtrar');
+                return;
+            }
+
+            chartRegistry.pixBoletoPlanSumChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels,
+                    datasets: [{
+                        label: planId ? `Plano ${planId}` : 'Todos os Planos',
+                        data,
+                        backgroundColor: 'rgba(59, 130, 246, 0.6)',
+                        borderColor: 'rgba(59, 130, 246, 1)',
+                        borderWidth: 1,
+                        maxBarThickness: 32
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        title: { display: true, text: 'Soma de Gastos por Plano (PIX/Boleto)', font: { size: 14, weight: 'bold' } },
+                        legend: { display: false },
+                        tooltip: { callbacks: { label: (ctx) => `${ctx.dataset.label}: ${formatCurrency(ctx.parsed.y)}` } }
+                    },
+                    scales: { y: { beginAtZero: true, ticks: { callback: v => formatCurrency(v) } } }
+                }
+            });
+        } catch (e) {
+            console.error('Erro ao renderizar gráfico por plano PIX/Boleto:', e);
+            displayChartFallback('pix-boleto-plan-sum-chart', 'Erro ao carregar dados');
         }
     }
 
@@ -8826,8 +8915,20 @@ document.addEventListener('DOMContentLoaded', function() {
                 const original = applyFiltersBtn.innerHTML;
                 applyFiltersBtn.disabled = true;
                 applyFiltersBtn.innerHTML = '⏳ Aplicando...';
-                try { await applyRecurringFilters(); }
+                try { 
+                    await applyRecurringFilters();
+                    await renderPixBoletoPlanSumChart();
+                }
                 finally { applyFiltersBtn.disabled = false; applyFiltersBtn.innerHTML = original; }
+            });
+        }
+
+        // Botão do filtro por plano para gráfico
+        const planBtn = document.getElementById('apply-plan-filter');
+        if (planBtn && !planBtn.dataset.bound) {
+            planBtn.dataset.bound = '1';
+            planBtn.addEventListener('click', async () => {
+                await renderPixBoletoPlanSumChart();
             });
         }
 
@@ -8968,6 +9069,8 @@ document.addEventListener('DOMContentLoaded', function() {
         renderRecurringCategoryChart(data.categoryBreakdown);
         renderRecurringActivePlansSumChart(data);
         renderRecurringActivePlansSumChart(data);
+        // Novo: renderizar soma por plano
+        renderPixBoletoPlanSumChart();
         updateTrendsAnalysis(data.trendsSummary);
         const safeProjections = data.projections || { nextMonth: 0, threeMonths: 0, yearEnd: 0 };
         updateProjections(safeProjections);
