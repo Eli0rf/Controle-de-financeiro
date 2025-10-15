@@ -8449,10 +8449,13 @@ document.addEventListener('DOMContentLoaded', function() {
             const agg = new Map(); // key: 'YYYY-MM' -> sum
             list.forEach(e => {
                 const dt = new Date(e.transaction_date || e.date);
+                if (isNaN(dt)) return; // ignora datas inválidas
                 const y = dt.getFullYear();
                 const m = dt.getMonth() + 1;
                 const key = `${y}-${String(m).padStart(2,'0')}`;
-                const amt = Number(e.amount || e.valor || e.value || 0);
+                const val = e.amount ?? e.valor ?? e.value;
+                const n = parseFloat(val);
+                const amt = isNaN(n) ? 0 : n;
                 agg.set(key, round2((agg.get(key) || 0) + amt));
             });
 
@@ -8545,10 +8548,13 @@ document.addEventListener('DOMContentLoaded', function() {
             const agg = new Map();
             list.forEach(e => {
                 const dt = new Date(e.transaction_date || e.date);
+                if (isNaN(dt)) return;
                 const y = dt.getFullYear();
                 const m = dt.getMonth() + 1;
                 const key = `${y}-${String(m).padStart(2,'0')}`;
-                const amt = Number(e.amount || e.valor || e.value || 0);
+                const val = e.amount ?? e.valor ?? e.value;
+                const n = parseFloat(val);
+                const amt = isNaN(n) ? 0 : n;
                 agg.set(key, round2((agg.get(key) || 0) + amt));
             });
 

@@ -4509,10 +4509,18 @@ app.get('/api/expenses/pix-boleto', authenticateToken, async (req, res) => {
         if (month) { filters.push('MONTH(transaction_date) = ?'); params.push(month); }
         const where = filters.join(' AND ');
         const [rows] = await pool.query(`SELECT * FROM expenses WHERE ${where} ORDER BY transaction_date DESC`, params);
-        const total = rows.reduce((s,r)=> s + parseFloat(r.amount),0);
+        const total = rows.reduce((s, r) => {
+            const n = parseFloat(r.amount);
+            return s + (isNaN(n) ? 0 : n);
+        }, 0);
         const count = rows.length;
         const ticket = count ? total / count : 0;
-        const recur = rows.filter(r=> r.is_recurring_expense).reduce((s,r)=> s + parseFloat(r.amount),0);
+        const recur = rows
+            .filter(r => r.is_recurring_expense)
+            .reduce((s, r) => {
+                const n = parseFloat(r.amount);
+                return s + (isNaN(n) ? 0 : n);
+            }, 0);
         res.json({
             account: 'PIX/Boleto',
             year: year ? parseInt(year) : undefined,
