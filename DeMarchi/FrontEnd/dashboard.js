@@ -8492,6 +8492,29 @@ document.addEventListener('DOMContentLoaded', function() {
 
         tableBody.innerHTML = '';
 
+        // Referências de período selecionado (para mensagens de agendamento)
+        const today = new Date();
+        const selYear = Number(document.getElementById('recurring-year')?.value || today.getFullYear());
+        const selMonth = Number(document.getElementById('recurring-month')?.value || (today.getMonth() + 1));
+
+        function computeScheduleText(exp){
+            const payDay = Number(exp.paymentDay || 0);
+            if (!payDay || exp.currentMonthActual > 0) return '';
+            // Data de referência = primeiro dia do mês/ano selecionado
+            const refDate = new Date(selYear, selMonth - 1, payDay);
+            const isCurrentPeriod = selYear === today.getFullYear() && selMonth === (today.getMonth() + 1);
+            if (isCurrentPeriod){
+                if (today.getDate() < payDay) return `Previsto dia ${payDay}`;
+                if (today.getDate() === payDay) return `Previsto para hoje (dia ${payDay})`;
+                return `Aguardando lançamento desde dia ${payDay}`;
+            }
+            // Período futuro em relação a hoje
+            const periodCompare = new Date(selYear, selMonth - 1, 1) - new Date(today.getFullYear(), today.getMonth(), 1);
+            if (periodCompare > 0) return `Previsto dia ${payDay}`;
+            // Período passado
+            return `Sem registro no período`;
+        }
+
         expenses.forEach(expense => {
             const row = document.createElement('tr');
             row.className = 'border-b hover:bg-gray-50';
@@ -8509,12 +8532,16 @@ document.addEventListener('DOMContentLoaded', function() {
             const barColor = execRate >= 100 ? 'bg-green-600' : execRate >= 80 ? 'bg-emerald-400' : execRate >= 50 ? 'bg-yellow-400' : 'bg-red-400';
             const overCap = execRate > 100;
             const barExtraStyle = overCap ? 'background-image: repeating-linear-gradient(45deg, rgba(255,255,255,0.45) 0 6px, rgba(255,255,255,0.15) 6px 12px);' : '';
+            const scheduleText = computeScheduleText(expense);
             row.innerHTML = `
                 <td class="p-3">
                     <div class="font-medium">${expense.description || 'N/A'}</div>
                     <div class="text-xs text-gray-500">${expense.category || 'Sem categoria'}</div>
                 </td>
-                <td class="p-3 text-center">${expense.paymentDay || 'Variável'}</td>
+                <td class="p-3 text-center">
+                    <div>${expense.paymentDay || 'Variável'}</div>
+                    ${scheduleText ? `<div class="text-[10px] text-gray-500 mt-0.5">${scheduleText}</div>` : ''}
+                </td>
                 <td class="p-3 text-right font-medium">${formatCurrency(expense.plannedAmount || 0)}</td>
                 <td class="p-3 text-right">${formatCurrency(expense.avgActual || 0)}</td>
                 <td class="p-3 text-right">
@@ -8558,12 +8585,11 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Obter classe de status do gasto
     function getExpenseStatusClass(expense) {
-        if (!expense.currentMonthActual) return 'bg-gray-400'; // Pendente
-        
-        const variation = expense.variationPercent || 0;
-        if (Math.abs(variation) <= 10) return 'bg-green-500'; // No orçamento
-        if (variation > 10) return 'bg-orange-500'; // Acima do orçamento
-        return 'bg-blue-500'; // Abaixo do orçamento
+        if (!expense.currentMonthActual || expense.currentMonthActual <= 0) return 'bg-gray-400'; // Pendente
+        const variation = Number(expense.variationPercent || 0);
+        if (Math.abs(variation) <= 10) return 'bg-green-500'; // No Orçamento
+        if (variation > 10) return 'bg-orange-500'; // Acima do Orçamento
+        return 'bg-blue-500'; // Abaixo do Orçamento
     }
 
     // Obter cor da confiabilidade
@@ -8586,12 +8612,11 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Obter texto do status
     function getStatusText(expense) {
-        if (!expense.currentMonthActual) return 'Pendente';
-        
-        const variation = expense.variationPercent || 0;
+        if (!expense.currentMonthActual || expense.currentMonthActual <= 0) return 'Pendente';
+        const variation = Number(expense.variationPercent || 0);
         if (Math.abs(variation) <= 10) return 'No Orçamento';
-        if (variation > 10) return 'Acima';
-        return 'Abaixo';
+        if (variation > 10) return 'Acima do Orçamento';
+        return 'Abaixo do Orçamento';
     }
 
     // Popular filtro de anos
