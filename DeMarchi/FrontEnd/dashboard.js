@@ -5190,6 +5190,53 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     // ========== FUNÇÕES PARA GASTOS RECORRENTES ==========
+
+    // Cache para evitar múltiplos 404 na rota dedicada
+    let PIX_BOLETO_ROUTE_AVAILABLE = undefined; // undefined = desconhecido, true = existe, false = ausente
+
+    // Helper para buscar despesas PIX/Boleto com fallback automático e cache de disponibilidade
+    async function fetchPixBoletoExpenses(params) {
+        try {
+            const qs = params && params.toString ? params.toString() : '';
+            // Se já sabemos que a rota dedicada não existe, pula direto para a genérica
+            if (PIX_BOLETO_ROUTE_AVAILABLE === false) {
+                const gen = new URLSearchParams(qs);
+                if (!gen.has('account')) gen.append('account', 'PIX/Boleto');
+                const fb = await authenticatedFetch(`${API_BASE_URL}/api/expenses?${gen.toString()}`);
+                if (!fb.ok) throw new Error(`Fallback /api/expenses falhou (${fb.status})`);
+                const list = await fb.json();
+                return Array.isArray(list) ? list : [];
+            }
+
+            // Tentar rota dedicada primeiro (quando desconhecida ou marcada como disponível)
+            let url = `${API_BASE_URL}/api/expenses/pix-boleto`;
+            if (qs) url += `?${qs}`;
+            const resp = await authenticatedFetch(url);
+            if (resp.ok) {
+                PIX_BOLETO_ROUTE_AVAILABLE = true;
+                const payload = await resp.json();
+                // A rota dedicada pode retornar { expenses: [...] } ou um array plano
+                return Array.isArray(payload?.expenses) ? payload.expenses : (Array.isArray(payload) ? payload : []);
+            }
+
+            if (resp.status === 404) {
+                // Memoriza ausência para evitar futuras tentativas
+                PIX_BOLETO_ROUTE_AVAILABLE = false;
+                const gen = new URLSearchParams(qs);
+                if (!gen.has('account')) gen.append('account', 'PIX/Boleto');
+                const fb = await authenticatedFetch(`${API_BASE_URL}/api/expenses?${gen.toString()}`);
+                if (!fb.ok) throw new Error(`Fallback /api/expenses falhou (${fb.status})`);
+                const list = await fb.json();
+                return Array.isArray(list) ? list : [];
+            }
+
+            // Outros erros
+            throw new Error(`Erro na rota dedicada (${resp.status})`);
+        } catch (e) {
+            console.error('Falha ao buscar despesas PIX/Boleto:', e);
+            return [];
+        }
+    }
     
     async function openRecurringModal() {
         if (recurringModal) {
@@ -5208,28 +5255,8 @@ document.addEventListener('DOMContentLoaded', function() {
 
     async function loadRecurringExpenses() {
         try {
-            // Buscar gastos da conta unificada PIX/Boleto pela rota dedicada
-            const response = await authenticatedFetch(`${API_BASE_URL}/api/expenses/pix-boleto`);
-            if (response.ok) {
-                const payload = await response.json();
-                const expenses = Array.isArray(payload?.expenses) ? payload.expenses : [];
-                renderRecurringExpensesList(expenses);
-                return;
-            }
-
-            // Fallback: alguns backends ainda não possuem a rota dedicada. Tenta a rota genérica com filtro de conta.
-            if (response.status === 404) {
-                console.warn('Rota /api/expenses/pix-boleto ausente no backend. Aplicando fallback /api/expenses?account=PIX/Boleto');
-                const fallbackRes = await authenticatedFetch(`${API_BASE_URL}/api/expenses?account=PIX/Boleto`);
-                if (fallbackRes.ok) {
-                    const list = await fallbackRes.json();
-                    const expenses = Array.isArray(list) ? list : [];
-                    renderRecurringExpensesList(expenses);
-                    return;
-                }
-            }
-
-            throw new Error(`Erro ao carregar gastos da conta PIX/Boleto (status ${response.status})`);
+            const expenses = await fetchPixBoletoExpenses();
+            renderRecurringExpensesList(expenses);
         } catch (error) {
             console.error('Erro ao carregar gastos PIX/Boleto:', error);
             showNotification('Erro ao carregar gastos PIX/Boleto', 'error');
@@ -8375,29 +8402,15 @@ document.addEventListener('DOMContentLoaded', function() {
         const yearSel = Number(document.getElementById('recurring-year')?.value || 0) || null;
         const monthSel = Number(document.getElementById('recurring-month')?.value || 0) || null;
 
-        // Buscar despesas PIX/Boleto pela rota dedicada (com filtros quando houver)
+        // Buscar despesas PIX/Boleto (helper com fallback e cache de disponibilidade)
         try {
             const params = new URLSearchParams();
             if (yearSel) params.append('year', String(yearSel));
             if (monthSel) params.append('month', String(monthSel));
-            let url = `${API_BASE_URL}/api/expenses/pix-boleto`;
-            if (params.toString()) url += `?${params.toString()}`;
 
-            let list = [];
-            const resp = await authenticatedFetch(url);
-            if (resp.ok) {
-                const payload = await resp.json();
-                list = Array.isArray(payload?.expenses) ? payload.expenses : Array.isArray(payload) ? payload : [];
-                // Guardar lista para reuso em gráficos por plano
-                currentPixBoletoExpenses = list;
-            } else if (resp.status === 404) {
-                // Fallback para API genérica
-                const genParams = new URLSearchParams({ account: 'PIX/Boleto' });
-                if (yearSel) genParams.append('year', String(yearSel));
-                if (monthSel) genParams.append('month', String(monthSel));
-                const fb = await authenticatedFetch(`${API_BASE_URL}/api/expenses?${genParams.toString()}`);
-                if (fb.ok) list = await fb.json();
-            }
+            const list = await fetchPixBoletoExpenses(params);
+            // Guardar lista para reuso em gráficos por plano
+            currentPixBoletoExpenses = Array.isArray(list) ? list : [];
 
             // Agregar por mês/ano (ou único mês se filtrado)
             const agg = new Map(); // key: 'YYYY-MM' -> sum
@@ -8486,13 +8499,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 const params = new URLSearchParams();
                 if (yearSel) params.append('year', String(yearSel));
                 if (monthSel) params.append('month', String(monthSel));
-                let url = `${API_BASE_URL}/api/expenses/pix-boleto`;
-                if (params.toString()) url += `?${params.toString()}`;
-                const resp = await authenticatedFetch(url);
-                if (resp.ok) {
-                    const payload = await resp.json();
-                    currentPixBoletoExpenses = Array.isArray(payload?.expenses) ? payload.expenses : Array.isArray(payload) ? payload : [];
-                }
+                currentPixBoletoExpenses = await fetchPixBoletoExpenses(params);
             }
 
             let list = currentPixBoletoExpenses.slice();
