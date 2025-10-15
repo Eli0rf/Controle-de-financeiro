@@ -8315,82 +8315,105 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
-    // Renderizar gráfico: Soma de Planos Ativos (respeita filtros de ano/mês)
-    function renderRecurringActivePlansSumChart(biData) {
+    // Renderizar gráfico: Soma de Gastos PIX/Boleto (respeita filtros de ano/mês)
+    async function renderRecurringActivePlansSumChart(_biData) {
         const canvas = document.getElementById('recurring-active-plans-sum-chart');
-        if (!canvas || !biData) return;
+        if (!canvas) return;
 
         const ctx = canvas.getContext('2d');
         destroyChart('recurringActivePlansSumChart');
 
-        // Determina o vetor de dados com base nos filtros atuais
-        const mh = Array.isArray(biData.monthlyHistory) ? biData.monthlyHistory : [];
         const yearSel = Number(document.getElementById('recurring-year')?.value || 0) || null;
         const monthSel = Number(document.getElementById('recurring-month')?.value || 0) || null;
 
-        let labels = [];
-        let data = [];
+        // Buscar despesas PIX/Boleto pela rota dedicada (com filtros quando houver)
+        try {
+            const params = new URLSearchParams();
+            if (yearSel) params.append('year', String(yearSel));
+            if (monthSel) params.append('month', String(monthSel));
+            let url = `${API_BASE_URL}/api/expenses/pix-boleto`;
+            if (params.toString()) url += `?${params.toString()}`;
 
-        if (yearSel && monthSel) {
-            // Modo pontual: apenas o mês/ano selecionado
-            const target = mh.find(m => m.year === yearSel && m.month === monthSel);
-            if (target) {
-                labels = [target.monthLabel];
-                // Soma dos planos ativos = totalPlanned do mês alvo
-                data = [Number(target.totalPlanned || 0)];
+            let list = [];
+            const resp = await authenticatedFetch(url);
+            if (resp.ok) {
+                const payload = await resp.json();
+                list = Array.isArray(payload?.expenses) ? payload.expenses : Array.isArray(payload) ? payload : [];
+            } else if (resp.status === 404) {
+                // Fallback para API genérica
+                const genParams = new URLSearchParams({ account: 'PIX/Boleto' });
+                if (yearSel) genParams.append('year', String(yearSel));
+                if (monthSel) genParams.append('month', String(monthSel));
+                const fb = await authenticatedFetch(`${API_BASE_URL}/api/expenses?${genParams.toString()}`);
+                if (fb.ok) list = await fb.json();
             }
-        } else if (yearSel) {
-            // Modo anual: soma mensal por mês do ano selecionado
-            const months = mh.filter(m => m.year === yearSel);
-            labels = months.map(m => m.monthLabel);
-            data = months.map(m => Number(m.totalPlanned || 0));
-        } else {
-            // Padrão: últimos 12 meses
-            labels = mh.map(m => m.monthLabel);
-            data = mh.map(m => Number(m.totalPlanned || 0));
-        }
 
-        chartRegistry.recurringActivePlansSumChart = new Chart(ctx, {
-            type: 'bar',
-            data: {
-                labels,
-                datasets: [{
-                    label: 'Soma dos Planos Ativos (Planejado)',
-                    data,
-                    backgroundColor: 'rgba(6, 182, 212, 0.6)',
-                    borderColor: 'rgba(6, 182, 212, 1)',
-                    borderWidth: 1,
-                    maxBarThickness: 36
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    title: {
-                        display: true,
-                        text: 'Resumo da Soma de Planos Ativos',
-                        font: { size: 14, weight: 'bold' }
-                    },
-                    tooltip: {
-                        callbacks: {
-                            label: function(context) {
-                                return `${context.dataset.label}: ${formatCurrency(context.parsed.y)}`;
-                            }
-                        }
-                    },
-                    legend: { display: false }
+            // Agregar por mês/ano (ou único mês se filtrado)
+            const agg = new Map(); // key: 'YYYY-MM' -> sum
+            list.forEach(e => {
+                const dt = new Date(e.transaction_date || e.date);
+                const y = dt.getFullYear();
+                const m = dt.getMonth() + 1;
+                const key = `${y}-${String(m).padStart(2,'0')}`;
+                const amt = Number(e.amount || e.valor || e.value || 0);
+                agg.set(key, (agg.get(key) || 0) + amt);
+            });
+
+            // Construir labels/data ordenados por data asc
+            const entries = Array.from(agg.entries()).sort((a,b) => a[0].localeCompare(b[0]));
+            const labels = entries.map(([key]) => {
+                const [y,m] = key.split('-').map(Number);
+                return new Date(y, m-1, 1).toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' });
+            });
+            const data = entries.map(([,sum]) => sum);
+
+            // Se não houver dados, mostra fallback
+            if (!labels.length) {
+                displayChartFallback('recurring-active-plans-sum-chart', 'Sem dados de gastos PIX/Boleto para o período');
+                return;
+            }
+
+            chartRegistry.recurringActivePlansSumChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels,
+                    datasets: [{
+                        label: 'Soma de Gastos PIX/Boleto',
+                        data,
+                        backgroundColor: 'rgba(6, 182, 212, 0.6)',
+                        borderColor: 'rgba(6, 182, 212, 1)',
+                        borderWidth: 1,
+                        maxBarThickness: 36
+                    }]
                 },
-                scales: {
-                    y: {
-                        beginAtZero: true,
-                        ticks: {
-                            callback: (value) => formatCurrency(value)
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: 'Resumo da Soma de Gastos PIX/Boleto',
+                            font: { size: 14, weight: 'bold' }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: (context) => `${context.dataset.label}: ${formatCurrency(context.parsed.y)}`
+                            }
+                        },
+                        legend: { display: false }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: { callback: (v) => formatCurrency(v) }
                         }
                     }
                 }
-            }
-        });
+            });
+        } catch (e) {
+            console.error('Falha ao renderizar Soma de Gastos PIX/Boleto:', e);
+            displayChartFallback('recurring-active-plans-sum-chart', 'Erro ao carregar dados');
+        }
     }
 
     // Atualizar análise de tendências
@@ -8770,6 +8793,8 @@ document.addEventListener('DOMContentLoaded', function() {
             
             // Atualizar dashboard com dados filtrados
             applyRecurringBIToUI(biData);
+            // Como o gráfico de soma agora usa despesas PIX/Boleto diretamente, garantir re-render com filtros atuais
+            renderRecurringActivePlansSumChart(biData);
             recurringBICache.set(cacheKey, { data: biData, timestamp: Date.now() });
 
             showNotification('Filtros aplicados com sucesso!', 'success');
@@ -8781,6 +8806,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 const fb = await buildRecurringPixBoletoFallback({ year: Number(year), month: Number(month) });
                 if (fb) {
                     applyRecurringBIToUI(fb);
+                    renderRecurringActivePlansSumChart(fb);
                     showNotification('Filtros aplicados via fallback', 'warning');
                     return;
                 }
