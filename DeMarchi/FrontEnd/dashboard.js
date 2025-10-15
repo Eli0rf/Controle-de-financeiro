@@ -174,6 +174,11 @@ document.addEventListener('DOMContentLoaded', function() {
         businessCategoryChart: null,
     quarterlyComparison: null,
     expenseProjection: null,
+        // BI Recorrentes (PIX/Boleto)
+        recurringPlannedVsActualChart: null,
+        recurringVariationChart: null,
+        recurringCategoryChart: null,
+        recurringActivePlansSumChart: null,
         
         // Gráficos de IR
         irChart1: null,
@@ -7777,6 +7782,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     renderRecurringPlannedVsActualChart(fb.monthlyHistory);
                     renderRecurringVariationChart(fb.monthlyHistory);
                     renderRecurringCategoryChart(fb.categoryBreakdown);
+                    renderRecurringActivePlansSumChart(fb);
                     // Tendências e projeções básicas
                     updateTrendsAnalysis(fb.trendsSummary);
                     // Garantir que projections existe antes de chamar updateProjections
@@ -7812,6 +7818,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     renderRecurringPlannedVsActualChart(fb.monthlyHistory);
                     renderRecurringVariationChart(fb.monthlyHistory);
                     renderRecurringCategoryChart(fb.categoryBreakdown);
+                    renderRecurringActivePlansSumChart(fb);
                     updateTrendsAnalysis(fb.trendsSummary);
                     // Garantir que projections existe no fallback de emergência
                     const safeProjections = fb.projections || { nextMonth: 0, threeMonths: 0, yearEnd: 0 };
@@ -8308,6 +8315,84 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
+    // Renderizar gráfico: Soma de Planos Ativos (respeita filtros de ano/mês)
+    function renderRecurringActivePlansSumChart(biData) {
+        const canvas = document.getElementById('recurring-active-plans-sum-chart');
+        if (!canvas || !biData) return;
+
+        const ctx = canvas.getContext('2d');
+        destroyChart('recurringActivePlansSumChart');
+
+        // Determina o vetor de dados com base nos filtros atuais
+        const mh = Array.isArray(biData.monthlyHistory) ? biData.monthlyHistory : [];
+        const yearSel = Number(document.getElementById('recurring-year')?.value || 0) || null;
+        const monthSel = Number(document.getElementById('recurring-month')?.value || 0) || null;
+
+        let labels = [];
+        let data = [];
+
+        if (yearSel && monthSel) {
+            // Modo pontual: apenas o mês/ano selecionado
+            const target = mh.find(m => m.year === yearSel && m.month === monthSel);
+            if (target) {
+                labels = [target.monthLabel];
+                // Soma dos planos ativos = totalPlanned do mês alvo
+                data = [Number(target.totalPlanned || 0)];
+            }
+        } else if (yearSel) {
+            // Modo anual: soma mensal por mês do ano selecionado
+            const months = mh.filter(m => m.year === yearSel);
+            labels = months.map(m => m.monthLabel);
+            data = months.map(m => Number(m.totalPlanned || 0));
+        } else {
+            // Padrão: últimos 12 meses
+            labels = mh.map(m => m.monthLabel);
+            data = mh.map(m => Number(m.totalPlanned || 0));
+        }
+
+        chartRegistry.recurringActivePlansSumChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels,
+                datasets: [{
+                    label: 'Soma dos Planos Ativos (Planejado)',
+                    data,
+                    backgroundColor: 'rgba(6, 182, 212, 0.6)',
+                    borderColor: 'rgba(6, 182, 212, 1)',
+                    borderWidth: 1,
+                    maxBarThickness: 36
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    title: {
+                        display: true,
+                        text: 'Resumo da Soma de Planos Ativos',
+                        font: { size: 14, weight: 'bold' }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                return `${context.dataset.label}: ${formatCurrency(context.parsed.y)}`;
+                            }
+                        }
+                    },
+                    legend: { display: false }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            callback: (value) => formatCurrency(value)
+                        }
+                    }
+                }
+            }
+        });
+    }
+
     // Atualizar análise de tendências
     function updateTrendsAnalysis(trendsSummary) {
         if (!trendsSummary) return;
@@ -8673,6 +8758,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     renderRecurringPlannedVsActualChart(fb.monthlyHistory);
                     renderRecurringVariationChart(fb.monthlyHistory);
                     renderRecurringCategoryChart(fb.categoryBreakdown);
+                    renderRecurringActivePlansSumChart(fb);
                     updateTrendsAnalysis(fb.trendsSummary);
                     const safeProjections = fb.projections || { nextMonth: 0, threeMonths: 0, yearEnd: 0 };
                     updateProjections(safeProjections);
@@ -8706,6 +8792,8 @@ document.addEventListener('DOMContentLoaded', function() {
         renderRecurringPlannedVsActualChart(data.monthlyHistory);
         renderRecurringVariationChart(data.monthlyHistory);
         renderRecurringCategoryChart(data.categoryBreakdown);
+        renderRecurringActivePlansSumChart(data);
+        renderRecurringActivePlansSumChart(data);
         updateTrendsAnalysis(data.trendsSummary);
         const safeProjections = data.projections || { nextMonth: 0, threeMonths: 0, yearEnd: 0 };
         updateProjections(safeProjections);
