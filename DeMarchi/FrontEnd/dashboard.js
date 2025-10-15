@@ -119,6 +119,8 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Dados globais para sorting da tabela de gastos recorrentes
     let currentRecurringExpenses = [];
+    // Cache das despesas PIX/Boleto brutas (para cruzamentos e gráficos)
+    let currentPixBoletoExpenses = [];
     let currentSortCriteria = null;
     let currentSortDirection = 'desc'; // 'asc' or 'desc'
     // Cache da lista atual de gastos empresariais (para exportações)
@@ -178,7 +180,8 @@ document.addEventListener('DOMContentLoaded', function() {
         recurringPlannedVsActualChart: null,
         recurringVariationChart: null,
         recurringCategoryChart: null,
-        recurringActivePlansSumChart: null,
+    recurringActivePlansSumChart: null,
+    pixBoletoPlanSumChart: null,
         
         // Gráficos de IR
         irChart1: null,
