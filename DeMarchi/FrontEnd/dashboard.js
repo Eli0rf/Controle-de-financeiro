@@ -6648,7 +6648,7 @@ document.addEventListener('DOMContentLoaded', function() {
             return matchesMonth && matchesYear;
         });
 
-        console.log(`📅 Gastos do mês atual (${currentMonth}/${currentYear}):`, monthlyExpenses.length);
+    console.log(`📅 Gastos do mês selecionado (${targetMonth}/${targetYear}):`, monthlyExpenses.length);
 
         // Calcular totais por plano
         const planTotals = {};
@@ -9059,31 +9059,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     showNotification('Filtros aplicados via fallback', 'warning');
                     return;
                 }
-    // Função central para aplicar dados BI na UI
-    function applyRecurringBIToUI(data){
-        if(!data) return;
-        currentRecurringBIData = data;
-        updateRecurringKPIs(data);
-        renderRecurringPlannedVsActualChart(data.monthlyHistory);
-        renderRecurringVariationChart(data.monthlyHistory);
-        renderRecurringCategoryChart(data.categoryBreakdown);
-        renderRecurringActivePlansSumChart(data);
-        renderRecurringActivePlansSumChart(data);
-        // Novo: renderizar soma por plano
-        renderPixBoletoPlanSumChart();
-        updateTrendsAnalysis(data.trendsSummary);
-        const safeProjections = data.projections || { nextMonth: 0, threeMonths: 0, yearEnd: 0 };
-        updateProjections(safeProjections);
-        renderRecurringExpensesTable(data.expenses);
-        updateNonRecurringComparison(data); // sem await para não bloquear
-    }
-
-    // Botão de forçar atualização ignorando cache
-    document.getElementById('force-refresh-recurring')?.addEventListener('click', (e) => {
-        const debug = e.shiftKey;
-        showNotification(debug ? 'Forçando atualização BI (debug)...' : 'Forçando atualização BI...', 'info');
-        loadRecurringPixBoletoBI(true, debug);
-    });
+    
             } catch (e) {
                 console.error('Fallback (filtros) falhou:', e);
             }
@@ -9157,6 +9133,29 @@ document.addEventListener('DOMContentLoaded', function() {
 
         console.log(`Tabela ordenada por: ${criteria} (${currentSortDirection})`);
         showNotification(`Ordenado por ${criteria === 'reliability' ? 'confiabilidade' : 'variação'} (${currentSortDirection === 'desc' ? 'maior para menor' : 'menor para maior'})`, 'success', 2000);
+    }
+
+    // Função central para aplicar dados BI na UI (escopo de topo)
+    function applyRecurringBIToUI(data) {
+        if (!data) return;
+        try {
+            currentRecurringBIData = data;
+            updateRecurringKPIs(data);
+            renderRecurringPlannedVsActualChart(data.monthlyHistory);
+            renderRecurringVariationChart(data.monthlyHistory);
+            renderRecurringCategoryChart(data.categoryBreakdown);
+            renderRecurringActivePlansSumChart(data);
+            // Novo: renderizar soma por plano com base em despesas PIX/Boleto
+            renderPixBoletoPlanSumChart();
+            updateTrendsAnalysis(data.trendsSummary);
+            const safeProjections = data.projections || { nextMonth: 0, threeMonths: 0, yearEnd: 0 };
+            updateProjections(safeProjections);
+            renderRecurringExpensesTable(data.expenses);
+            // Sem await para não bloquear
+            updateNonRecurringComparison(data);
+        } catch (e) {
+            console.error('Erro ao aplicar dados BI recorrentes na UI:', e);
+        }
     }
 
     // Update sort button states
