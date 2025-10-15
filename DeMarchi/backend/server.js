@@ -4288,6 +4288,159 @@ app.post('/api/recurring-expenses/process', authenticateToken, async (req, res) 
     }
 });
 
+// CRUD de pagamentos mensais por recorrência PIX/Boleto (garante 1x por mês por item)
+// Criar pagamento do mês: POST /api/recurring-expenses/:id/payments  { year, month, overrides? }
+app.post('/api/recurring-expenses/:id/payments', authenticateToken, async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const recId = parseInt(req.params.id, 10);
+        const { year, month, amount, description, account_plan_code, is_business_expense, day_of_month, transaction_date } = req.body || {};
+
+        if (!recId || !year || !month) {
+            return res.status(400).json({ message: 'recurring_expense_id, ano e mês são obrigatórios.' });
+        }
+
+        // Verificar se recorrente existe e pertence ao usuário e é da conta PIX/Boleto
+        const [recs] = await pool.query('SELECT * FROM recurring_expenses WHERE id = ? AND user_id = ? AND is_active = 1', [recId, userId]);
+        const rec = recs[0];
+        if (!rec) return res.status(404).json({ message: 'Despesa recorrente não encontrada.' });
+        if (rec.account !== 'PIX/Boleto') return res.status(400).json({ message: 'Apenas recorrentes da conta PIX/Boleto são suportados.' });
+
+        const monthKey = `${year}-${String(month).padStart(2,'0')}`;
+
+        // Idempotência: já pago no mês?
+        const [exists] = await pool.query('SELECT id, expense_id FROM recurring_expense_processing WHERE recurring_expense_id = ? AND processed_month = ?', [recId, monthKey]);
+        if (exists.length) {
+            const eid = exists[0].expense_id;
+            const [expRows] = await pool.query('SELECT * FROM expenses WHERE id = ? AND user_id = ?', [eid, userId]);
+            return res.status(409).json({ message: 'Pagamento deste recorrente já registrado para o mês.', expense: expRows[0] || null });
+        }
+
+        // Determinar data do pagamento
+        let payDate;
+        if (transaction_date) {
+            payDate = new Date(transaction_date);
+        } else {
+            const dom = parseInt(day_of_month || rec.day_of_month || 1, 10);
+            payDate = new Date(year, month - 1, isNaN(dom) ? 1 : dom);
+            // Ajustar para último dia válido do mês, se necessário
+            if (payDate.getMonth() !== month - 1) payDate.setDate(0);
+        }
+        const formattedDate = payDate.toISOString().slice(0,10);
+
+        // Inserir despesa
+        const [ins] = await pool.query(
+            `INSERT INTO expenses (user_id, transaction_date, amount, description, account, 
+                 is_business_expense, account_plan_code, is_recurring_expense, recurring_expense_id, total_installments) 
+             VALUES (?,?,?,?,?,?,?,?,?, 1)`,
+            [
+                userId,
+                formattedDate,
+                parseFloat(amount != null ? amount : rec.amount),
+                description || rec.description,
+                'PIX/Boleto',
+                is_business_expense != null ? (is_business_expense ? 1 : 0) : (rec.is_business_expense ? 1 : 0),
+                account_plan_code != null ? account_plan_code : rec.account_plan_code,
+                1,
+                recId
+            ]
+        );
+
+        // Registrar processamento do mês
+        await pool.query('INSERT INTO recurring_expense_processing (recurring_expense_id, processed_month, expense_id) VALUES (?,?,?)', [recId, monthKey, ins.insertId]);
+
+        const [created] = await pool.query('SELECT * FROM expenses WHERE id = ? AND user_id = ?', [ins.insertId, userId]);
+        return res.status(201).json({ message: 'Pagamento registrado com sucesso.', expense: created[0] });
+    } catch (error) {
+        console.error('Erro ao criar pagamento recorrente:', error);
+        if (String(error.message||'').includes('unique_processing')) {
+            return res.status(409).json({ message: 'Pagamento já existe para este mês.' });
+        }
+        res.status(500).json({ message: 'Erro ao registrar pagamento.' });
+    }
+});
+
+// Ler pagamento do mês: GET /api/recurring-expenses/:id/payments?year=&month=
+app.get('/api/recurring-expenses/:id/payments', authenticateToken, async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const recId = parseInt(req.params.id, 10);
+        const { year, month } = req.query;
+        if (!recId || !year || !month) return res.status(400).json({ message: 'recurring_expense_id, ano e mês são obrigatórios.' });
+        const monthKey = `${year}-${String(month).padStart(2,'0')}`;
+        const [rows] = await pool.query(`
+            SELECT e.* FROM recurring_expense_processing rep 
+            JOIN expenses e ON e.id = rep.expense_id AND e.user_id = ?
+            WHERE rep.recurring_expense_id = ? AND rep.processed_month = ?
+        `, [userId, recId, monthKey]);
+        if (!rows.length) return res.status(404).json({ message: 'Pagamento não encontrado para este mês.' });
+        res.json(rows[0]);
+    } catch (e) {
+        console.error('Erro ao ler pagamento recorrente:', e);
+        res.status(500).json({ message: 'Erro ao ler pagamento.' });
+    }
+});
+
+// Atualizar pagamento do mês: PUT /api/recurring-expenses/:id/payments  { year, month, fields... }
+app.put('/api/recurring-expenses/:id/payments', authenticateToken, async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const recId = parseInt(req.params.id, 10);
+        const { year, month, amount, description, account_plan_code, is_business_expense, transaction_date } = req.body || {};
+        if (!recId || !year || !month) return res.status(400).json({ message: 'recurring_expense_id, ano e mês são obrigatórios.' });
+        const monthKey = `${year}-${String(month).padStart(2,'0')}`;
+        const [repRows] = await pool.query('SELECT * FROM recurring_expense_processing WHERE recurring_expense_id = ? AND processed_month = ?', [recId, monthKey]);
+        if (!repRows.length) return res.status(404).json({ message: 'Pagamento não encontrado.' });
+        const expenseId = repRows[0].expense_id;
+
+        // Se data alterar para outro mês, validar ausência prévia e atualizar processed_month
+        let newDate = transaction_date ? new Date(transaction_date) : null;
+        if (newDate && (newDate.getMonth()+1 !== parseInt(month) || newDate.getFullYear() !== parseInt(year))) {
+            const newKey = `${newDate.getFullYear()}-${String(newDate.getMonth()+1).padStart(2,'0')}`;
+            const [dup] = await pool.query('SELECT id FROM recurring_expense_processing WHERE recurring_expense_id = ? AND processed_month = ?', [recId, newKey]);
+            if (dup.length) return res.status(409).json({ message: 'Já existe pagamento para o mês alvo.' });
+            await pool.query('UPDATE recurring_expense_processing SET processed_month = ? WHERE id = ?', [newKey, repRows[0].id]);
+        }
+
+        // Atualizar a despesa
+        const fields = [];
+        const params = [];
+        if (amount != null) { fields.push('amount = ?'); params.push(parseFloat(amount)); }
+        if (description != null) { fields.push('description = ?'); params.push(description); }
+        if (account_plan_code !== undefined) { fields.push('account_plan_code = ?'); params.push(account_plan_code || null); }
+        if (is_business_expense !== undefined) { fields.push('is_business_expense = ?'); params.push(is_business_expense ? 1 : 0); }
+        if (transaction_date) { fields.push('transaction_date = ?'); params.push(new Date(transaction_date).toISOString().slice(0,10)); }
+        if (!fields.length) return res.json({ message: 'Nada para atualizar.' });
+        params.push(expenseId, userId);
+        await pool.query(`UPDATE expenses SET ${fields.join(', ')} WHERE id = ? AND user_id = ?`, params);
+        const [updated] = await pool.query('SELECT * FROM expenses WHERE id = ? AND user_id = ?', [expenseId, userId]);
+        res.json({ message: 'Pagamento atualizado com sucesso.', expense: updated[0] });
+    } catch (e) {
+        console.error('Erro ao atualizar pagamento recorrente:', e);
+        res.status(500).json({ message: 'Erro ao atualizar pagamento.' });
+    }
+});
+
+// Apagar pagamento do mês: DELETE /api/recurring-expenses/:id/payments?year=&month=
+app.delete('/api/recurring-expenses/:id/payments', authenticateToken, async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const recId = parseInt(req.params.id, 10);
+        const { year, month } = req.query;
+        if (!recId || !year || !month) return res.status(400).json({ message: 'recurring_expense_id, ano e mês são obrigatórios.' });
+        const monthKey = `${year}-${String(month).padStart(2,'0')}`;
+        const [repRows] = await pool.query('SELECT * FROM recurring_expense_processing WHERE recurring_expense_id = ? AND processed_month = ?', [recId, monthKey]);
+        if (!repRows.length) return res.status(404).json({ message: 'Pagamento não encontrado.' });
+        const expenseId = repRows[0].expense_id;
+        await pool.query('DELETE FROM expenses WHERE id = ? AND user_id = ?', [expenseId, userId]);
+        await pool.query('DELETE FROM recurring_expense_processing WHERE id = ?', [repRows[0].id]);
+        res.json({ message: 'Pagamento removido com sucesso.' });
+    } catch (e) {
+        console.error('Erro ao apagar pagamento recorrente:', e);
+        res.status(500).json({ message: 'Erro ao apagar pagamento.' });
+    }
+});
+
 // --- 9. INICIALIZAÇÃO DO SERVIDOR ---
 const HOST = '0.0.0.0'; // Essencial para Railway
 app.listen(PORT, HOST, async () => {

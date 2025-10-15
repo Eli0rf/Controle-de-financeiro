@@ -5253,61 +5253,56 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
+    // Estado de edição
+    let currentEditingRecurringId = null;
+
     async function loadRecurringExpenses() {
         try {
-            const expenses = await fetchPixBoletoExpenses();
-            renderRecurringExpensesList(expenses);
+            // Carrega configurações de gastos recorrentes (não os lançamentos)
+            const r = await authenticatedFetch(`${API_BASE_URL}/api/recurring-expenses`);
+            if (!r.ok) throw new Error('Falha ao buscar gastos recorrentes');
+            const list = await r.json();
+            renderRecurringExpensesList(Array.isArray(list) ? list : []);
         } catch (error) {
-            console.error('Erro ao carregar gastos PIX/Boleto:', error);
-            showNotification('Erro ao carregar gastos PIX/Boleto', 'error');
+            console.error('Erro ao carregar gastos recorrentes:', error);
+            showNotification('Erro ao carregar gastos recorrentes', 'error');
         }
     }
 
-    function renderRecurringExpensesList(expenses) {
+    function renderRecurringExpensesList(items) {
         if (!recurringList) return;
 
-        if (expenses.length === 0) {
-            recurringList.innerHTML = '<p class="text-gray-500 text-center">Nenhum gasto encontrado para PIX/Boleto.</p>';
+        if (!items.length) {
+            recurringList.innerHTML = '<p class="text-gray-500 text-center">Nenhum gasto recorrente cadastrado.</p>';
             return;
         }
 
-        // Renderiza itens de despesas (não necessariamente recorrentes) da conta PIX/Boleto
-        recurringList.innerHTML = expenses.map(item => {
-            const amount = Number(item.amount || item.valor || 0);
-            const date = new Date(item.transaction_date || item.date);
-            const isRecurring = !!item.is_recurring_expense;
-            const business = !!item.is_business_expense;
-            const plan = item.account_plan_code;
-
+        recurringList.innerHTML = items.map(r => {
+            const amount = Number(r.amount || 0);
+            const business = !!r.is_business_expense;
+            const plan = r.account_plan_code;
+            const dom = r.day_of_month || r.dayOfMonth;
             return `
             <div class="bg-gray-50 p-4 rounded-lg mb-3">
                 <div class="flex justify-between items-start">
                     <div class="flex-1">
-                        <h4 class="font-medium text-gray-800">${item.description || 'Sem descrição'}</h4>
+                        <h4 class="font-medium text-gray-800">${r.description || 'Sem descrição'}</h4>
                         <p class="text-sm text-gray-600">
                             <strong>Valor:</strong> ${formatCurrency(amount)} | 
-                            <strong>Conta:</strong> ${item.account || 'PIX/Boleto'} | 
-                            <strong>Data:</strong> ${isNaN(date) ? '-' : date.toLocaleDateString('pt-BR')}
+                            <strong>Conta:</strong> ${r.account || 'PIX/Boleto'} | 
+                            <strong>Dia:</strong> ${dom || '-'}
                         </p>
                         ${plan ? `<p class="text-sm text-gray-600"><strong>Plano:</strong> ${plan}</p>` : ''}
                         <p class="text-sm ${business ? 'text-blue-600' : 'text-green-600'}">
-                            ${business ? '💼 Empresarial' : '🏠 Pessoal'} ${isRecurring ? '• 🔁 Recorrente' : ''}
+                            ${business ? '💼 Empresarial' : '🏠 Pessoal'} • 🔁 Recorrente
                         </p>
                     </div>
                     <div class="flex gap-2">
-                        ${isRecurring ? `
-                        <button onclick="editRecurringExpense(${item.recurring_expense_id || item.id})" 
-                                class="bg-blue-500 text-white px-3 py-1 rounded text-sm">
-                            Editar
-                        </button>
-                        <button onclick="deleteRecurringExpense(${item.recurring_expense_id || item.id})" 
-                                class="bg-red-500 text-white px-3 py-1 rounded text-sm">
-                            Remover
-                        </button>` : ''}
+                        <button onclick="editRecurringExpense(${r.id})" class="bg-blue-500 text-white px-3 py-1 rounded text-sm">Editar</button>
+                        <button onclick="deleteRecurringExpense(${r.id})" class="bg-red-500 text-white px-3 py-1 rounded text-sm">Excluir</button>
                     </div>
                 </div>
-            </div>
-            `;
+            </div>`;
         }).join('');
     }
 
@@ -5331,22 +5326,65 @@ document.addEventListener('DOMContentLoaded', function() {
         }
 
         try {
-            const response = await authenticatedFetch(`${API_BASE_URL}/api/recurring-expenses`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
+            const isEdit = !!currentEditingRecurringId;
+            const url = isEdit 
+                ? `${API_BASE_URL}/api/recurring-expenses/${currentEditingRecurringId}`
+                : `${API_BASE_URL}/api/recurring-expenses`;
+            const method = isEdit ? 'PUT' : 'POST';
+            const response = await authenticatedFetch(url, {
+                method,
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(data)
             });
 
-            if (!response.ok) throw new Error('Erro ao criar gasto recorrente');
+            if (!response.ok) throw new Error(isEdit ? 'Erro ao atualizar gasto recorrente' : 'Erro ao criar gasto recorrente');
 
-            showNotification('Gasto recorrente criado com sucesso!', 'success');
+            showNotification(isEdit ? 'Gasto recorrente atualizado!' : 'Gasto recorrente criado com sucesso!', 'success');
+            currentEditingRecurringId = null;
+            // Restaurar rótulo do botão
+            const submitBtn = recurringForm.querySelector('button[type="submit"]');
+            if (submitBtn) submitBtn.textContent = 'Criar Gasto Recorrente';
             recurringForm.reset();
             await loadRecurringExpenses();
         } catch (error) {
-            console.error('Erro ao criar gasto recorrente:', error);
-            showNotification('Erro ao criar gasto recorrente', 'error');
+            console.error('Erro ao salvar gasto recorrente:', error);
+            showNotification('Erro ao salvar gasto recorrente', 'error');
+        }
+    }
+
+    // Tornar função global para uso no onclick
+    window.editRecurringExpense = async function(id) {
+        try {
+            // Buscar lista e localizar item (não há endpoint GET by id no backend atual)
+            const r = await authenticatedFetch(`${API_BASE_URL}/api/recurring-expenses`);
+            if (!r.ok) throw new Error('Falha ao buscar recorrentes');
+            const list = await r.json();
+            const item = (Array.isArray(list) ? list : []).find(x => String(x.id) === String(id));
+            if (!item) {
+                showNotification('Gasto recorrente não encontrado', 'error');
+                return;
+            }
+            currentEditingRecurringId = id;
+            // Preencher formulário
+            const form = document.getElementById('recurring-form');
+            if (!form) return;
+            form.querySelector('[name="description"]').value = item.description || '';
+            form.querySelector('[name="amount"]').value = Number(item.amount || 0);
+            form.querySelector('[name="account"]').value = 'PIX/Boleto';
+            form.querySelector('[name="day_of_month"]').value = item.day_of_month || 1;
+            form.querySelector('[name="account_plan_code"]').value = item.account_plan_code || '';
+            const chk = form.querySelector('[name="is_business_expense"]');
+            if (chk) chk.checked = !!item.is_business_expense;
+            // Atualizar rótulo do botão
+            const submitBtn = form.querySelector('button[type="submit"]');
+            if (submitBtn) submitBtn.textContent = 'Salvar Alterações';
+            // Abrir modal, se estiver fechado
+            if (typeof openRecurringModal === 'function') {
+                await openRecurringModal();
+            }
+            showNotification('Editando gasto recorrente — ajuste os campos e salve', 'info');
+        } catch (e) {
+            console.error('Falha ao entrar em modo de edição:', e);
         }
     }
 
@@ -5399,11 +5437,6 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     // Tornar funções globais para uso nos botões
-    window.editRecurringExpense = async function(id) {
-        // Implementar funcionalidade de edição
-        showNotification('Funcionalidade de edição em desenvolvimento', 'info');
-    };
-
     window.deleteRecurringExpense = deleteRecurringExpense;
 
     // ========== SISTEMA DE TABS (DRY, delega em switchMainTab) ==========

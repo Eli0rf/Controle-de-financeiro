@@ -219,6 +219,17 @@ Processamento mensal (geração de lançamentos):
 - Inserção em `expenses`: cria o gasto com `is_recurring_expense = 1`, `recurring_expense_id = <id>` e os demais campos herdados do recorrente.
 - Registro de processamento: insere em `recurring_expense_processing (recurring_expense_id, processed_month, expense_id)`; existe `UNIQUE (recurring_expense_id, processed_month)`, reforçando a idempotência.
 
+Pagamentos mensais (CRUD por recorrência) — 1x por mês por item:
+- Regra: Cada recorrente `PIX/Boleto` só pode ter um pagamento por mês. A unicidade é garantida por `recurring_expense_processing (recurring_expense_id, processed_month)` e pelas novas rotas abaixo.
+- Criar: `POST /api/recurring-expenses/:id/payments` com `{ year, month, amount?, description?, account_plan_code?, is_business_expense?, day_of_month?, transaction_date? }`
+  - Se já existir pagamento para `{year,month}`, retorna `409` e o `expense` existente.
+  - Data: usa `transaction_date` ou constrói a partir de `day_of_month` (ou o do recorrente), ajustando para último dia válido do mês quando necessário.
+  - Cria `expenses` com `is_recurring_expense=1` e `recurring_expense_id`, registra em `recurring_expense_processing`.
+- Ler: `GET /api/recurring-expenses/:id/payments?year=YYYY&month=MM` → retorna o `expense` do mês ou `404` se não existir.
+- Atualizar: `PUT /api/recurring-expenses/:id/payments` com `{ year, month, ...campos }`
+  - Atualiza os campos do `expense`; se `transaction_date` mover para outro mês, valida que não há duplicidade e move o `processed_month` correspondente.
+- Remover: `DELETE /api/recurring-expenses/:id/payments?year=YYYY&month=MM` → apaga o `expense` e o registro em `recurring_expense_processing`.
+
 Listagem e filtros (visão do usuário):
 - GET `/api/expenses` tem regra específica para `PIX/Boleto`:
   - Por padrão, se `account = 'PIX/Boleto'` e não for informado `start_date/end_date`, despesas recorrentes são filtradas (adiciona `AND is_recurring_expense = 0`).
