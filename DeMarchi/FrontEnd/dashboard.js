@@ -187,6 +187,8 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Projeção de gastos por plano (quantidade de lançamentos futuros)
     chartRegistry.planProjectionChart = null;
+    // Evolução detalhada do gasto recorrente analisado
+    chartRegistry.detailedEvolutionChart = null;
     
     // ========== PROJEÇÃO DE GASTOS POR PLANO (QUANTIDADE) ==========
     /**
@@ -7664,6 +7666,33 @@ document.addEventListener('DOMContentLoaded', function() {
         const isPixLike = acc => { const n=norm(acc); return n.includes('PIX') || n.includes('BOLETO'); };
         const filtered = rawExpenses.filter(r => isPixLike(r.account || r.accountName || r.conta || r.descricaoConta));
 
+        // Mapear históricos individuais por gasto recorrente (quando disponíveis no backend)
+        const expenseHistories = {};
+        filtered.forEach(r => {
+            const hist = Array.isArray(r.history) ? r.history.map(h => ({
+                year: Number(h.year),
+                month: Number(h.month),
+                planned: Number(h.planned || r.plannedAmount || 0),
+                actual: Number(h.actual || 0)
+            })) : [];
+            const planCodes = Array.isArray(r.planCodes)
+                ? r.planCodes.filter(Boolean).map(pc => String(pc))
+                : (r.account_plan_code != null && r.account_plan_code !== ''
+                    ? [String(r.account_plan_code)]
+                    : []);
+            if (r.id != null) {
+                expenseHistories[r.id] = {
+                    id: r.id,
+                    description: r.description,
+                    category: r.category,
+                    paymentDay: r.dayOfMonth || r.day_of_month,
+                    planCodes,
+                    history: hist,
+                    statistics: r.statistics || {}
+                };
+            }
+        });
+
         // Construir mapa de histórico mensal real (somando actual de cada recorrente)
         const monthlyHistory = backendMonthlyHistory ? backendMonthlyHistory : (() => {
             const arr = [];
@@ -7721,21 +7750,29 @@ document.addEventListener('DOMContentLoaded', function() {
             const hist = Array.isArray(r.history)? r.history:[];
             const currentHist = hist.find(h=> h.year===baseYear && h.month===baseMonth);
             const stats = r.statistics || {};
+            const planCodes = Array.isArray(r.planCodes)
+                ? r.planCodes.filter(Boolean).map(pc => String(pc))
+                : (r.account_plan_code != null && r.account_plan_code !== ''
+                    ? [String(r.account_plan_code)]
+                    : []);
+
             return {
                 id: r.id,
                 description: r.description,
                 category: r.category,
                 paymentDay: r.dayOfMonth || r.day_of_month,
+                planCodes,
                 plannedAmount: Number(currentHist?.planned || r.plannedAmount || r.amount || 0),
                 avgActual: Number(stats.avgActual || 0),
                 variationPercent: Number(stats.avgVariation || 0),
                 reliability: Number(stats.reliability || reliability || 0),
                 trend: stats.trendDirection || trendDirection,
                 currentMonthActual: Number(currentHist?.actual || 0)
+                
             };
         });
 
-        return { summary, monthlyHistory, categoryBreakdown, trendsSummary, projections, expenses: adaptedExpenses, discrepancy };
+        return { summary, monthlyHistory, categoryBreakdown, trendsSummary, projections, expenses: adaptedExpenses, discrepancy, expenseHistories };
     }
 
     // Carregar dados BI de gastos recorrentes PIX/Boleto
@@ -9116,10 +9153,115 @@ document.addEventListener('DOMContentLoaded', function() {
         }
 
     // Função global para análise detalhada (chamada pelos botões da tabela)
-    window.showDetailedAnalysis = function(expenseId) {
-        console.log(`Mostrando análise detalhada para gasto ID: ${expenseId}`);
-        document.getElementById('detailed-analysis-section').classList.remove('hidden');
-        // Carregar dados específicos do gasto e renderizar gráficos detalhados
+    window.showDetailedAnalysis = async function(expenseId) {
+        try {
+            const section = document.getElementById('detailed-analysis-section');
+            if (!section) return;
+            section.classList.remove('hidden');
+
+            const header = section.querySelector('h3');
+            const diag = currentRecurringBIData?.expenseHistories?.[expenseId] || null;
+            const expFallback = (currentRecurringExpenses || []).find(e => e.id === expenseId) || null;
+
+            const title = diag?.description || expFallback?.description || `Gasto #${expenseId}`;
+            if (header) header.textContent = `🔍 Análise Detalhada — ${title}`;
+
+            // Montar série mensal (12 meses) com planned/actual
+            // Usa ano/mês selecionados na UI se disponíveis para alinhar período
+            const selYear = Number(document.getElementById('recurring-year')?.value || 0);
+            const selMonth = Number(document.getElementById('recurring-month')?.value || 0);
+            const now = new Date();
+            const baseYear = selYear || now.getFullYear();
+            const baseMonth = selMonth || (now.getMonth() + 1);
+            const history = [];
+            for (let i = 11; i >= 0; i--) {
+                const d = new Date(baseYear, baseMonth - 1 - i, 1);
+                const y = d.getFullYear();
+                const m = d.getMonth() + 1;
+                let planned = 0, actual = 0;
+                // Usa histórico do backend quando existe
+                if (diag && Array.isArray(diag.history)) {
+                    const hm = diag.history.find(h => h.year === y && h.month === m);
+                    planned = Number(hm?.planned || 0);
+                    actual = Number(hm?.actual || 0);
+                } else if (expFallback) {
+                    // fallback: usa plannedAmount como planejado e não temos actual mensal detalhado
+                    planned = Number(expFallback.plannedAmount || 0);
+                    actual = 0;
+                }
+                // Se for o mês alvo (último ponto da série) e não houver actual informado pelo backend,
+                // tentar cruzar com despesas do período corrente via plano de conta
+                if (i === 0 && actual === 0) {
+                    const planCodes = diag?.planCodes || expFallback?.planCodes || (expFallback?.account_plan_code ? [String(expFallback.account_plan_code)] : []);
+                    if (Array.isArray(planCodes) && planCodes.length > 0 && Array.isArray(currentRecurringExpenses) && currentRecurringExpenses.length > 0) {
+                        const sumByPlan = currentRecurringExpenses
+                            .filter(e => {
+                                const code = e.account_plan_code != null && e.account_plan_code !== '' ? String(e.account_plan_code) : null;
+                                if (!code) return false;
+                                // Filtrar por mês/ano do ponto (y,m)
+                                const dt = new Date(e.transaction_date || e.date || e.created_at || e.updated_at || Date.now());
+                                return (dt.getFullYear() === y && (dt.getMonth()+1) === m) && planCodes.includes(code);
+                            })
+                            .reduce((sum, e) => sum + Number(e.amount || e.valor || e.value || 0), 0);
+                        actual = round2(sumByPlan);
+                    }
+                }
+                history.push({ y, m, label: d.toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' }), planned: round2(planned), actual: round2(actual) });
+            }
+
+            // Renderizar gráfico de evolução do gasto
+            const canvas = document.getElementById('detailed-evolution-chart');
+            if (canvas) {
+                const ctx = canvas.getContext('2d');
+                if (chartRegistry.detailedEvolutionChart) chartRegistry.detailedEvolutionChart.destroy();
+                chartRegistry.detailedEvolutionChart = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: history.map(h => h.label),
+                        datasets: [
+                            { label: 'Planejado', data: history.map(h => h.planned), borderColor: 'rgba(59,130,246,1)', backgroundColor: 'rgba(59,130,246,0.1)', borderWidth: 2, tension: 0.2, fill: false },
+                            { label: 'Realizado', data: history.map(h => h.actual), borderColor: 'rgba(34,197,94,1)', backgroundColor: 'rgba(34,197,94,0.15)', borderWidth: 2, tension: 0.2, fill: false }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { position: 'top' },
+                            tooltip: { callbacks: { label: (ctx) => `${ctx.dataset.label}: ${formatCurrency(ctx.parsed.y)}` } }
+                        },
+                        scales: { y: { ticks: { callback: (v) => formatCurrency(v) } } }
+                    }
+                });
+            }
+
+            // Estatísticas detalhadas
+            const statsEl = document.getElementById('detailed-stats');
+            if (statsEl) {
+                const plannedNow = history[history.length - 1]?.planned || 0;
+                const actualNow = history[history.length - 1]?.actual || 0;
+                const variation = plannedNow > 0 ? ((actualNow - plannedNow) / plannedNow) * 100 : 0;
+                const reliability = currentRecurringBIData?.summary?.overallReliability || 0;
+                const trend = (expFallback?.trend || diag?.statistics?.trendDirection || 'stable');
+                const paid = actualNow > 0;
+
+                statsEl.innerHTML = `
+                    <div class="grid grid-cols-2 gap-3 text-sm">
+                        <div><span class="text-gray-500">Categoria:</span> <span class="font-medium">${diag?.category || expFallback?.category || 'Sem categoria'}</span></div>
+                        <div><span class="text-gray-500">Dia pagamento:</span> <span class="font-medium">${diag?.paymentDay || expFallback?.paymentDay || 'Variável'}</span></div>
+                        <div><span class="text-gray-500">Planejado (mês):</span> <span class="font-medium">${formatCurrency(plannedNow)}</span></div>
+                        <div><span class="text-gray-500">Realizado (mês):</span> <span class="font-medium">${formatCurrency(actualNow)}</span></div>
+                        <div><span class="text-gray-500">Variação:</span> <span class="font-medium ${variation>=0?'text-red-600':'text-green-600'}">${variation>=0?'+':''}${variation.toFixed(1)}%</span></div>
+                        <div><span class="text-gray-500">Confiabilidade (geral):</span> <span class="font-medium">${reliability.toFixed(1)}%</span></div>
+                        <div><span class="text-gray-500">Tendência:</span> <span class="font-medium">${getTrendIcon(trend)} ${trend}</span></div>
+                        <div><span class="text-gray-500">Pago no mês:</span> <span class="font-medium">${paid ? 'Sim' : 'Não'}</span></div>
+                    </div>
+                `;
+            }
+        } catch (e) {
+            console.error('Falha na análise detalhada:', e);
+            showNotification('Não foi possível carregar a análise detalhada', 'error');
+        }
     };
 
     // ========== GRÁFICOS PIX/BOLETO (UNIFICADO) ==========
