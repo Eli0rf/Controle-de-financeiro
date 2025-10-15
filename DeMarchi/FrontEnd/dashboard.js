@@ -423,6 +423,12 @@ document.addEventListener('DOMContentLoaded', function() {
         }).format(value || 0);
     }
 
+    // Arredondar para 2 casas decimais (evita artefatos de ponto flutuante)
+    function round2(n) {
+        const x = Number(n || 0);
+        return Math.round((x + Number.EPSILON) * 100) / 100;
+    }
+
     // ========== PERSONALIZAÇÃO VISUAL PARA CONTA UNIFICADA PIX/Boleto ==========
 
     function isPixBoletoAccount(account){
@@ -5623,7 +5629,7 @@ document.addEventListener('DOMContentLoaded', function() {
             yearData.forEach(item => {
                 const monthIndex = item.month - 1;
                 if (monthIndex >= 0 && monthIndex < 12) {
-                    monthlyData[monthIndex] = item.total;
+                    monthlyData[monthIndex] = round2(item.total);
                     monthlyCount[monthIndex] = item.count;
                 }
             });
@@ -8113,13 +8119,13 @@ document.addEventListener('DOMContentLoaded', function() {
         destroyChart('recurringPlannedVsActualChart');
 
         const labels = monthlyHistory.map(m => m.monthLabel);
-        const plannedData = monthlyHistory.map(m => m.totalPlanned);
-        const actualData = monthlyHistory.map(m => m.totalActual);
+    const plannedData = monthlyHistory.map(m => round2(m.totalPlanned));
+    const actualData = monthlyHistory.map(m => round2(m.totalActual));
         // Média móvel 3 meses sobre realizado
         const movingAvg = actualData.map((v,i,arr)=>{
             const slice = arr.slice(Math.max(0,i-2), i+1);
             const sum = slice.reduce((s,x)=>s+x,0);
-            return sum / slice.length;
+            return round2(sum / slice.length);
         });
 
         chartRegistry.recurringPlannedVsActualChart = new Chart(ctx, {
@@ -8206,7 +8212,10 @@ document.addEventListener('DOMContentLoaded', function() {
         destroyChart('recurringVariationChart');
 
         const labels = monthlyHistory.map(m => m.monthLabel);
-        const variationData = monthlyHistory.map(m => m.variationPercent);
+        const variationData = monthlyHistory.map(m => {
+            const v = Number(m.variationPercent || 0);
+            return Math.round((v + Number.EPSILON) * 10) / 10; // 1 casa decimal
+        });
 
         chartRegistry.recurringVariationChart = new Chart(ctx, {
             type: 'bar',
@@ -8270,7 +8279,7 @@ document.addEventListener('DOMContentLoaded', function() {
         destroyChart('recurringCategoryChart');
 
         const labels = categoryBreakdown.map(c => c.category);
-        const data = categoryBreakdown.map(c => c.totalPlanned);
+    const data = categoryBreakdown.map(c => round2(c.totalPlanned));
         const colors = generateDistinctColors(labels.length);
 
         chartRegistry.recurringCategoryChart = new Chart(ctx, {
@@ -8356,11 +8365,11 @@ document.addEventListener('DOMContentLoaded', function() {
                 const m = dt.getMonth() + 1;
                 const key = `${y}-${String(m).padStart(2,'0')}`;
                 const amt = Number(e.amount || e.valor || e.value || 0);
-                agg.set(key, (agg.get(key) || 0) + amt);
+                agg.set(key, round2((agg.get(key) || 0) + amt));
             });
 
-            // Construir labels/data ordenados por data asc
-            const entries = Array.from(agg.entries()).sort((a,b) => a[0].localeCompare(b[0]));
+            // Construir labels/data ordenados por data asc e arredondar para 2 casas
+            const entries = Array.from(agg.entries()).map(([k,v])=>[k, round2(v)]).sort((a,b) => a[0].localeCompare(b[0]));
             const labels = entries.map(([key]) => {
                 const [y,m] = key.split('-').map(Number);
                 return new Date(y, m-1, 1).toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' });
@@ -9751,11 +9760,12 @@ document.addEventListener('DOMContentLoaded', function() {
         }
 
         const accounts = [...new Set(data.expenses.map(e => e.account))];
-        const accountTotals = accounts.map(account => 
-            data.expenses
+        const accountTotals = accounts.map(account => {
+            const s = data.expenses
                 .filter(e => e.account === account)
-                .reduce((sum, e) => sum + parseFloat(e.amount), 0)
-        );
+                .reduce((sum, e) => sum + parseFloat(e.amount || 0), 0);
+            return round2(s);
+        });
 
         chartRegistry.businessMiniChart = new Chart(ctx, {
             type: 'doughnut',
