@@ -8609,10 +8609,16 @@ document.addEventListener('DOMContentLoaded', function() {
                     </div>
                 </td>
                 <td class="p-3">
-                    <button onclick="showDetailedAnalysis(${expense.id})" 
-                            class="text-blue-600 hover:text-blue-800 text-sm">
-                        🔍 Analisar
-                    </button>
+                    <div class="flex items-center gap-2">
+                        <button onclick="payRecurringExpense(${expense.id})"
+                                class="text-green-600 hover:text-green-800 text-sm border border-green-200 rounded px-2 py-1">
+                            💸 Pagar
+                        </button>
+                        <button onclick="showDetailedAnalysis(${expense.id})" 
+                                class="text-blue-600 hover:text-blue-800 text-sm">
+                            🔍 Analisar
+                        </button>
+                    </div>
                 </td>
             `;
 
@@ -8654,6 +8660,74 @@ document.addEventListener('DOMContentLoaded', function() {
         if (Math.abs(variation) <= 10) return 'No Orçamento';
         if (variation > 10) return 'Acima do Orçamento';
         return 'Abaixo do Orçamento';
+    }
+
+    // Ação: pagar gasto recorrente (cria lançamento PIX/Boleto no mês selecionado)
+    window.payRecurringExpense = async function(expenseId) {
+        try {
+            const item = (currentRecurringBIData?.expenses || []).find(e => e.id === expenseId) ||
+                         (currentRecurringBIData?.expenseHistories?.[expenseId]) ||
+                         (currentRecurringExpenses || []).find(e => e.id === expenseId);
+            if (!item) {
+                showNotification('Item não encontrado para pagamento', 'error');
+                return;
+            }
+
+            const selYear = Number(document.getElementById('recurring-year')?.value || 0);
+            const selMonth = Number(document.getElementById('recurring-month')?.value || 0);
+            const now = new Date();
+            const y = selYear || now.getFullYear();
+            const m = selMonth || (now.getMonth() + 1);
+            const day = Number(item.paymentDay || now.getDate());
+            const txDate = new Date(y, m - 1, Math.max(1, Math.min(day, 28))); // usa dia previsto, limitando a 1..28
+            const amount = Number(item.plannedAmount || item.amount || 0);
+            const description = `Pagamento ${item.description || 'recorrente'}`;
+            const account = 'PIX/Boleto';
+            const account_plan_code = Array.isArray(item.planCodes) && item.planCodes.length > 0
+                ? item.planCodes[0]
+                : (item.account_plan_code || null);
+
+            if (!amount || amount <= 0) {
+                const val = prompt('Informe o valor a pagar (R$):', '0,00');
+                if (!val) return;
+                const parsed = parseFloat(String(val).replace(/\./g,'').replace(',','.'));
+                if (isNaN(parsed) || parsed <= 0) { showNotification('Valor inválido', 'error'); return; }
+                await createExpense(txDate, parsed, description, account, account_plan_code);
+            } else {
+                // Confirmação
+                const ok = confirm(`Confirmar pagamento de ${formatCurrency(amount)} em ${txDate.toLocaleDateString('pt-BR')}?`);
+                if (!ok) return;
+                await createExpense(txDate, amount, description, account, account_plan_code);
+            }
+
+            // Refresh dados e UI
+            await loadRecurringPixBoletoBI(true);
+            showNotification('Pagamento registrado com sucesso!', 'success');
+        } catch (e) {
+            console.error('Falha ao registrar pagamento:', e);
+            showNotification('Erro ao registrar pagamento', 'error');
+        }
+    };
+
+    async function createExpense(dateObj, amount, description, account, account_plan_code){
+        const body = {
+            transaction_date: dateObj.toISOString().slice(0,10),
+            amount: Number(amount).toFixed(2),
+            description,
+            account,
+            account_plan_code: account_plan_code || null,
+            is_business_expense: false,
+            total_installments: 1
+        };
+        const resp = await authenticatedFetch(`${API_BASE_URL}/api/expenses`, {
+            method: 'POST',
+            body: JSON.stringify(body)
+        });
+        if (!resp.ok) {
+            const msg = await safeReadJson(resp);
+            throw new Error(msg?.message || 'Falha ao criar despesa');
+        }
+        return true;
     }
 
     // Popular filtro de anos
