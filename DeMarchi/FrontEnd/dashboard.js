@@ -6118,7 +6118,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 const lastMonthTotal = parseFloat(lastMonthData.total) || 0;
                 
                 if (lastMonthTotal > 0) {
-                    const growthRate = ((data.total - lastMonthTotal) / lastMonthTotal * 100);
+                    const growthRate = lastMonthTotal > 0 ? ((data.total - lastMonthTotal) / lastMonthTotal * 100) : 0;
                     const growthText = growthRate >= 0 ? `+${growthRate.toFixed(1)}%` : `${growthRate.toFixed(1)}%`;
                     const growthColor = growthRate >= 0 ? 'text-green-600' : 'text-red-600';
                     
@@ -7766,8 +7766,14 @@ document.addEventListener('DOMContentLoaded', function() {
                 const monthLabel = d.toLocaleDateString('pt-BR',{ month:'short', year:'numeric' });
                 let totalPlanned=0,totalActual=0;
                 filtered.forEach(r=>{ const hist=Array.isArray(r.history)?r.history:[]; const hm=hist.find(h=>h.year===y&&h.month===m); totalPlanned+=Number(hm?.planned||r.plannedAmount||0); totalActual+=Number(hm?.actual||0); });
-                const variationPercent = totalPlanned>0?((totalActual-totalPlanned)/totalPlanned)*100:0;
-                arr.push({year:y,month:m,monthLabel,totalPlanned,totalActual,variationPercent});
+                // variationPercent será calculada posteriormente como variação mês a mês (MoM)
+                arr.push({year:y,month:m,monthLabel,totalPlanned,totalActual,variationPercent:0});
+            }
+            // Calcular variação MoM com base no totalActual do mês anterior
+            for (let i = 0; i < arr.length; i++) {
+                const prev = i > 0 ? Number(arr[i-1].totalActual || 0) : 0;
+                const curr = Number(arr[i].totalActual || 0);
+                arr[i].variationPercent = prev > 0 ? ((curr - prev) / prev) * 100 : 0;
             }
             return arr;
         })();
@@ -7825,6 +7831,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 category: r.category,
                 paymentDay: r.dayOfMonth || r.day_of_month,
                 planCodes,
+                account_plan_code: (Array.isArray(planCodes) && planCodes.length>0) ? planCodes[0] : (r.account_plan_code || null),
                 plannedAmount: Number(currentHist?.planned || r.plannedAmount || r.amount || 0),
                 avgActual: Number(stats.avgActual || 0),
                 variationPercent: Number(stats.avgVariation || 0),
@@ -8117,7 +8124,9 @@ document.addEventListener('DOMContentLoaded', function() {
                 }).reduce((s, e) => s + Number(e.amount || e.valor || e.value || 0), 0);
 
                 const totalPlanned = plannedSum; // usar soma das recorrências como planejado mensal
-                const variationPercent = totalPlanned > 0 ? ((monthActual - totalPlanned) / totalPlanned) * 100 : 0;
+                // variationPercent: variação mês a mês baseada no total atual vs mês anterior
+                const prevMonthActual = monthlyHistory.length ? Number(monthlyHistory[monthlyHistory.length - 1].totalActual || 0) : 0;
+                const variationPercent = prevMonthActual > 0 ? ((monthActual - prevMonthActual) / prevMonthActual) * 100 : 0;
                 monthlyHistory.push({
                     year: y,
                     month: m,
@@ -8712,6 +8721,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 <td class="p-3">
                     <div class="font-medium">${expense.description || 'N/A'}</div>
                     <div class="text-xs text-gray-500">${expense.category || 'Sem categoria'}</div>
+                    ${expense.account_plan_code ? `<div class="text-[10px] text-indigo-600 mt-0.5">Plano: ${expense.account_plan_code}</div>` : ''}
                 </td>
                 <td class="p-3 text-center">
                     <div>${expense.paymentDay || 'Variável'}</div>
@@ -8767,10 +8777,18 @@ document.addEventListener('DOMContentLoaded', function() {
     // Obter classe de status do gasto
     function getExpenseStatusClass(expense) {
         if (!expense.currentMonthActual || expense.currentMonthActual <= 0) return 'bg-gray-400'; // Pendente
+        const planned = Number(expense.plannedAmount || 0);
+        const actual = Number(expense.currentMonthActual || 0);
+        if (planned > 0) {
+            const execRate = (actual / planned) * 100;
+            if (execRate <= 100) return 'bg-green-500'; // Dentro do teto
+            return 'bg-orange-500'; // Acima do teto
+        }
+        // Sem teto definido: usar variação como fallback informativo
         const variation = Number(expense.variationPercent || 0);
-        if (Math.abs(variation) <= 10) return 'bg-green-500'; // No Orçamento
-        if (variation > 10) return 'bg-orange-500'; // Acima do Orçamento
-        return 'bg-blue-500'; // Abaixo do Orçamento
+        if (Math.abs(variation) <= 10) return 'bg-green-500';
+        if (variation > 10) return 'bg-orange-500';
+        return 'bg-blue-500';
     }
 
     // Obter cor da confiabilidade
@@ -8794,13 +8812,19 @@ document.addEventListener('DOMContentLoaded', function() {
     // Obter texto do status
     function getStatusText(expense) {
         if (!expense.currentMonthActual || expense.currentMonthActual <= 0) return 'Pendente';
+        const planned = Number(expense.plannedAmount || 0);
+        const actual = Number(expense.currentMonthActual || 0);
+        if (planned > 0) {
+            if (actual <= planned) return 'Teto conforme plano';
+            return 'Acima do Teto';
+        }
         const variation = Number(expense.variationPercent || 0);
-        if (Math.abs(variation) <= 10) return 'No Orçamento';
-        if (variation > 10) return 'Acima do Orçamento';
-        return 'Abaixo do Orçamento';
+        if (Math.abs(variation) <= 10) return 'Pago (no orçamento)';
+        if (variation > 10) return 'Pago (acima do orçamento)';
+        return 'Pago (abaixo do orçamento)';
     }
 
-    // Ação: pagar gasto recorrente (cria lançamento PIX/Boleto no mês selecionado)
+    // Ação: pagar gasto recorrente (gera pagamento vinculado ao recorrente para o mês selecionado)
     window.payRecurringExpense = async function(expenseId) {
         try {
             const item = (currentRecurringBIData?.expenses || []).find(e => e.id === expenseId) ||
@@ -8825,17 +8849,39 @@ document.addEventListener('DOMContentLoaded', function() {
                 ? item.planCodes[0]
                 : (item.account_plan_code || null);
 
-            if (!amount || amount <= 0) {
+            // Se valor não definido, pedir input
+            let finalAmount = amount;
+            if (!finalAmount || finalAmount <= 0) {
                 const val = prompt('Informe o valor a pagar (R$):', '0,00');
                 if (!val) return;
                 const parsed = parseFloat(String(val).replace(/\./g,'').replace(',','.'));
                 if (isNaN(parsed) || parsed <= 0) { showNotification('Valor inválido', 'error'); return; }
-                await createExpense(txDate, parsed, description, account, account_plan_code);
-            } else {
-                // Confirmação
-                const ok = confirm(`Confirmar pagamento de ${formatCurrency(amount)} em ${txDate.toLocaleDateString('pt-BR')}?`);
-                if (!ok) return;
-                await createExpense(txDate, amount, description, account, account_plan_code);
+                finalAmount = parsed;
+            }
+
+            // Confirmar
+            const ok = confirm(`Confirmar pagamento de ${formatCurrency(finalAmount)} em ${txDate.toLocaleDateString('pt-BR')}?`);
+            if (!ok) return;
+
+            // Preferir endpoint de pagamentos mensais para garantir 1x/mês e status correto
+            const payResp = await authenticatedFetch(`${API_BASE_URL}/api/recurring-expenses/${expenseId}/payments`, {
+                method: 'POST',
+                body: JSON.stringify({
+                    year: y,
+                    month: m,
+                    amount: Number(finalAmount).toFixed(2),
+                    description,
+                    account_plan_code,
+                    transaction_date: txDate.toISOString().slice(0,10)
+                })
+            });
+            if (!payResp.ok) {
+                const msg = await safeReadJson(payResp);
+                if (payResp.status === 409) {
+                    showNotification('Pagamento deste mês já existe. Atualizando lista...', 'warning');
+                } else {
+                    throw new Error(msg?.message || 'Falha ao registrar pagamento');
+                }
             }
 
             // Refresh dados e UI
@@ -8847,26 +8893,7 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     };
 
-    async function createExpense(dateObj, amount, description, account, account_plan_code){
-        const body = {
-            transaction_date: dateObj.toISOString().slice(0,10),
-            amount: Number(amount).toFixed(2),
-            description,
-            account,
-            account_plan_code: account_plan_code || null,
-            is_business_expense: false,
-            total_installments: 1
-        };
-        const resp = await authenticatedFetch(`${API_BASE_URL}/api/expenses`, {
-            method: 'POST',
-            body: JSON.stringify(body)
-        });
-        if (!resp.ok) {
-            const msg = await safeReadJson(resp);
-            throw new Error(msg?.message || 'Falha ao criar despesa');
-        }
-        return true;
-    }
+    // Removido createExpense genérico daqui; pagamentos de recorrentes devem usar a rota dedicada
 
     // Popular filtro de anos
     function populateRecurringYearFilter() {
@@ -10719,7 +10746,7 @@ document.addEventListener('DOMContentLoaded', function() {
             
             // Análise de crescimento mensal
             if (lastMonth > 0 && secondLastMonth > 0) {
-                const growthRate = ((lastMonth / secondLastMonth - 1) * 100);
+                const growthRate = secondLastMonth > 0 ? ((lastMonth / secondLastMonth - 1) * 100) : 0;
                 if (growthRate > 20) {
                     recommendations.push({
                         type: 'warning',
