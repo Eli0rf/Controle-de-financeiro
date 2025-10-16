@@ -8829,6 +8829,9 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     // Ação: pagar gasto recorrente (gera pagamento vinculado ao recorrente para o mês selecionado)
+    async function safeReadJson(resp){
+        try { return await resp.json(); } catch { return null; }
+    }
     window.payRecurringExpense = async function(expenseId) {
         try {
             const item = (currentRecurringBIData?.expenses || []).find(e => e.id === expenseId) ||
@@ -8882,7 +8885,8 @@ document.addEventListener('DOMContentLoaded', function() {
             if (!payResp.ok) {
                 const msg = await safeReadJson(payResp);
                 if (payResp.status === 409) {
-                    showNotification('Pagamento deste mês já existe. Atualizando lista...', 'warning');
+                    // 409 = pagamento já existe para este mês (idempotência)
+                    showNotification('Já existe um pagamento para este mês. Atualizando dados...', 'warning');
                 } else {
                     throw new Error(msg?.message || 'Falha ao registrar pagamento');
                 }
@@ -8893,7 +8897,7 @@ document.addEventListener('DOMContentLoaded', function() {
             showNotification('Pagamento registrado com sucesso!', 'success');
         } catch (e) {
             console.error('Falha ao registrar pagamento:', e);
-            showNotification('Erro ao registrar pagamento', 'error');
+            showNotification(e?.message || 'Erro ao registrar pagamento', 'error');
         }
     };
 
