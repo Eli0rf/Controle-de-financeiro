@@ -7773,7 +7773,8 @@ document.addEventListener('DOMContentLoaded', function() {
             for (let i = 0; i < arr.length; i++) {
                 const prev = i > 0 ? Number(arr[i-1].totalActual || 0) : 0;
                 const curr = Number(arr[i].totalActual || 0);
-                arr[i].variationPercent = prev > 0 ? ((curr - prev) / prev) * 100 : 0;
+                // Evita -100% em meses sem lançamentos: só calcula se prev e curr > 0
+                arr[i].variationPercent = (prev > 0 && curr > 0) ? ((curr - prev) / prev) * 100 : 0;
             }
             return arr;
         })();
@@ -8126,7 +8127,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 const totalPlanned = plannedSum; // usar soma das recorrências como planejado mensal
                 // variationPercent: variação mês a mês baseada no total atual vs mês anterior
                 const prevMonthActual = monthlyHistory.length ? Number(monthlyHistory[monthlyHistory.length - 1].totalActual || 0) : 0;
-                const variationPercent = prevMonthActual > 0 ? ((monthActual - prevMonthActual) / prevMonthActual) * 100 : 0;
+                // Evita -100% em meses sem lançamentos: só calcula se prev e current > 0
+                const variationPercent = (prevMonthActual > 0 && monthActual > 0) ? ((monthActual - prevMonthActual) / prevMonthActual) * 100 : 0;
                 monthlyHistory.push({
                     year: y,
                     month: m,
