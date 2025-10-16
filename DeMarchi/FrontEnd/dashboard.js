@@ -7782,6 +7782,8 @@ document.addEventListener('DOMContentLoaded', function() {
         // Incorporar discrepância caso backend envie
         const discrepancy = biData.discrepancy || null;
 
+    
+
         // KPIs derivados
         const totalPlannedCurrent = monthlyHistory.length ? monthlyHistory[monthlyHistory.length-1].totalPlanned : 0;
         const avgActual12 = monthlyHistory.length ? monthlyHistory.reduce((s,m)=>s+m.totalActual,0)/monthlyHistory.length : 0;
