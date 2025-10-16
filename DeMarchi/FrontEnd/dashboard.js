@@ -6650,7 +6650,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 31: 274.31, 32: 450.00, 33: 100.00, 34: 54.80, 35: 1.00,
                 36: 1.00, 37: 1.00, 38: 1.00, 39: 300.00, 40: 1.00, 41: 1.00, 
                 42: 1.00, 43: 210.00, 44: 1.00, 45: 13061.75,
-                46: 600.00, 47: 600.00
+                46: 1000.00, 47: 600.00
         };
 
     if (!expenses || expenses.length === 0) {
@@ -6946,7 +6946,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 31: 274.31, 32: 450.00, 33: 100.00, 34: 54.80, 35: 1.00,
                 36: 1.00, 37: 1.00, 38: 1.00, 39: 300.00, 40: 1.00, 41: 1.00, 
                 42: 1.00, 43: 210.00, 44: 1.00, 45: 12700.75,
-                46: 600.00, 47: 600.00
+                46: 1000.00, 47: 600.00
         };
 
         const planNames = {
@@ -7753,7 +7753,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     history: hist,
                     statistics: r.statistics || {}
                 };
-            }
+            }46
         });
 
         // Construir mapa de histórico mensal real (somando actual de cada recorrente)
