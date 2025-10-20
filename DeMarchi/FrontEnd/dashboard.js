@@ -6370,6 +6370,55 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     window.exportFullReportsPrint = exportFullReportsPrint;
 
+    // ========== CONFIGURAÇÃO CENTRAL DE PLANOS DE CONTAS ==========
+    // Carrega planos de contas do backend e armazena em sessionStorage
+    async function loadChartOfAccountsConfig(force=false){
+        try {
+            const cacheKey = 'chartOfAccounts';
+            const cached = sessionStorage.getItem(cacheKey);
+            if(!force && cached){
+                const parsed = JSON.parse(cached);
+                if(parsed && parsed.maps){
+                    window.PLAN_BUDGETS = parsed.maps.budgets || {};
+                    window.PLAN_NAMES = parsed.maps.names || {};
+                    window.PLAN_DESCRIPTIONS = parsed.maps.descriptions || {};
+                    return parsed;
+                }
+            }
+            const resp = await fetch(`${API_BASE_URL}/api/config/chart-of-accounts`, { credentials: 'include' });
+            if(!resp.ok) throw new Error(`Config HTTP ${resp.status}`);
+            const data = await resp.json();
+            sessionStorage.setItem(cacheKey, JSON.stringify(data));
+            window.PLAN_BUDGETS = (data.maps && data.maps.budgets) || {};
+            window.PLAN_NAMES = (data.maps && data.maps.names) || {};
+            window.PLAN_DESCRIPTIONS = (data.maps && data.maps.descriptions) || {};
+            return data;
+        } catch(e){
+            console.warn('Não foi possível carregar planos de contas centralizados:', e.message);
+            window.PLAN_BUDGETS = window.PLAN_BUDGETS || {};
+            window.PLAN_NAMES = window.PLAN_NAMES || {};
+            window.PLAN_DESCRIPTIONS = window.PLAN_DESCRIPTIONS || {};
+            return null;
+        }
+    }
+
+    // Helpers para obter orçamento e nome a partir da configuração central, com fallback
+    function getPlanBudget(planId, fallbackBudgets){
+        const id = Number(planId); if(!isFinite(id)) return 0;
+        if(window.PLAN_BUDGETS && window.PLAN_BUDGETS[id] != null) return Number(window.PLAN_BUDGETS[id]);
+        if(fallbackBudgets && fallbackBudgets[id] != null) return Number(fallbackBudgets[id]);
+        return 0;
+    }
+    function getPlanName(planId, fallbackNames){
+        const id = Number(planId);
+        if(window.PLAN_NAMES && window.PLAN_NAMES[id]) return String(window.PLAN_NAMES[id]);
+        if(fallbackNames && fallbackNames[id]) return String(fallbackNames[id]);
+        return `Plano ${id}`;
+    }
+
+    // Pré-carregar config no início
+    loadChartOfAccountsConfig().catch(()=>{});
+
     // ========== CARREGAMENTO DE DADOS DA ABA RELATÓRIOS ==========
     
     // Função para buscar dados de despesas (faltava essa função)
@@ -6640,7 +6689,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function updateMainIndicators(expenses) {
-        const tetos = {
+        const tetosFallback = {
             1: 1000.00, 2: 2782.47, 3: 2431.67, 4: 350.00, 5: 2100.00,
                 6: 586.23, 7: 270.00, 8: 1200.00, 9: 1200.00, 10: 270.00,
                 11: 1895.40, 12: 2027.60, 13: 270.00, 14: 63.54, 15: 129.90,
@@ -6729,14 +6778,16 @@ document.addEventListener('DOMContentLoaded', function() {
         let totalBudget = 0;
         let totalSpent = 0;
 
-        Object.keys(tetos).forEach(planId => {
-            const budget = tetos[planId];
+        const planIds = new Set([...Object.keys(tetosFallback), ...Object.keys(window.PLAN_BUDGETS || {})]);
+        Array.from(planIds).forEach(planId => {
+            const budget = getPlanBudget(planId, tetosFallback);
+            if (budget <= 0) return; // ignorar planos sem orçamento definido
             const spent = planTotals[planId] || 0;
-            const percentage = budget > 0 ? (spent / budget) * 100 : 0;
-            
+            const percentage = (spent / budget) * 100;
+
             totalBudget += budget;
             totalSpent += spent;
-            
+
             if (percentage > 100) {
                 exceededPlans++;
             } else if (percentage >= 70) {
@@ -6757,7 +6808,7 @@ document.addEventListener('DOMContentLoaded', function() {
         if (warningPlansEl) warningPlansEl.textContent = warningPlans;
         if (exceededPlansEl) exceededPlansEl.textContent = exceededPlans;
     // Apenas número; o símbolo % está no HTML
-    if (generalUsageEl) generalUsageEl.textContent = Math.round((totalSpent / totalBudget) * 100);
+    if (generalUsageEl) generalUsageEl.textContent = totalBudget > 0 ? Math.round((totalSpent / totalBudget) * 100) : 0;
         if (totalBudgetEl) totalBudgetEl.textContent = formatCurrency(totalBudget);
 
         console.log('📊 Indicadores atualizados:', { safePlans, warningPlans, exceededPlans, totalBudget, totalSpent });
@@ -6936,7 +6987,7 @@ document.addEventListener('DOMContentLoaded', function() {
             return;
         }
 
-        const tetos = {
+        const tetosFallback = {
             1: 1000.00, 2: 2782.47, 3: 2431.67, 4: 350.00, 5: 2100.00,
                 6: 586.23, 7: 270.00, 8: 1200.00, 9: 1200.00, 10: 270.00,
                 11: 1895.40, 12: 2027.60, 13: 270.00, 14: 63.54, 15: 129.90,
@@ -6947,14 +6998,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 36: 1.00, 37: 1.00, 38: 1.00, 39: 300.00, 40: 1.00, 41: 1.00, 
                 42: 1.00, 43: 210.00, 44: 1.00, 45: 12700.75,
                 46: 1000.00, 47: 600.00
-        };
-
-        const planNames = {
-            1: "Combustível", 2: "Alimentação", 3: "Moradia", 4: "Transporte Público",
-            5: "Educação", 6: "Saúde", 7: "Lazer", 8: "Vestuário", 9: "Tecnologia",
-            10: "Comunicação", 11: "Seguros", 12: "Investimentos", 13: "Emergência",
-            14: "Manutenção", 15: "Impostos", 16: "Viagens", 17: "Presentes",
-            18: "Serviços", 19: "Equipamentos", 20: "Marketing"
         };
 
         if (!expenses || expenses.length === 0) {
@@ -6990,11 +7033,13 @@ document.addEventListener('DOMContentLoaded', function() {
 
         // Gerar alertas
         const alerts = [];
-        Object.keys(tetos).forEach(planId => {
-            const budget = tetos[planId];
+        const planIds = new Set([...Object.keys(tetosFallback), ...Object.keys(window.PLAN_BUDGETS || {})]);
+        Array.from(planIds).forEach(planId => {
+            const budget = getPlanBudget(planId, tetosFallback);
+            if (budget <= 0) return; // ignorar planos sem orçamento definido
             const spent = planTotals[planId] || 0;
             const percentage = budget > 0 ? (spent / budget) * 100 : 0;
-            const planName = planNames[planId] || `Plano ${planId}`;
+            const planName = getPlanName(planId, null);
             
             let status = '';
             let statusClass = '';
@@ -7056,7 +7101,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 <tbody class="bg-white divide-y divide-gray-200">
                     ${alerts.map(alert => `
                         <tr class="hover:bg-gray-50">
-                            <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                            <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900" title="${(window.PLAN_DESCRIPTIONS && window.PLAN_DESCRIPTIONS[alert.planId]) ? window.PLAN_DESCRIPTIONS[alert.planId] : ''}">
                                 ${alert.planName}
                             </td>
                             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
@@ -7753,7 +7798,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     history: hist,
                     statistics: r.statistics || {}
                 };
-            }46
+            }
         });
 
         // Construir mapa de histórico mensal real (somando actual de cada recorrente)

@@ -53,6 +53,7 @@ require('dotenv').config();
 // --- 2. CONFIGURAÇÕES PRINCIPAIS ---
 const app = express();
 const PORT = process.env.PORT || 3000;
+app.use(express.json({ limit: '1mb' }));
 
 // CORS PRIMEIRO - antes de qualquer outro middleware
 app.use((req, res, next) => {
@@ -91,6 +92,8 @@ app.use((req, res, next) => {
 // Importar configurações de banco e migrações
 const { pool, testConnection } = require('./config/database');
 const { createDatabase } = require('./migrations/migrate');
+// Chart of accounts config
+const accountsConfig = require('./config/accounts');
 
 // Definição dos períodos de faturamento por conta
 const billingPeriods = {
@@ -344,6 +347,44 @@ app.get('/health', async (req, res) => {
         console.error('Health check falhou:', error);
         res.status(503).json({ status: 'error', db: 'disconnected', details: error.message });
     }
+});
+
+// Expor configuração de planos de contas (somente leitura)
+app.get('/api/config/chart-of-accounts', (req, res) => {
+    try {
+        const data = accountsConfig.getChartOfAccounts();
+        const maps = accountsConfig.asMaps();
+        res.json({
+            ok: true,
+            version: data.version || 1,
+            generatedAt: data.generatedAt || null,
+            plans: data.plans || [],
+            maps
+        });
+    } catch (e) {
+        res.status(500).json({ ok: false, error: 'Failed to load chart of accounts', message: e.message });
+    }
+});
+
+// Rotas administrativas para planos de contas
+const { authenticateToken } = require('./middleware/authMiddleware');
+app.get('/api/admin/chart-of-accounts', authenticateToken, (req,res)=>{
+    try { res.json(accountsConfig.getChartOfAccounts()); } catch(e){ res.status(500).json({error:e.message}); }
+});
+app.post('/api/admin/chart-of-accounts/plan', authenticateToken, (req,res)=>{
+    try {
+        const plan = req.body;
+        if(!plan || plan.id==null) return res.status(400).json({error:'id é obrigatório'});
+        const updated = accountsConfig.upsertPlan(plan);
+        res.json({ ok:true, data: updated });
+    } catch(e){ res.status(500).json({ ok:false, error: e.message }); }
+});
+app.delete('/api/admin/chart-of-accounts/plan/:id', authenticateToken, (req,res)=>{
+    try {
+        const { id } = req.params;
+        const updated = accountsConfig.deletePlan(id);
+        res.json({ ok:true, data: updated });
+    } catch(e){ res.status(500).json({ ok:false, error: e.message }); }
 });
 
 // Endpoint de exemplo
@@ -5270,12 +5311,38 @@ app.post('/api/recurring-expenses/process', authenticateToken, async (req, res) 
 });
 
 // --- 12. GASTOS RECORRENTES PIX/BOLETO BI ---
+// Cache helpers (Redis when available, fallback to in-memory)
+const { getRedis } = require('./utils/redisClient');
+const redisClient = getRedis();
+const inMemoryCache = new Map();
+const RECURRING_BI_TTL_SEC = 60; // 1 minuto
+
 app.get('/api/recurring-pix-boleto', authenticateToken, async (req, res) => {
     try {
         const userId = req.user.id;
         const { year, month, debug } = req.query;
         const currentYear = year ? parseInt(year) : new Date().getFullYear();
         const currentMonth = month ? parseInt(month) : new Date().getMonth() + 1;
+
+        // Try serve from cache first (key per user/year/month)
+        const cacheKey = `recurring_bi:${userId}:${currentYear}:${currentMonth}`;
+        try {
+            if (redisClient) {
+                const cached = await redisClient.get(cacheKey);
+                if (cached) {
+                    return res.json(JSON.parse(cached));
+                }
+            } else if (inMemoryCache.has(cacheKey)) {
+                const entry = inMemoryCache.get(cacheKey);
+                if (Date.now() - entry.time < RECURRING_BI_TTL_SEC * 1000) {
+                    return res.json(entry.data);
+                } else {
+                    inMemoryCache.delete(cacheKey);
+                }
+            }
+        } catch (cacheErr) {
+            console.warn('Cache get falhou (ignorado):', cacheErr.message);
+        }
 
                 // 1. Buscar gastos recorrentes PIX/Boleto (normalização tolerante a variações / espaços / hífens)
                 const [recurringExpenses] = await pool.query(`
@@ -5503,6 +5570,17 @@ app.get('/api/recurring-pix-boleto', authenticateToken, async (req, res) => {
             } catch (diagErr) {
                 console.warn('Falha debug recurring-pix-boleto:', diagErr.message);
             }
+        }
+
+        // Store in cache (best effort)
+        try {
+            if (redisClient) {
+                await redisClient.setex(cacheKey, RECURRING_BI_TTL_SEC, JSON.stringify(responsePayload));
+            } else {
+                inMemoryCache.set(cacheKey, { data: responsePayload, time: Date.now() });
+            }
+        } catch (cacheSetErr) {
+            console.warn('Cache set falhou (ignorado):', cacheSetErr.message);
         }
 
         res.json(responsePayload);

@@ -1,0 +1,18 @@
+{
+  "version": 2,
+  "generatedAt": "2025-10-20T00:00:00Z",
+  "notes": "Planos de contas empresariais conforme lista fornecida. Ajuste defaultBudget conforme necessário.",
+  "plans": [
+    { "id": 20502, "name": "COMBUSTÍVEL", "description": "COMBUSTÍVEL", "defaultBudget": 0, "type": "business" },
+    { "id": 30103, "name": "COMPRA EQUIPAMENTOS/BENS DURAV", "description": "COMPRA EQUIPAMENTOS/BENS DURAV", "defaultBudget": 0, "type": "business" },
+    { "id": 21304, "name": "CONSULTORIAS", "description": "CONSULTORIAS", "defaultBudget": 0, "type": "business" },
+    { "id": 21303, "name": "CONTRATO DE MANUTENCAO DE SOFT", "description": "CONTRATO DE MANUTENCAO DE SOFT", "defaultBudget": 0, "type": "business" },
+    { "id": 21209, "name": "DESPESA DE VIAGEM", "description": "DESPESA DE VIAGEM", "defaultBudget": 0, "type": "business" },
+    { "id": 20503, "name": "MANUTENCAO VEÍCULO", "description": "MANUTENCAO VEÍCULO", "defaultBudget": 0, "type": "business" },
+    { "id": 21211, "name": "OUTRAS DESPESAS OPERACIONAIS", "description": "OUTRAS DESPESAS OPERACIONAIS", "defaultBudget": 0, "type": "business" },
+    { "id": 20505, "name": "PEDAGIO", "description": "PEDAGIO", "defaultBudget": 0, "type": "business" },
+    { "id": 21305, "name": "SERVICOS DE TERCEIROS", "description": "SERVICOS DE TERCEIROS", "defaultBudget": 0, "type": "business" },
+    { "id": 21411, "name": "VALE ALIMENTACAO", "description": "VALE ALIMENTACAO", "defaultBudget": 0, "type": "business" },
+    { "id": 21402, "name": "VALE TRANSPORTE", "description": "VALE TRANSPORTE", "defaultBudget": 0, "type": "business" }
+  ]
+}

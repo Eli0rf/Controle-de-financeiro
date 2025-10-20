@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Admin - Planos de Contas</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css">
+</head>
+<body class="bg-gray-50">
+  <div class="max-w-5xl mx-auto py-8 px-4">
+    <h1 class="text-2xl font-bold mb-4">Administração - Planos de Contas</h1>
+
+    <div class="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded text-yellow-900">
+      Informe seu token JWT abaixo para autenticar. Você pode obtê-lo após login no sistema.
+    </div>
+
+    <div class="mb-6 flex space-x-2">
+      <input id="jwt" type="password" placeholder="JWT Token" class="flex-1 border p-2 rounded" />
+      <button id="btnLoad" class="bg-blue-600 text-white px-4 py-2 rounded">Carregar</button>
+    </div>
+
+    <div class="bg-white shadow rounded p-4">
+      <div class="flex justify-between items-center mb-4">
+        <h2 class="text-xl font-semibold">Planos</h2>
+        <button id="btnAdd" class="bg-green-600 text-white px-3 py-1 rounded">Adicionar</button>
+      </div>
+
+      <table class="min-w-full">
+        <thead class="bg-gray-100">
+          <tr>
+            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Código</th>
+            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Nome</th>
+            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Descrição</th>
+            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Orçamento</th>
+            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Ações</th>
+          </tr>
+        </thead>
+        <tbody id="tbody" class="divide-y divide-gray-200"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <script src="./FrontEnd/config.js"></script>
+  <script>
+    const API_BASE_URL = (window.CONFIG && window.CONFIG.API_BASE_URL) || '';
+
+    function rowTemplate(p){
+      return `<tr>
+        <td class="px-3 py-2">${p.id}</td>
+        <td class="px-3 py-2"><input data-id="${p.id}" data-k="name" value="${p.name||''}" class="border p-1 rounded w-full"/></td>
+        <td class="px-3 py-2"><input data-id="${p.id}" data-k="description" value="${p.description||''}" class="border p-1 rounded w-full"/></td>
+        <td class="px-3 py-2"><input type="number" step="0.01" data-id="${p.id}" data-k="defaultBudget" value="${p.defaultBudget||0}" class="border p-1 rounded w-32"/></td>
+        <td class="px-3 py-2 space-x-2">
+          <button data-act="save" data-id="${p.id}" class="bg-blue-600 text-white px-2 py-1 rounded">Salvar</button>
+          <button data-act="delete" data-id="${p.id}" class="bg-red-600 text-white px-2 py-1 rounded">Excluir</button>
+        </td>
+      </tr>`;
+    }
+
+    async function loadPlans(){
+      const jwt = document.getElementById('jwt').value.trim();
+      if(!jwt) return alert('Informe o JWT');
+      const resp = await fetch(`${API_BASE_URL}/api/admin/chart-of-accounts`, { headers: { Authorization: `Bearer ${jwt}` } });
+      if(!resp.ok){
+        const t = await resp.text();
+        return alert('Erro ao carregar: ' + t);
+      }
+      const json = await resp.json();
+      const plans = json.plans || [];
+      document.getElementById('tbody').innerHTML = plans.map(rowTemplate).join('');
+    }
+
+    async function upsertPlan(plan){
+      const jwt = document.getElementById('jwt').value.trim();
+      const resp = await fetch(`${API_BASE_URL}/api/admin/chart-of-accounts/plan`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${jwt}` },
+        body: JSON.stringify(plan)
+      });
+      if(!resp.ok){ const t = await resp.text(); throw new Error(t); }
+      return resp.json();
+    }
+
+    async function deletePlan(id){
+      const jwt = document.getElementById('jwt').value.trim();
+      const resp = await fetch(`${API_BASE_URL}/api/admin/chart-of-accounts/plan/${id}`, {
+        method: 'DELETE', headers: { Authorization: `Bearer ${jwt}` }
+      });
+      if(!resp.ok){ const t = await resp.text(); throw new Error(t); }
+      return resp.json();
+    }
+
+    document.getElementById('btnLoad').addEventListener('click', loadPlans);
+
+    document.getElementById('btnAdd').addEventListener('click', async () => {
+      const id = prompt('Código do plano (número):');
+      if(!id) return;
+      const name = prompt('Nome do plano:') || '';
+      const description = prompt('Descrição:') || '';
+      const defaultBudget = Number(prompt('Orçamento padrão (R$):') || '0');
+      try { await upsertPlan({ id: Number(id), name, description, defaultBudget, type: 'business' }); await loadPlans(); }
+      catch(e){ alert('Erro ao adicionar: ' + e.message); }
+    });
+
+    document.getElementById('tbody').addEventListener('click', async (e) => {
+      const act = e.target.getAttribute('data-act');
+      const id = e.target.getAttribute('data-id');
+      if(!act || !id) return;
+      if(act === 'save'){
+        const inputs = document.querySelectorAll(`[data-id="${id}"][data-k]`);
+        const plan = { id: Number(id) };
+        inputs.forEach(inp => {
+          const k = inp.getAttribute('data-k');
+          plan[k] = k === 'defaultBudget' ? Number(inp.value || 0) : inp.value;
+        });
+        try { await upsertPlan(plan); await loadPlans(); } catch(e){ alert('Erro ao salvar: ' + e.message); }
+      } else if (act === 'delete'){
+        if(!confirm('Excluir plano ' + id + '?')) return;
+        try { await deletePlan(id); await loadPlans(); } catch(e){ alert('Erro ao excluir: ' + e.message); }
+      }
+    });
+  </script>
+</body>
+</html>
