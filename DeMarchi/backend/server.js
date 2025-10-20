@@ -455,7 +455,6 @@ app.use((err, req, res, next) => {
 // ====== API KPIs Mensais (JSON) ======
 const { computeMonthlyKPIs, saveMonthlySnapshot, computeTrendAnalysis, computeComparativeAnalysis, generateExecutiveReport } = require('./reporting/monthlyKpis');
 const { getRedis } = require('./utils/redisClient');
-const { authenticateToken } = require('./middleware/authMiddleware');
 const { detectAnomalies } = require('./analytics/anomalyDetector');
 const { initKpiScheduler } = require('./schedulers/kpiScheduler');
 app.get('/api/kpis/monthly', authenticateToken, async (req, res) => {
