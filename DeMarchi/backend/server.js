@@ -123,6 +123,16 @@ async function generateSimplePDF(expenses, total, startDate, endDate, contaNome,
     const totalPessoal = safeExpenses.filter(e=>!e.is_business_expense).reduce((s,e)=>s+parseFloat(e.amount||0),0);
     const totalEmp = safeExpenses.filter(e=>e.is_business_expense).reduce((s,e)=>s+parseFloat(e.amount||0),0);
     const monthNames = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+    // Mapas centrais de planos
+    const planMaps = (accountsConfig && accountsConfig.asMaps) ? accountsConfig.asMaps() : { names:{}, budgets:{}, types:{} };
+    const planNames = planMaps.names || {};
+    const planBudgets = opts.budgets || planMaps.budgets || {}; // fallback automático
+    const planTypes = planMaps.types || {};
+    const planDisplay = (code)=>{
+        if (code==null || code==='') return 'Sem Plano';
+        const id = Number(code);
+        return planNames[id] || `Plano ${id}`;
+    };
     try {
         // Capa / Header
         const grad = doc.linearGradient(0,0,0,140); grad.stop(0,'#0F172A').stop(1,'#1E3A8A');
@@ -167,7 +177,7 @@ async function generateSimplePDF(expenses, total, startDate, endDate, contaNome,
         checklist.forEach(item=>{ if(doc.y>doc.page.height-70){ doc.addPage(); } doc.text(item,50,doc.y,{width:doc.page.width-100}); doc.moveDown(0.3); });
 
         // Página de Gráficos
-        const byPlan = {}; safeExpenses.forEach(e=>{ const p=e.account_plan_code||'Sem Plano'; byPlan[p]=(byPlan[p]||0)+parseFloat(e.amount||0); });
+    const byPlan = {}; safeExpenses.forEach(e=>{ const p=(e.account_plan_code!=null && e.account_plan_code!=='')? String(e.account_plan_code) : 'Sem Plano'; byPlan[p]=(byPlan[p]||0)+parseFloat(e.amount||0); });
         const byAccount={}; safeExpenses.forEach(e=>{const c=e.account||'Sem Conta'; byAccount[c]=(byAccount[c]||0)+parseFloat(e.amount||0);});
         const byDay={}; safeExpenses.forEach(e=>{ const d=new Date(e.transaction_date); const key = d.toISOString().slice(0,10); byDay[key]=(byDay[key]||0)+parseFloat(e.amount||0); });
         if(opts.enableCharts!==false){
@@ -212,7 +222,8 @@ async function generateSimplePDF(expenses, total, startDate, endDate, contaNome,
 
                 // Pie Plano
                 const sortedPlans = Object.entries(byPlan).sort((a,b)=>b[1]-a[1]);
-                const topPlans = sortedPlans.slice(0,7); const outros = sortedPlans.slice(7).reduce((s,[,v])=>s+v,0); if(outros>0) topPlans.push(['Outros',outros]);
+                const topPlans = sortedPlans.slice(0,7).map(([code,val])=>[planDisplay(code), val]);
+                const outros = sortedPlans.slice(7).reduce((s,[,v])=>s+v,0); if(outros>0) topPlans.push(['Outros',outros]);
                 const pieCfg={
                     type:'pie',
                     data:{labels:topPlans.map(x=>x[0]),datasets:[{data:topPlans.map(x=>x[1]),backgroundColor:['#2563EB','#10B981','#F59E0B','#6366F1','#EF4444','#0D9488','#D946EF','#94A3B8']} ]},
@@ -258,44 +269,46 @@ async function generateSimplePDF(expenses, total, startDate, endDate, contaNome,
         doc.fontSize(14).fillColor('#0F172A').text('🥧 Distribuição por Plano de Conta',40,50);
         const sortedPlans2 = Object.entries(byPlan).sort((a,b)=>b[1]-a[1]);
         doc.moveDown(0.5); doc.fontSize(9).fillColor('#374151');
-        let ty = doc.y; doc.text('Plano',40,ty); doc.text('Valor (R$)',140,ty,{align:'right',width:120}); doc.text('%',270,ty,{align:'right',width:50});
+        let ty = doc.y; doc.text('Plano',40,ty); doc.text('Valor (R$)',240,ty,{align:'right',width:120}); doc.text('%',380,ty,{align:'right',width:50});
         doc.moveTo(40,ty+12).lineTo(doc.page.width-40,ty+12).stroke('#E5E7EB'); ty+=18;
         sortedPlans2.slice(0,20).forEach(([p,v],i)=>{ const pct = total>0?(v/total*100).toFixed(1):'0.0'; if(ty>doc.page.height-80){ doc.addPage(); ty=60; }
             const bg = i%2===0?'#F8FAFC':'#FFFFFF'; doc.rect(40,ty-4, doc.page.width-80,16).fill(bg);
-            doc.fillColor('#1F2937').fontSize(9).text(String(p),45,ty); doc.text(v.toLocaleString('pt-BR',{minimumFractionDigits:2}),140,ty,{width:120,align:'right'}); doc.text(pct+'%',270,ty,{width:50,align:'right'}); ty+=18; });
+            doc.fillColor('#1F2937').fontSize(9).text(planDisplay(p),45,ty); doc.text(v.toLocaleString('pt-BR',{minimumFractionDigits:2}),240,ty,{width:120,align:'right'}); doc.text(pct+'%',380,ty,{width:50,align:'right'}); ty+=18; });
         doc.y = ty + 10;
 
         // Limites vs Gastos
-        if (opts.budgets) {
+        if (planBudgets && Object.keys(planBudgets).length) {
             doc.addPage();
             doc.fontSize(14).fillColor('#0F172A').text('🎯 Análise de Limites vs Gastos / Comparativo Tetos',40,50); doc.moveDown(0.5);
             const perPlan = sortedPlans2.slice(0,25);
             let ly = doc.y;
-            perPlan.forEach(([p,v])=>{ const teto = opts.budgets[p]||0; const pct = teto>0?(v/teto*100):0; if(ly>doc.page.height-70){ doc.addPage(); ly=60; }
-                doc.fontSize(9).fillColor('#111827').text(`Plano ${p}: R$ ${v.toLocaleString('pt-BR',{minimumFractionDigits:2})} / Teto R$ ${teto.toLocaleString('pt-BR',{minimumFractionDigits:2})} (${pct.toFixed(1)}%)`,40,ly,{width:doc.page.width-80});
+            perPlan.forEach(([p,v])=>{ const code = p==='Sem Plano'? null : Number(p); const teto = code ? (planBudgets[code]||0) : 0; const pct = teto>0?(v/teto*100):0; if(ly>doc.page.height-70){ doc.addPage(); ly=60; }
+                const label = planDisplay(p);
+                doc.fontSize(9).fillColor('#111827').text(`${label}: R$ ${v.toLocaleString('pt-BR',{minimumFractionDigits:2})} / Teto R$ ${teto.toLocaleString('pt-BR',{minimumFractionDigits:2})} (${pct.toFixed(1)}%)`,40,ly,{width:doc.page.width-80});
                 const barW = doc.page.width-160; const used = Math.min(1,pct/100); doc.rect(40,ly+12,barW,6).fill('#E5E7EB'); doc.rect(40,ly+12,Math.max(4,barW*used),6).fill(pct>100?'#DC2626':pct>=90?'#D97706':pct>=70?'#2563EB':'#10B981'); ly+=24; });
             doc.y = ly + 5;
             // Prévia dos Limites Monitorados
             doc.addPage();
             doc.fontSize(14).fillColor('#0F172A').text('🎯 Prévia dos Limites Monitorados:',40,50);
-            const usage = Object.entries(opts.budgets).map(([p,t])=>{ const spent=byPlan[p]||0; const pct=t>0?spent/t*100:0; return {p,spent,t,pct}; }).filter(o=>o.t>0).sort((a,b)=> b.pct - a.pct);
+            const usage = Object.entries(planBudgets).map(([p,t])=>{ const spent=byPlan[p]||0; const pct=t>0?spent/t*100:0; return {p,spent,t,pct}; }).filter(o=>o.t>0).sort((a,b)=> b.pct - a.pct);
             const preview = usage.slice(0,8);
             let uy=80; preview.forEach(u=>{ if(uy>doc.page.height-70){ doc.addPage(); uy=60; }
                 const emoji = u.pct>100?'🔴':(u.pct>=90?'🟡':'🟢');
-                doc.fontSize(11).fillColor('#1F2937').text(`Plano ${u.p}:`,40,uy); doc.fontSize(11).fillColor('#1F2937').text(`${emoji} ${u.pct.toFixed(1)}%`,140,uy); uy+=20; });
+                const label = planDisplay(u.p);
+                doc.fontSize(11).fillColor('#1F2937').text(`${label}:`,40,uy); doc.fontSize(11).fillColor('#1F2937').text(`${emoji} ${u.pct.toFixed(1)}%`,240,uy); uy+=20; });
             const remaining = usage.length - preview.length; if(remaining>0){ doc.fontSize(11).fillColor('#475569').text(`... e mais ${remaining} planos no relatório completo`,40,uy+5); }
         }
 
         // Alertas & Recomendações
         doc.addPage();
         doc.fontSize(14).fillColor('#0F172A').text('⚠️ Alertas & Recomendações',40,50); doc.moveDown(0.5);
-        const alerts = []; if (opts.budgets){ Object.entries(byPlan).forEach(([p,v])=>{ const teto=opts.budgets[p]; if(teto){ const pct=v/teto*100; if(pct>100) alerts.push({level:'CRIT', msg:`Plano ${p} estourou o teto (${pct.toFixed(1)}%)`}); else if(pct>=90) alerts.push({level:'RISK', msg:`Plano ${p} em risco (${pct.toFixed(1)}%)`}); } }); }
+    const alerts = []; if (planBudgets){ Object.entries(byPlan).forEach(([p,v])=>{ const code = p==='Sem Plano'? null : Number(p); const teto= code? planBudgets[code] : 0; if(teto){ const pct=v/teto*100; const label = planDisplay(p); if(pct>100) alerts.push({level:'CRIT', msg:`${label} estourou o teto (${pct.toFixed(1)}%)`}); else if(pct>=90) alerts.push({level:'RISK', msg:`${label} em risco (${pct.toFixed(1)}%)`}); } }); }
         if(alerts.length===0) { doc.fontSize(10).fillColor('#059669').text('Nenhum alerta crítico encontrado.'); }
         else { alerts.slice(0,15).forEach(a=>{ if(doc.y>doc.page.height-70){ doc.addPage(); doc.fontSize(14).fillColor('#0F172A').text('⚠️ Alertas (cont.)',40,50); doc.y+=10;} doc.fontSize(10).fillColor(a.level==='CRIT'?'#B91C1C':'#D97706').text(`• ${a.msg}`,40,doc.y); doc.y+=14; }); }
         doc.moveDown(0.5);
         // Recomendações básicas
         const recs = [];
-        alerts.filter(a=>a.level==='CRIT').forEach(a=>{ const plan=a.msg.match(/Plano (\d+)/); if(plan) recs.push(`Reduzir ou revisar gastos do Plano ${plan[1]} imediatamente.`); });
+    alerts.filter(a=>a.level==='CRIT').forEach(a=>{ recs.push(`Reduzir ou revisar gastos do plano indicado imediatamente.`); });
         if(totalEmp>0 && totalEmp/total>0.5) recs.push('Avaliar migração de parte dos custos empresariais para contratos/planos mais eficientes.');
         if(recs.length===0) recs.push('Manter a disciplina atual e revisar planos próximos de 90% do teto.');
         doc.fontSize(12).fillColor('#1F2937').text('Recomendações:',40,doc.y+10); doc.moveDown(0.3);
@@ -313,14 +326,16 @@ async function generateSimplePDF(expenses, total, startDate, endDate, contaNome,
         const emp = safeExpenses.filter(e=>e.is_business_expense); let ey=90;
         emp.slice(0,150).forEach((e,i)=>{ if(ey>doc.page.height-60){ doc.addPage(); ey=50; doc.fontSize(12).text('Continuação Empresarial',40,ey); ey+=30; }
             const dt=new Date(e.transaction_date).toLocaleDateString('pt-BR'); const val=parseFloat(e.amount||0).toLocaleString('pt-BR',{minimumFractionDigits:2});
-            doc.fontSize(9).fillColor('#111827').text(`${i+1}. ${dt} • R$ ${val} • ${(e.description||'').slice(0,60)} (Plano ${e.account_plan_code||'-'})`,40,ey,{width:doc.page.width-80}); ey+=14; });
+            const label = planDisplay(e.account_plan_code);
+            doc.fontSize(9).fillColor('#111827').text(`${i+1}. ${dt} • R$ ${val} • ${(e.description||'').slice(0,60)} (${label})`,40,ey,{width:doc.page.width-80}); ey+=14; });
 
         // Lista Completa de Despesas
         doc.addPage();
         doc.fontSize(16).fillColor('#1F2937').text('📋 Lista Completa de Despesas',40,50);
         let ly2=90; safeExpenses.forEach((e,i)=>{ if(ly2>doc.page.height-60){ doc.addPage(); ly2=50; doc.fontSize(12).text('Continuação Despesas',40,ly2); ly2+=30; }
             const dt=new Date(e.transaction_date).toLocaleDateString('pt-BR'); const val=parseFloat(e.amount||0).toLocaleString('pt-BR',{minimumFractionDigits:2});
-            doc.fontSize(9).fillColor('#374151').text(`${i+1}. ${dt} • R$ ${val} • ${(e.description||'').slice(0,70)} • ${e.account||''} • Plano ${e.account_plan_code||'-'}`,40,ly2,{width:doc.page.width-80}); ly2+=12; });
+            const label = planDisplay(e.account_plan_code);
+            doc.fontSize(9).fillColor('#374151').text(`${i+1}. ${dt} • R$ ${val} • ${(e.description||'').slice(0,70)} • ${e.account||''} • ${label}`,40,ly2,{width:doc.page.width-80}); ly2+=12; });
 
         // Rodapé final
         doc.moveDown(2); doc.fontSize(9).fillColor('#6B7280').text('Relatório Moderno Compacto • Geração fallback aprimorada', {align:'center'});
@@ -2434,6 +2449,19 @@ async function generateIntelligentBIReport(data) {
     const doc = new pdfkit({ margin: 30, size: 'A4' });
     try { const f=ensurePrimaryFont(); if(f){ doc.registerFont('NotoSans', f); doc.font('NotoSans'); } } catch{}
     
+    // Mapeamentos centrais de planos
+    const planMaps = (accountsConfig && accountsConfig.asMaps) ? accountsConfig.asMaps() : { names:{}, budgets:{}, types:{} };
+    const planNames = planMaps.names || {};
+    const planBudgets = planMaps.budgets || {};
+    const planTypes = planMaps.types || {};
+    const planDisplay = (code)=>{
+        if (code==null || code==='') return 'Sem Plano'; const id = Number(code); return planNames[id] || `Plano ${id}`;
+    };
+    const byPlan = {}; (Array.isArray(expenses)?expenses:[]).forEach(e=>{ const p=(e.account_plan_code!=null && e.account_plan_code!=='')? String(e.account_plan_code) : 'Sem Plano'; byPlan[p]=(byPlan[p]||0)+parseFloat(e.amount||0); });
+
+    // Anexar para páginas seguintes
+    data.planNames = planNames; data.planBudgets = planBudgets; data.planTypes = planTypes; data.planDisplay = planDisplay; data.byPlan = byPlan;
+
     // Configurar fonte com fallback para Railway
     try {
         const fontPath = path.join(__dirname, 'fonts', 'NotoSans-Regular.ttf');
@@ -2581,7 +2609,7 @@ async function createExecutiveDashboard(doc, data) {
 
 // 📈 PÁGINA 2: ANÁLISES BI E INSIGHTS
 async function createBIAnalyticsPage(doc, data) {
-    const { expenses, total, totalPessoal, totalEmpresarial, porPlano, porConta, year, month } = data;
+    const { expenses, total, totalPessoal, totalEmpresarial, porPlano, porConta, year, month, planBudgets, planDisplay, byPlan } = data;
     
     // Cabeçalho da página
     doc.rect(0, 0, doc.page.width, 80).fill('#764ba2');
@@ -2647,11 +2675,30 @@ async function createBIAnalyticsPage(doc, data) {
         doc.fontSize(10).fillColor('#475569').text(comp.description, 55, doc.y + 30, { width: doc.page.width - 110 });
         doc.y += 75;
     });
+
+    // === TETOS MONITORADOS ===
+    if (planBudgets && Object.keys(planBudgets).length) {
+        doc.moveDown(1);
+        doc.fontSize(18).fillColor('#1F2937').text('🎯 TETOS MONITORADOS', { underline: true });
+        doc.moveDown(0.5);
+        const usage = Object.entries(planBudgets).map(([p,t])=>{ const spent=byPlan[p]||0; const pct=t>0?spent/t*100:0; return {p,spent,t,pct}; }).filter(o=>o.t>0).sort((a,b)=> b.pct - a.pct).slice(0,8);
+        usage.forEach(u=>{
+            const emoji = u.pct>100?'🔴':(u.pct>=90?'🟡':'🟢');
+            const label = planDisplay(u.p);
+            doc.roundedRect(40, doc.y, doc.page.width - 80, 28, 6).fill('#F8FAFC');
+            doc.fillColor('#111827').fontSize(11).text(`${emoji} ${label}`, 50, doc.y + 8);
+            const barW = 220; const used = Math.min(1, u.pct/100);
+            doc.rect(doc.page.width-50-barW, doc.y+8, barW, 12).fill('#E5E7EB');
+            doc.rect(doc.page.width-50-barW, doc.y+8, Math.max(4,barW*used), 12).fill(u.pct>100?'#DC2626':u.pct>=90?'#D97706':'#10B981');
+            doc.fillColor('#111827').fontSize(10).text(`${u.pct.toFixed(1)}%`, doc.page.width-50-barW-40, doc.y+8, {width:40, align:'right'});
+            doc.y += 34;
+        });
+    }
 }
 
 // 📋 PÁGINA 3: DETALHAMENTO INTELIGENTE
 async function createIntelligentDetailPage(doc, data) {
-    const { expenses, porPlano, year, month } = data;
+    const { expenses, porPlano, year, month, planBudgets, planDisplay } = data;
     
     // Cabeçalho
     doc.rect(0, 0, doc.page.width, 80).fill('#4F46E5');
@@ -2669,7 +2716,7 @@ async function createIntelligentDetailPage(doc, data) {
     doc.moveDown(1);
     
     detailedAnalysis.forEach(([plano, total], index) => {
-        const planoExpenses = expenses.filter(e => e.account_plan_code === plano);
+        const planoExpenses = expenses.filter(e => String(e.account_plan_code||'') === String(plano));
         const avgTransaction = total / planoExpenses.length;
         
         const colors = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#06B6D4', '#84CC16', '#F97316'];
@@ -2678,22 +2725,24 @@ async function createIntelligentDetailPage(doc, data) {
         
         // Header do plano
         doc.roundedRect(50, doc.y + 10, doc.page.width - 100, 25, 5).fill(colors[index]);
-        doc.fillColor('#FFFFFF').fontSize(12).text(`Plano ${plano}`, 60, doc.y + 18, { width: 200 });
+        doc.fillColor('#FFFFFF').fontSize(12).text(`${planDisplay(plano)}`, 60, doc.y + 18, { width: 260 });
         doc.text(`R$ ${total.toFixed(2)}`, 0, doc.y + 18, { width: doc.page.width - 110, align: 'right' });
         
         // Detalhes
+        const teto = planBudgets && planBudgets[Number(plano)] ? planBudgets[Number(plano)] : 0;
+        const pct = teto>0 ? (total/teto*100) : 0;
         doc.fillColor('#374151').fontSize(10)
            .text(`• ${planoExpenses.length} transações`, 60, doc.y + 45)
            .text(`• Média por transação: R$ ${avgTransaction.toFixed(2)}`, 60, doc.y + 60)
-           .text(`• Percentual do total: ${(total / expenses.reduce((sum, e) => sum + parseFloat(e.amount), 0) * 100).toFixed(1)}%`, 280, doc.y + 45)
-           .text(`• Maior transação: R$ ${Math.max(...planoExpenses.map(e => parseFloat(e.amount))).toFixed(2)}`, 280, doc.y + 60);
+           .text(`• Percentual do total: ${(total / expenses.reduce((sum, e) => sum + parseFloat(e.amount||0), 0) * 100 || 0).toFixed(1)}%`, 280, doc.y + 45)
+           .text(`• Teto: R$ ${teto.toLocaleString('pt-BR',{minimumFractionDigits:2})} (${pct.toFixed(1)}%)`, 280, doc.y + 60);
         
         doc.y += 95;
     });
 }
 // 📊 PÁGINA 4: GRÁFICOS MODERNOS
 async function createModernChartsPage(doc, data) {
-    const { expenses, porPlano, porConta } = data;
+    const { expenses, porPlano, porConta, planDisplay } = data;
     
     // Cabeçalho
     doc.rect(0, 0, doc.page.width, 80).fill('#059669');
@@ -2710,7 +2759,8 @@ async function createModernChartsPage(doc, data) {
                 height: 300, 
                 backgroundColour: 'white'
             });
-            const charts = await generateChartsForPDF(porPlano, porConta, expenses, chartJSNodeCanvas);
+            const displayPorPlano = Object.fromEntries(Object.entries(porPlano||{}).map(([k,v])=> [planDisplay(k), v]));
+            const charts = await generateChartsForPDF(displayPorPlano, porConta, expenses, chartJSNodeCanvas);
             
             // Inserir gráficos no PDF
             if (charts.planChart) {
@@ -3214,20 +3264,23 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
         
         try {
             // Gerar relatório BI completo usando a nova função
-            const biReport = await generateIntelligentBIReport(
-                expenses, 
-                total, 
-                totalEmpresarial, 
-                totalPessoal, 
-                empresariais, 
-                pessoaisFiltrados, 
+            const biReport = await generateIntelligentBIReport({
+                expenses,
+                total,
+                totalEmpresarial,
+                totalPessoal,
+                empresariais,
+                pessoaisFiltrados,
                 expensesByPlan,
                 startDate,
                 endDate,
                 contaNome,
                 year,
-                month
-            );
+                month,
+                porPlano,
+                porConta,
+                userId
+            });
             
             console.log(`✅ [STEP 11] Relatório BI inteligente gerado com sucesso!`);
             
