@@ -575,6 +575,9 @@
                             <button id="admin-plans-mobile" class="w-full text-left p-2 rounded hover:bg-blue-50 flex items-center gap-2 text-sm hidden">
                                 <i class="fas fa-tools text-gray-600"></i> ⚙️ Admin Planos
                             </button>
+                            <button id="admin-expenses-mobile" class="w-full text-left p-2 rounded hover:bg-blue-50 flex items-center gap-2 text-sm hidden">
+                                <i class="fas fa-briefcase text-gray-600"></i> 💼 Admin Despesas
+                            </button>
                         </div>
                         
                         <!-- Funcionalidades -->
@@ -621,6 +624,9 @@
                     </button>
                     <button id="admin-plans-btn" class="hidden bg-blue-50 text-blue-700 px-2 md:px-4 py-2 rounded-lg flex items-center gap-1 md:gap-2 text-xs md:text-sm btn-touch">
                         ⚙️<span class="hidden lg:inline"> Admin Planos</span>
+                    </button>
+                    <button id="admin-expenses-btn" class="hidden bg-blue-50 text-blue-700 px-2 md:px-4 py-2 rounded-lg flex items-center gap-1 md:gap-2 text-xs md:text-sm btn-touch">
+                        💼<span class="hidden lg:inline"> Admin Despesas</span>
                     </button>
                     <button id="logout-button" class="bg-red-500 text-white px-2 md:px-4 py-2 rounded-lg flex items-center gap-1 md:gap-2 text-xs md:text-sm btn-touch">
                         ↪️<span class="hidden md:inline"> Sair</span>
@@ -2561,15 +2567,25 @@
                     const token = localStorage.getItem('token') || sessionStorage.getItem('token');
                     const btn = document.getElementById('admin-plans-btn');
                     const btnMob = document.getElementById('admin-plans-mobile');
+                    const btnExp = document.getElementById('admin-expenses-btn');
+                    const btnExpMob = document.getElementById('admin-expenses-mobile');
                     if (token) {
                         if (btn) btn.classList.remove('hidden');
                         if (btnMob) btnMob.classList.remove('hidden');
+                        if (btnExp) btnExp.classList.remove('hidden');
+                        if (btnExpMob) btnExpMob.classList.remove('hidden');
                         const openAdmin = () => {
                             const base = window.location.pathname.replace(/[^/]+$/, '');
                             window.open(base + 'admin-plans.html', '_blank');
                         };
+                        const openAdminExpenses = () => {
+                            const base = window.location.pathname.replace(/[^/]+$/, '');
+                            window.open(base + 'admin-expenses.html', '_blank');
+                        };
                         if (btn) btn.addEventListener('click', openAdmin);
                         if (btnMob) btnMob.addEventListener('click', openAdmin);
+                        if (btnExp) btnExp.addEventListener('click', openAdminExpenses);
+                        if (btnExpMob) btnExpMob.addEventListener('click', openAdminExpenses);
                     }
                 } catch(e){}
             })();

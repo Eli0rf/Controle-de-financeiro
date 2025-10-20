@@ -1,0 +1,539 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Admin - Despesas</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='14' font-size='14'>💼</text></svg>">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/dayjs@1/dayjs.min.js"></script>
+  <script src="config.js"></script>
+  <style>
+    .gradient-header { background: linear-gradient(90deg, #0f172a 0%, #1e3a8a 50%, #3b82f6 100%); }
+    .badge { display:inline-flex; align-items:center; padding:2px 8px; border-radius:9999px; font-size:12px; font-weight:600; }
+    .badge-business { background:#fef3c7; color:#92400e; }
+    .badge-personal { background:#e0f2fe; color:#075985; }
+    .badge-green { background:#dcfce7; color:#166534; }
+    .badge-yellow { background:#fef9c3; color:#854d0e; }
+    .badge-red { background:#fee2e2; color:#991b1b; }
+    .drawer-enter { transform: translateX(100%); opacity: 0; }
+    .drawer-enter-active { transform: translateX(0); opacity: 1; transition: all .25s ease-in-out; }
+    .drawer-exit { transform: translateX(0); opacity: 1; }
+    .drawer-exit-active { transform: translateX(100%); opacity: 0; transition: all .2s ease-in-out; }
+    .row-over-budget { background: #fff1f2; }
+    .th-sort { cursor:pointer; user-select:none; }
+    .th-sort:hover { background:#eef2ff; }
+    .cbx-wrap { position: relative; }
+    .cbx-menu { position:absolute; top:100%; left:0; right:0; background:#fff; border:1px solid #e5e7eb; border-radius:0.375rem; box-shadow:0 10px 15px -3px rgb(0 0 0 / 0.1); z-index:50; max-height:220px; overflow:auto; }
+    .cbx-item { padding:8px 10px; cursor:pointer; }
+    .cbx-item:hover { background:#f3f4f6; }
+  </style>
+  <script>
+    // Base do backend com override via ?apiBase
+    (function(){
+      const urlParams = new URLSearchParams(window.location.search);
+      const override = urlParams.get('apiBase');
+      const cfg = window.CONFIG || {};
+      const frontendOrigin = cfg.FRONTEND_URL || window.location.origin;
+      let base = override || cfg.API_BASE_URL || '';
+      if (!/^https?:\/\//.test(base) || base === frontendOrigin) {
+        base = 'https://backend-production-a867.up.railway.app';
+      }
+      window.__ADMIN_API_BASE__ = base;
+    })();
+    const API_BASE_URL = window.__ADMIN_API_BASE__;
+
+    // Estado simples
+    const state = {
+      jwt: '',
+      plansMap: { names: {}, budgets: {} },
+      accounts: [],
+      expenses: [],
+      filters: { year: '', month: '', account: '', start: '', end: '', type: 'ALL', q: '' },
+      sort: { key: 'transaction_date', dir: 'desc' },
+      pagination: { page: 1, pageSize: 25 }
+    };
+
+    function getToken() {
+      if (state.jwt) return state.jwt;
+      try { state.jwt = localStorage.getItem('token') || sessionStorage.getItem('token') || ''; } catch {}
+      return state.jwt;
+    }
+
+    async function authedFetch(url, opts={}){
+      const token = getToken();
+      const headers = Object.assign({ Authorization: `Bearer ${token}` }, opts.headers||{});
+      const final = Object.assign({}, opts, { headers });
+      return fetch(url, final);
+    }
+
+    async function loadPlansMaps(){
+      const resp = await fetch(`${API_BASE_URL}/api/config/chart-of-accounts`);
+      if(!resp.ok) return;
+      const data = await resp.json();
+      state.plansMap = data.maps || { names:{}, budgets:{} };
+    }
+
+    async function loadAccounts(){
+      const resp = await authedFetch(`${API_BASE_URL}/api/accounts`);
+      if(!resp.ok) return;
+      const data = await resp.json();
+      state.accounts = Array.isArray(data) ? data : (data.accounts || []);
+      renderAccountSelects();
+    }
+
+    function renderAccountSelects(){
+      const selects = [document.getElementById('filter-account'), document.getElementById('edit-account')];
+      selects.forEach(sel => {
+        if(!sel) return;
+        sel.innerHTML = '<option value="">Todas</option>' + state.accounts.map(a=>`<option value="${a}">${a}</option>`).join('');
+      });
+    }
+
+    function getFiltersFromUI(){
+      const year = document.getElementById('filter-year').value;
+      const month = document.getElementById('filter-month').value;
+      const account = document.getElementById('filter-account').value;
+      const start = document.getElementById('filter-start').value;
+      const end = document.getElementById('filter-end').value;
+      const type = document.getElementById('filter-type').value;
+      const q = document.getElementById('filter-q').value.trim();
+      state.filters = { year, month, account, start, end, type, q };
+      return state.filters;
+    }
+
+    async function loadExpenses(){
+      const f = getFiltersFromUI();
+      state.pagination.page = 1; // reset na troca de filtros
+      let url;
+      if (f.start && f.end) {
+        const params = new URLSearchParams({ startYear: f.start.slice(0,4), startMonth: f.start.slice(5,7), endYear: f.end.slice(0,4), endMonth: f.end.slice(5,7), aggregate: 'false' });
+        url = `${API_BASE_URL}/api/expenses/history?${params.toString()}`;
+      } else {
+        const params = new URLSearchParams();
+        if (f.year) params.set('year', f.year);
+        if (f.month) params.set('month', f.month);
+        if (f.account) params.set('account', f.account);
+        url = `${API_BASE_URL}/api/expenses?${params.toString()}`;
+      }
+      const resp = await authedFetch(url);
+      if(!resp.ok){
+        const tt = await resp.text();
+        throw new Error(`Erro ao carregar despesas: ${tt}`);
+      }
+      const data = await resp.json();
+      state.expenses = Array.isArray(data) ? data : data.rows || [];
+      renderExpenses();
+    }
+
+    function fmtCurrency(v){ return `R$ ${(Number(v)||0).toLocaleString('pt-BR',{minimumFractionDigits:2})}`; }
+    function fmtDate(d){ try { return dayjs(d).format('YYYY-MM-DD'); } catch{ return (d||'').slice(0,10); } }
+
+    function badgeType(isBusiness){
+      return `<span class="badge ${isBusiness? 'badge-business':'badge-personal'}">${isBusiness? 'Empresarial':'Pessoal'}</span>`;
+    }
+
+    function planLabel(code){
+      if (!code) return '<span class="text-gray-400">—</span>';
+      const id = Number(code);
+      const name = (state.plansMap.names && state.plansMap.names[id]) || '';
+      return `${id}${name? ' — '+name: ''}`;
+    }
+
+    // Calcula uso por plano (% do teto) para o conjunto filtrado
+    function computeUsageMap(rows){
+      const budgets = state.plansMap.budgets || {};
+      const sumByPlan = {};
+      for (const e of rows){
+        const code = Number(e.account_plan_code||0);
+        if(!code) continue;
+        sumByPlan[code] = (sumByPlan[code]||0) + Number(e.amount||0);
+      }
+      const usage = {};
+      for (const [codeStr, val] of Object.entries(sumByPlan)){
+        const code = Number(codeStr);
+        const teto = Number(budgets[code]||0);
+        usage[code] = teto>0 ? (val/teto)*100 : 0;
+      }
+      return usage;
+    }
+
+    function usageBadge(code, usageMap){
+      const pct = Number(usageMap[Number(code)]||0);
+      const pctTxt = `${Math.min(pct, 999).toFixed(0)}%`;
+      let cls = 'badge-green';
+      if (pct >= 95) cls = 'badge-red'; else if (pct >= 80) cls = 'badge-yellow';
+      return `<span class="badge ${cls}">${pctTxt}</span>`;
+    }
+
+    function sortRows(rows, usageMap){
+      const { key, dir } = state.sort;
+      const mul = dir === 'asc' ? 1 : -1;
+      return rows.slice().sort((a,b)=>{
+        const av = a; const bv = b;
+        let va, vb;
+        switch(key){
+          case 'transaction_date': va = new Date(a.transaction_date).getTime()||0; vb = new Date(b.transaction_date).getTime()||0; break;
+          case 'description': va = (a.description||'').toLowerCase(); vb = (b.description||'').toLowerCase(); return va<vb?-1*mul:va>vb?1*mul:0;
+          case 'account': va = (a.account||'').toLowerCase(); vb = (b.account||'').toLowerCase(); return va<vb?-1*mul:va>vb?1*mul:0;
+          case 'plan': va = Number(a.account_plan_code||0); vb = Number(b.account_plan_code||0); break;
+          case 'usage': va = Number(usageMap[Number(a.account_plan_code)||0]||0); vb = Number(usageMap[Number(b.account_plan_code)||0]||0); break;
+          case 'amount': va = Number(a.amount||0); vb = Number(b.amount||0); break;
+          case 'type': va = !!a.is_business_expense ? 1 : 0; vb = !!b.is_business_expense ? 1 : 0; break;
+          default: va = 0; vb = 0;
+        }
+        return (va - vb) * mul;
+      });
+    }
+
+    function setSort(key){
+      if (state.sort.key === key) {
+        state.sort.dir = state.sort.dir === 'asc' ? 'desc' : 'asc';
+      } else {
+        state.sort.key = key;
+        state.sort.dir = key === 'transaction_date' ? 'desc' : 'asc';
+      }
+      renderExpenses();
+    }
+
+    function sortIndicator(key){
+      return state.sort.key===key ? (state.sort.dir==='asc'?'▲':'▼') : '↕';
+    }
+
+    function renderExpenses(){
+      const tbody = document.getElementById('tbody');
+      const q = (state.filters.q || '').toLowerCase();
+      const type = state.filters.type;
+      const filtered = state.expenses
+        .filter(e => !q || `${e.description||''} ${e.account||''} ${e.account_plan_code||''}`.toLowerCase().includes(q))
+        .filter(e => type==='ALL' || (!!e.is_business_expense === (type==='BUSINESS')));
+      const usageMap = computeUsageMap(filtered);
+      const sorted = sortRows(filtered, usageMap);
+      const total = sorted.length;
+      const size = state.pagination.pageSize;
+      const pages = Math.max(1, Math.ceil(total/size));
+      state.pagination.page = Math.min(state.pagination.page, pages);
+      const startIdx = (state.pagination.page-1)*size;
+      const paged = sorted.slice(startIdx, startIdx+size);
+      tbody.innerHTML = paged.map(e=>{
+        const code = Number(e.account_plan_code||0);
+        const over = code && (usageMap[code]||0) >= 100;
+        return `
+        <tr class="hover:bg-gray-50 ${over?'row-over-budget':''}">
+          <td class="px-3 py-2 text-sm text-gray-600">${fmtDate(e.transaction_date)}</td>
+          <td class="px-3 py-2 text-sm text-gray-800">${e.description||''}</td>
+          <td class="px-3 py-2 text-sm">${e.account||''}</td>
+          <td class="px-3 py-2 text-sm">${planLabel(e.account_plan_code)}</td>
+          <td class="px-3 py-2 text-sm">${e.account_plan_code? usageBadge(e.account_plan_code, usageMap) : '<span class="text-gray-300">—</span>'}</td>
+          <td class="px-3 py-2 text-sm font-semibold">${fmtCurrency(e.amount)}</td>
+          <td class="px-3 py-2">${badgeType(!!e.is_business_expense)}</td>
+          <td class="px-3 py-2 text-right">
+            <button class="px-3 py-1 bg-blue-600 text-white rounded text-sm" onclick="openEditDrawer(${e.id})">Editar</button>
+          </td>
+        </tr>`;
+      }).join('');
+      document.getElementById('result-count').textContent = `${total} resultados`;
+      // Atualiza paginação
+      const pageInfo = document.getElementById('page-info');
+      if (pageInfo) pageInfo.textContent = `Página ${state.pagination.page} de ${pages}`;
+      const prev = document.getElementById('page-prev');
+      const next = document.getElementById('page-next');
+      if (prev) prev.disabled = state.pagination.page <= 1;
+      if (next) next.disabled = state.pagination.page >= pages;
+    }
+
+    function openEditDrawer(expenseId){
+      document.getElementById('edit-expense-id').value = expenseId;
+      loadAndFillExpense(expenseId);
+      const overlay = document.getElementById('drawer-overlay');
+      const drawer = document.getElementById('drawer');
+      overlay.classList.remove('hidden');
+      setTimeout(()=>{ overlay.classList.remove('opacity-0'); drawer.classList.remove('drawer-enter'); drawer.classList.add('drawer-enter-active'); }, 10);
+    }
+    function closeEditDrawer(){
+      const overlay = document.getElementById('drawer-overlay');
+      const drawer = document.getElementById('drawer');
+      overlay.classList.add('opacity-0');
+      drawer.classList.remove('drawer-enter-active');
+      drawer.classList.add('drawer-exit-active');
+      setTimeout(()=>{ overlay.classList.add('hidden'); drawer.classList.remove('drawer-exit-active'); drawer.classList.add('drawer-enter'); }, 220);
+    }
+
+    async function loadAndFillExpense(id){
+      const resp = await authedFetch(`${API_BASE_URL}/api/expenses/${id}`);
+      if(!resp.ok){ alert('Erro ao buscar despesa'); return; }
+      const e = await resp.json();
+      document.getElementById('edit-transaction-date').value = (e.transaction_date||'').slice(0,10);
+      document.getElementById('edit-amount').value = e.amount;
+      document.getElementById('edit-description').value = e.description||'';
+      document.getElementById('edit-account').value = e.account||'';
+      document.getElementById('edit-account-plan-code').value = e.account_plan_code||'';
+      document.getElementById('edit-is-business').checked = !!e.is_business_expense;
+      document.getElementById('edit-has-invoice').checked = !!e.has_invoice;
+      toggleInvoiceUpload();
+      renderBudgetHint();
+    }
+
+    function toggleInvoiceUpload(){
+      const hasInv = document.getElementById('edit-has-invoice').checked;
+      document.getElementById('edit-invoice-upload').classList.toggle('hidden', !hasInv);
+    }
+
+    function renderBudgetHint(){
+      const code = Number(document.getElementById('edit-account-plan-code').value||0);
+      const name = (state.plansMap.names||{})[code] || '';
+      const budget = Number((state.plansMap.budgets||{})[code] || 0);
+      const el = document.getElementById('budget-hint');
+      if(!code || budget<=0){ el.innerHTML = '<span class="text-gray-400">Sem teto configurado para este plano.</span>'; return; }
+      el.innerHTML = `<div class="text-sm"><span class="font-medium">Plano:</span> ${code}${name? ' — '+name:''} • <span class="font-medium">Teto:</span> ${fmtCurrency(budget)}</div>`;
+    }
+
+    async function handleSaveEdit(ev){
+      ev.preventDefault();
+      const id = document.getElementById('edit-expense-id').value;
+      const fd = new FormData(document.getElementById('edit-form'));
+      const resp = await authedFetch(`${API_BASE_URL}/api/expenses/${id}`, { method: 'PUT', body: fd });
+      if(!resp.ok){ const t = await resp.text(); alert('Erro ao salvar: '+t); return; }
+      closeEditDrawer();
+      await loadExpenses();
+    }
+
+    // Combobox avançado de plano
+    function allPlanEntries(){
+      const names = state.plansMap.names || {};
+      return Object.entries(names).map(([id,name])=>({ id:Number(id), name }));
+    }
+    function filterPlanEntries(term){
+      const t = (term||'').toLowerCase();
+      if (!t) return allPlanEntries().slice(0,8);
+      return allPlanEntries().filter(x=> String(x.id).includes(t) || (x.name||'').toLowerCase().includes(t)).slice(0,8);
+    }
+    function renderPlanMenu(list){
+      const menu = document.getElementById('plan-menu');
+      if(!menu) return;
+      menu.innerHTML = list.map(x=>`<div class="cbx-item" data-id="${x.id}">${x.id} — ${x.name||''}</div>`).join('');
+      menu.classList.toggle('hidden', list.length===0);
+    }
+    function openPlanMenu(){
+      const inp = document.getElementById('edit-account-plan-code');
+      const list = filterPlanEntries(inp.value);
+      renderPlanMenu(list);
+    }
+    function closePlanMenuSoon(){ setTimeout(()=>{ const menu=document.getElementById('plan-menu'); if(menu) menu.classList.add('hidden'); }, 150); }
+    function attachPlanMenuEvents(){
+      const inp = document.getElementById('edit-account-plan-code');
+      const menu = document.getElementById('plan-menu');
+      if(!inp || !menu) return;
+      inp.addEventListener('input', openPlanMenu);
+      inp.addEventListener('focus', openPlanMenu);
+      inp.addEventListener('blur', closePlanMenuSoon);
+      menu.addEventListener('mousedown', (e)=>{
+        const item = e.target.closest('.cbx-item');
+        if(!item) return;
+        const id = Number(item.getAttribute('data-id'));
+        inp.value = String(id);
+        renderBudgetHint();
+      });
+    }
+    function normalizePlanInput(){
+      const inp = document.getElementById('edit-account-plan-code');
+      if(!inp) return;
+      const v = (inp.value||'').trim();
+      if (!v) return;
+      if (isNaN(Number(v))) {
+        // Se digitou um nome, tenta mapear para id
+        const names = state.plansMap.names || {};
+        const found = Object.entries(names).find(([,name]) => (name||'').toLowerCase() === v.toLowerCase());
+        if (found) inp.value = String(found[0]);
+      }
+      renderBudgetHint();
+    }
+
+    function initDefaults(){
+      // Autofill JWT
+      const inp = document.getElementById('jwt');
+      try { const stored = getToken(); if (stored) inp.value = stored; } catch{}
+      // Ano e mês padrões
+      const now = new Date();
+      document.getElementById('filter-year').value = now.getFullYear();
+      document.getElementById('filter-month').value = String(now.getMonth()+1).padStart(2,'0');
+    }
+
+    async function bootstrap(){
+      initDefaults();
+      await loadPlansMaps();
+      await loadAccounts();
+      await loadExpenses();
+      const planInp = document.getElementById('edit-account-plan-code');
+      if (planInp) planInp.addEventListener('change', normalizePlanInput);
+      if (planInp) planInp.addEventListener('blur', normalizePlanInput);
+      attachPlanMenuEvents();
+      const sizeSel = document.getElementById('page-size');
+      if (sizeSel) sizeSel.addEventListener('change', ()=>{ state.pagination.pageSize = Number(sizeSel.value)||25; state.pagination.page = 1; renderExpenses(); });
+      const prev = document.getElementById('page-prev');
+      const next = document.getElementById('page-next');
+      if (prev) prev.addEventListener('click', ()=>{ if(state.pagination.page>1){ state.pagination.page--; renderExpenses(); } });
+      if (next) next.addEventListener('click', ()=>{ state.pagination.page++; renderExpenses(); });
+      // Sort headers
+      ['transaction_date','description','account','plan','usage','amount','type'].forEach(k=>{
+        const el = document.getElementById('th-'+k);
+        if (el) el.addEventListener('click', ()=> setSort(k));
+      });
+    }
+
+    document.addEventListener('DOMContentLoaded', bootstrap);
+  </script>
+</head>
+<body class="bg-gray-50">
+  <!-- Header -->
+  <header class="gradient-header text-white">
+    <div class="max-w-7xl mx-auto px-4 py-6 flex items-center justify-between">
+      <div>
+        <h1 class="text-2xl font-bold">Administração de Despesas</h1>
+        <p class="text-sm text-blue-100">Gestão centralizada e edição rápida • Visual profissional</p>
+      </div>
+      <div class="flex items-center space-x-2">
+        <input id="jwt" type="password" placeholder="JWT Token" class="border border-blue-300 bg-white text-gray-900 p-2 rounded w-72" />
+      </div>
+    </div>
+  </header>
+
+  <!-- Conteúdo -->
+  <main class="max-w-7xl mx-auto px-4 py-6">
+    <!-- Filtros -->
+    <section class="bg-white shadow rounded p-4 mb-4">
+      <div class="grid grid-cols-1 md:grid-cols-6 gap-3">
+        <div>
+          <label class="text-xs text-gray-500">Ano</label>
+          <input id="filter-year" type="number" class="border p-2 rounded w-full" placeholder="YYYY">
+        </div>
+        <div>
+          <label class="text-xs text-gray-500">Mês</label>
+          <input id="filter-month" type="number" min="1" max="12" class="border p-2 rounded w-full" placeholder="MM">
+        </div>
+        <div>
+          <label class="text-xs text-gray-500">Conta</label>
+          <select id="filter-account" class="border p-2 rounded w-full"></select>
+        </div>
+        <div>
+          <label class="text-xs text-gray-500">Data início</label>
+          <input id="filter-start" type="date" class="border p-2 rounded w-full">
+        </div>
+        <div>
+          <label class="text-xs text-gray-500">Data fim</label>
+          <input id="filter-end" type="date" class="border p-2 rounded w-full">
+        </div>
+        <div>
+          <label class="text-xs text-gray-500">Tipo</label>
+          <select id="filter-type" class="border p-2 rounded w-full">
+            <option value="ALL">Todos</option>
+            <option value="PERSONAL">Pessoal</option>
+            <option value="BUSINESS">Empresarial</option>
+          </select>
+        </div>
+      </div>
+      <div class="mt-3 flex items-center">
+        <input id="filter-q" type="text" placeholder="Buscar por descrição/conta/plano..." class="border p-2 rounded flex-1 mr-2">
+        <button onclick="loadExpenses()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded">Aplicar filtros</button>
+      </div>
+    </section>
+
+    <!-- Tabela -->
+    <section class="bg-white shadow rounded">
+      <div class="px-4 py-3 border-b flex items-center justify-between">
+        <h2 class="text-lg font-semibold">Despesas</h2>
+        <span id="result-count" class="text-sm text-gray-500">0 resultados</span>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="min-w-full">
+          <thead class="bg-gray-100">
+            <tr>
+              <th id="th-transaction_date" class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase th-sort">Data</th>
+              <th id="th-description" class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase th-sort">Descrição</th>
+              <th id="th-account" class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase th-sort">Conta</th>
+              <th id="th-plan" class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase th-sort">Plano</th>
+              <th id="th-usage" class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase th-sort">Uso (%)</th>
+              <th id="th-amount" class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase th-sort">Valor</th>
+              <th id="th-type" class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase th-sort">Tipo</th>
+              <th class="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">Ações</th>
+            </tr>
+          </thead>
+          <tbody id="tbody" class="divide-y divide-gray-200"></tbody>
+        </table>
+      </div>
+      <div class="flex items-center justify-between px-4 py-3 border-t bg-gray-50">
+        <div class="flex items-center space-x-2">
+          <label class="text-sm text-gray-600">Itens por página</label>
+          <select id="page-size" class="border p-1 rounded text-sm">
+            <option>10</option>
+            <option selected>25</option>
+            <option>50</option>
+            <option>100</option>
+          </select>
+        </div>
+        <div class="flex items-center space-x-3">
+          <button id="page-prev" class="px-3 py-1 border rounded text-sm">Anterior</button>
+          <span id="page-info" class="text-sm text-gray-600">Página 1 de 1</span>
+          <button id="page-next" class="px-3 py-1 border rounded text-sm">Próxima</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Drawer de Edição -->
+  <div id="drawer-overlay" class="fixed inset-0 bg-black bg-opacity-40 hidden opacity-0" onclick="closeEditDrawer()"></div>
+  <aside id="drawer" class="fixed top-0 right-0 h-full w-full sm:w-[440px] bg-white shadow-2xl p-5 drawer-enter" onclick="event.stopPropagation()">
+    <div class="flex items-center justify-between mb-4">
+      <h3 class="text-xl font-semibold">Editar Gasto</h3>
+      <button class="text-gray-500 hover:text-gray-700" onclick="closeEditDrawer()">✕</button>
+    </div>
+    <form id="edit-form" onsubmit="handleSaveEdit(event)" enctype="multipart/form-data">
+      <input type="hidden" id="edit-expense-id" name="expense_id">
+
+      <div class="mb-3">
+        <label class="block text-sm text-gray-600 mb-1">Data</label>
+        <input id="edit-transaction-date" name="transaction_date" type="date" class="border p-2 rounded w-full" required>
+      </div>
+      <div class="mb-3">
+        <label class="block text-sm text-gray-600 mb-1">Valor (R$)</label>
+        <input id="edit-amount" name="amount" type="number" step="0.01" class="border p-2 rounded w-full" required>
+      </div>
+      <div class="mb-3">
+        <label class="block text-sm text-gray-600 mb-1">Descrição</label>
+        <input id="edit-description" name="description" type="text" class="border p-2 rounded w-full" required>
+      </div>
+      <div class="mb-3">
+        <label class="block text-sm text-gray-600 mb-1">Conta</label>
+        <select id="edit-account" name="account" class="border p-2 rounded w-full" required></select>
+      </div>
+      <div class="mb-2">
+        <label class="block text-sm text-gray-600 mb-1">Plano de Contas (código)</label>
+        <div class="cbx-wrap">
+          <input id="edit-account-plan-code" name="account_plan_code" type="text" class="border p-2 rounded w-full" oninput="renderBudgetHint(); openPlanMenu();" placeholder="Digite o código ou nome do plano">
+          <div id="plan-menu" class="cbx-menu hidden"></div>
+        </div>
+        <div id="budget-hint" class="mt-1 text-gray-600"></div>
+      </div>
+      <div class="mb-2 flex items-center space-x-4">
+        <label class="inline-flex items-center">
+          <input id="edit-is-business" name="is_business_expense" type="checkbox" class="mr-2"> Empresarial
+        </label>
+        <label class="inline-flex items-center">
+          <input id="edit-has-invoice" name="has_invoice" type="checkbox" class="mr-2" onchange="toggleInvoiceUpload()"> Com fatura
+        </label>
+      </div>
+      <div id="edit-invoice-upload" class="mb-3 hidden">
+        <label class="block text-sm text-gray-600 mb-1">Anexar Fatura</label>
+        <input id="edit-invoice-file" name="invoice" type="file" class="border p-2 rounded w-full" accept="image/*,application/pdf">
+      </div>
+
+      <div class="mt-4 flex justify-end space-x-2">
+        <button type="button" class="px-4 py-2 rounded border" onclick="closeEditDrawer()">Cancelar</button>
+        <button type="submit" class="px-4 py-2 rounded bg-blue-600 text-white">Salvar</button>
+      </div>
+    </form>
+    <p class="mt-4 text-xs text-gray-400">Dica: deixe o plano em branco para classificar como empresarial automaticamente.</p>
+  </aside>
+  <!-- Menu de autocomplete é renderizado dinamicamente acima (plan-menu) -->
+</body>
+</html>
