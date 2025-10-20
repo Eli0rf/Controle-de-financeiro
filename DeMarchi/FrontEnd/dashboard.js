@@ -8236,9 +8236,17 @@ document.addEventListener('DOMContentLoaded', function() {
         const ctx = canvas.getContext('2d');
         destroyChart('recurringPlannedVsActualChart');
 
-        const labels = monthlyHistory.map(m => m.monthLabel);
-    const plannedData = monthlyHistory.map(m => round2(m.totalPlanned));
-    const actualData = monthlyHistory.map(m => round2(m.totalActual));
+    const labels = monthlyHistory.map(m => m.monthLabel);
+	const plannedData = monthlyHistory.map(m => round2(m.totalPlanned));
+	const actualData = monthlyHistory.map(m => round2(m.totalActual));
+    // Destacar o mês selecionado nos pontos do gráfico
+    const selYear = Number(document.getElementById('recurring-year')?.value || 0);
+    const selMonth = Number(document.getElementById('recurring-month')?.value || 0);
+    let highlightIndex = monthlyHistory.length - 1;
+    if (selYear && selMonth) {
+        const idx = monthlyHistory.findIndex(m => Number(m.year) === selYear && Number(m.month) === selMonth);
+        if (idx >= 0) highlightIndex = idx;
+    }
         // Média móvel 3 meses sobre realizado
         const movingAvg = actualData.map((v,i,arr)=>{
             const slice = arr.slice(Math.max(0,i-2), i+1);
@@ -8258,7 +8266,12 @@ document.addEventListener('DOMContentLoaded', function() {
                         backgroundColor: 'rgba(59, 130, 246, 0.1)',
                         borderWidth: 3,
                         fill: false,
-                        tension: 0.1
+                        tension: 0.1,
+                        pointRadius: (ctx) => ctx.dataIndex === highlightIndex ? 7 : 3,
+                        pointHoverRadius: (ctx) => ctx.dataIndex === highlightIndex ? 8 : 4,
+                        pointBackgroundColor: (ctx) => ctx.dataIndex === highlightIndex ? 'rgba(234,179,8,1)' : 'rgba(59, 130, 246, 1)',
+                        pointBorderColor: (ctx) => ctx.dataIndex === highlightIndex ? 'rgba(234,179,8,1)' : 'rgba(59, 130, 246, 1)',
+                        pointBorderWidth: (ctx) => ctx.dataIndex === highlightIndex ? 2 : 1
                     },
                     {
                         label: '💰 Realizado',
@@ -8267,7 +8280,12 @@ document.addEventListener('DOMContentLoaded', function() {
                         backgroundColor: 'rgba(34, 197, 94, 0.1)',
                         borderWidth: 3,
                         fill: false,
-                        tension: 0.1
+                        tension: 0.1,
+                        pointRadius: (ctx) => ctx.dataIndex === highlightIndex ? 7 : 3,
+                        pointHoverRadius: (ctx) => ctx.dataIndex === highlightIndex ? 8 : 4,
+                        pointBackgroundColor: (ctx) => ctx.dataIndex === highlightIndex ? 'rgba(234,179,8,1)' : 'rgba(34, 197, 94, 1)',
+                        pointBorderColor: (ctx) => ctx.dataIndex === highlightIndex ? 'rgba(234,179,8,1)' : 'rgba(34, 197, 94, 1)',
+                        pointBorderWidth: (ctx) => ctx.dataIndex === highlightIndex ? 2 : 1
                     },
                     {
                         label: '📈 Média Móvel (3m)',
@@ -8334,6 +8352,14 @@ document.addEventListener('DOMContentLoaded', function() {
             const v = Number(m.variationPercent || 0);
             return Math.round((v + Number.EPSILON) * 10) / 10; // 1 casa decimal
         });
+        // Índice do mês selecionado para destaque
+        const selYear = Number(document.getElementById('recurring-year')?.value || 0);
+        const selMonth = Number(document.getElementById('recurring-month')?.value || 0);
+        let highlightIndex = monthlyHistory.length - 1;
+        if (selYear && selMonth) {
+            const idx = monthlyHistory.findIndex(m => Number(m.year) === selYear && Number(m.month) === selMonth);
+            if (idx >= 0) highlightIndex = idx;
+        }
 
         chartRegistry.recurringVariationChart = new Chart(ctx, {
             type: 'bar',
@@ -8343,13 +8369,15 @@ document.addEventListener('DOMContentLoaded', function() {
                     {
                         label: '📊 Variação %',
                         data: variationData,
-                        backgroundColor: variationData.map(v => 
-                            v > 0 ? 'rgba(239, 68, 68, 0.7)' : 'rgba(34, 197, 94, 0.7)'
+                        backgroundColor: variationData.map((v,i) => i === highlightIndex 
+                            ? 'rgba(234, 179, 8, 0.9)'
+                            : (v > 0 ? 'rgba(239, 68, 68, 0.7)' : 'rgba(34, 197, 94, 0.7)')
                         ),
-                        borderColor: variationData.map(v => 
-                            v > 0 ? 'rgba(239, 68, 68, 1)' : 'rgba(34, 197, 94, 1)'
+                        borderColor: variationData.map((v,i) => i === highlightIndex 
+                            ? 'rgba(234, 179, 8, 1)'
+                            : (v > 0 ? 'rgba(239, 68, 68, 1)' : 'rgba(34, 197, 94, 1)')
                         ),
-                        borderWidth: 1
+                        borderWidth: variationData.map((_,i) => i === highlightIndex ? 3 : 1)
                     }
                 ]
             },
@@ -8728,7 +8756,10 @@ document.addEventListener('DOMContentLoaded', function() {
             const scheduleText = computeScheduleText(expense);
             row.innerHTML = `
                 <td class="p-3">
-                    <div class="font-medium">${expense.description || 'N/A'}</div>
+                    <div class="font-medium flex items-center gap-2">
+                        <span>${expense.description || 'N/A'}</span>
+                        ${paidThisMonth ? `<span class=\"inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-green-100 text-green-800\">Pago</span>` : ''}
+                    </div>
                     <div class="text-xs text-gray-500">${expense.category || 'Sem categoria'}</div>
                     ${expense.account_plan_code ? `<div class="text-[10px] text-indigo-600 mt-0.5">Plano: ${expense.account_plan_code}</div>` : ''}
                 </td>
@@ -8771,6 +8802,15 @@ document.addEventListener('DOMContentLoaded', function() {
                                 class="text-green-600 hover:text-green-800 text-sm border border-green-200 rounded px-2 py-1">
                             💸 Pagar
                         </button>
+                        <button onclick="editRecurringMonth(${expense.id})"
+                                class="text-indigo-600 hover:text-indigo-800 text-sm border border-indigo-200 rounded px-2 py-1">
+                            ✏️ Ajustar mês
+                        </button>
+                        ${paidThisMonth ? `
+                        <button onclick="deleteRecurringMonth(${expense.id})"
+                                class="text-red-600 hover:text-red-800 text-sm border border-red-200 rounded px-2 py-1">
+                            🗑️ Excluir mês
+                        </button>` : ''}
                         <button onclick="showDetailedAnalysis(${expense.id})" 
                                 class="text-blue-600 hover:text-blue-800 text-sm">
                             🔍 Analisar
@@ -8836,6 +8876,115 @@ document.addEventListener('DOMContentLoaded', function() {
     // Ação: pagar gasto recorrente (gera pagamento vinculado ao recorrente para o mês selecionado)
     async function safeReadJson(resp){
         try { return await resp.json(); } catch { return null; }
+    }
+    // Buscar pagamento do mês (se existir)
+    async function fetchRecurringMonthPayment(expenseId, year, month){
+        const params = new URLSearchParams({ year, month });
+        const resp = await authenticatedFetch(`${API_BASE_URL}/api/recurring-expenses/${expenseId}/payments?${params.toString()}`);
+        if (resp.ok) return await resp.json();
+        return null;
+    }
+    // Abrir modal para ajustar valores do mês (cria ou atualiza pagamento do mês)
+    window.editRecurringMonth = async function(expenseId){
+        try{
+            const item = (currentRecurringBIData?.expenses || []).find(e => e.id === expenseId) ||
+                         (currentRecurringExpenses || []).find(e => e.id === expenseId);
+            if(!item){ showNotification('Item não encontrado', 'error'); return; }
+
+            const now = new Date();
+            const y = Number(document.getElementById('recurring-year')?.value || now.getFullYear());
+            const m = Number(document.getElementById('recurring-month')?.value || (now.getMonth()+1));
+            const existing = await fetchRecurringMonthPayment(expenseId, y, m);
+
+            const day = Number(item.paymentDay || now.getDate());
+            const defaultDate = new Date(y, m-1, Math.max(1, Math.min(day, 28)));
+            const isoDate = (existing?.transaction_date || defaultDate.toISOString().slice(0,10));
+            const val = existing ? Number(existing.amount||0) : Number(item.plannedAmount || 0);
+            const desc = existing ? (existing.description || '') : `Pagamento ${item.description || ''}`.trim();
+            const plan = existing ? (existing.account_plan_code || item.account_plan_code || '') : (item.account_plan_code || '');
+
+            const content = `
+                <form id="edit-rec-month-form" class="space-y-3">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Valor do mês</label>
+                        <input type="number" step="0.01" id="erm-amount" value="${(val||0).toFixed(2)}" class="mt-1 w-full border rounded px-2 py-1" />
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Data</label>
+                        <input type="date" id="erm-date" value="${isoDate}" class="mt-1 w-full border rounded px-2 py-1" />
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Descrição</label>
+                        <input type="text" id="erm-desc" value="${desc.replace(/"/g,'&quot;')}" class="mt-1 w-full border rounded px-2 py-1" />
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Plano de Conta</label>
+                        <input type="text" id="erm-plan" value="${(plan||'').toString().replace(/"/g,'&quot;')}" class="mt-1 w-full border rounded px-2 py-1" placeholder="ex: 45" />
+                    </div>
+                    <div class="flex justify-end gap-2 pt-2">
+                        <button type="button" id="erm-cancel" class="px-3 py-1 rounded border">Cancelar</button>
+                        <button type="submit" class="px-3 py-1 rounded bg-indigo-600 text-white">Salvar</button>
+                    </div>
+                    ${existing ? `<div class="text-xs text-gray-500">Editando lançamento existente deste mês.</div>` : `<div class="text-xs text-gray-500">Ainda não há lançamento para este mês. Ao salvar, um pagamento será criado.</div>`}
+                </form>`;
+
+            showModal('Ajustar recorrente — mês selecionado', content);
+            const form = document.getElementById('edit-rec-month-form');
+            const btnCancel = document.getElementById('erm-cancel');
+            btnCancel?.addEventListener('click', closeModal);
+            form?.addEventListener('submit', async (e)=>{
+                e.preventDefault();
+                const amount = parseFloat(document.getElementById('erm-amount').value || '0');
+                const transaction_date = document.getElementById('erm-date').value;
+                const description = document.getElementById('erm-desc').value || undefined;
+                const account_plan_code = document.getElementById('erm-plan').value || undefined;
+                if(!amount || amount <= 0){ showNotification('Informe um valor válido', 'error'); return; }
+                try{
+                    if(existing){
+                        const resp = await authenticatedFetch(`${API_BASE_URL}/api/recurring-expenses/${expenseId}/payments`, {
+                            method: 'PUT',
+                            body: JSON.stringify({ year: y, month: m, amount, transaction_date, description, account_plan_code })
+                        });
+                        if(!resp.ok){ const msg = await safeReadJson(resp); throw new Error(msg?.message||'Falha ao atualizar mês'); }
+                    } else {
+                        const resp = await authenticatedFetch(`${API_BASE_URL}/api/recurring-expenses/${expenseId}/payments`, {
+                            method: 'POST',
+                            body: JSON.stringify({ year: y, month: m, amount, transaction_date, description, account_plan_code })
+                        });
+                        if(!resp.ok){ const msg = await safeReadJson(resp); throw new Error(msg?.message||'Falha ao criar lançamento do mês'); }
+                    }
+                    clearRecurringBICache();
+                    await loadRecurringPixBoletoBI(true, true);
+                    closeModal();
+                    showNotification('Mês atualizado com sucesso', 'success');
+                } catch(err){
+                    showNotification(err?.message||'Erro ao salvar', 'error');
+                }
+            });
+        }catch(err){
+            console.error('editRecurringMonth falhou:', err);
+            showNotification('Não foi possível abrir o ajuste do mês', 'error');
+        }
+    }
+    // Excluir lançamento do mês (se existir)
+    window.deleteRecurringMonth = async function(expenseId){
+        try{
+            const now = new Date();
+            const y = Number(document.getElementById('recurring-year')?.value || now.getFullYear());
+            const m = Number(document.getElementById('recurring-month')?.value || (now.getMonth()+1));
+            const existing = await fetchRecurringMonthPayment(expenseId, y, m);
+            if(!existing){ showNotification('Não há lançamento para este mês', 'warning'); return; }
+            if(!confirm('Excluir o lançamento deste mês?')) return;
+            const params = new URLSearchParams({ year: y, month: m });
+            const resp = await authenticatedFetch(`${API_BASE_URL}/api/recurring-expenses/${expenseId}/payments?${params.toString()}`, { method: 'DELETE' });
+            if(!resp.ok){ const msg = await safeReadJson(resp); throw new Error(msg?.message||'Falha ao excluir'); }
+            clearRecurringBICache();
+            await loadRecurringPixBoletoBI(true, true);
+            showNotification('Lançamento do mês removido', 'success');
+        }catch(err){
+            console.error('deleteRecurringMonth falhou:', err);
+            showNotification(err?.message||'Erro ao excluir mês', 'error');
+        }
     }
     window.payRecurringExpense = async function(expenseId) {
         try {
