@@ -2281,6 +2281,7 @@ document.addEventListener('DOMContentLoaded', function() {
             const conta = e.account ? e.account.toLowerCase() : '';
             const tipo = e.is_business_expense ? 'empresa' : 'pessoal';
             const plano = e.account_plan_code ? String(e.account_plan_code).toLowerCase() : '';
+            const planoNome = (window.PLAN_NAMES && e.account_plan_code && window.PLAN_NAMES[Number(e.account_plan_code)]) ? String(window.PLAN_NAMES[Number(e.account_plan_code)]).toLowerCase() : '';
             const nota = e.invoice_path ? 'sim' : 'não';
             
             let match = true;
@@ -2296,6 +2297,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     tipo.includes(term) ||
                     plano.includes(term) ||
                     nota.includes(term) ||
+                    planoNome.includes(term) ||
                     // Busca por palavras-chave especiais
                     (term === 'empresarial' && e.is_business_expense) ||
                     (term === 'empresa' && e.is_business_expense) ||

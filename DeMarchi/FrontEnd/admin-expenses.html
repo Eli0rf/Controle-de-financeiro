@@ -71,7 +71,7 @@
       const resp = await fetch(`${API_BASE_URL}/api/config/chart-of-accounts`);
       if(!resp.ok) return;
       const data = await resp.json();
-      state.plansMap = data.maps || { names:{}, budgets:{} };
+  state.plansMap = data.maps || { names:{}, budgets:{}, types:{} };
     }
 
     async function loadAccounts(){
@@ -137,7 +137,7 @@
       if (!code) return '<span class="text-gray-400">—</span>';
       const id = Number(code);
       const name = (state.plansMap.names && state.plansMap.names[id]) || '';
-      return `${id}${name? ' — '+name: ''}`;
+      return `${name || ('Plano '+id)}${name? '': ''}${name? '': ''}`;
     }
 
     // Calcula uso por plano (% do teto) para o conjunto filtrado
@@ -301,17 +301,19 @@
     // Combobox avançado de plano
     function allPlanEntries(){
       const names = state.plansMap.names || {};
-      return Object.entries(names).map(([id,name])=>({ id:Number(id), name }));
+      const types = state.plansMap.types || {};
+      return Object.entries(names).map(([id,name])=>({ id:Number(id), name, type: types[Number(id)] || null }));
     }
     function filterPlanEntries(term){
       const t = (term||'').toLowerCase();
-      if (!t) return allPlanEntries().slice(0,8);
-      return allPlanEntries().filter(x=> String(x.id).includes(t) || (x.name||'').toLowerCase().includes(t)).slice(0,8);
+      const list = allPlanEntries();
+      if (!t) return list.slice(0,8);
+      return list.filter(x=> String(x.id).includes(t) || (x.name||'').toLowerCase().includes(t)).slice(0,8);
     }
     function renderPlanMenu(list){
       const menu = document.getElementById('plan-menu');
       if(!menu) return;
-      menu.innerHTML = list.map(x=>`<div class="cbx-item" data-id="${x.id}">${x.id} — ${x.name||''}</div>`).join('');
+      menu.innerHTML = list.map(x=>`<div class="cbx-item" data-id="${x.id}">${x.name||('Plano '+x.id)}</div>`).join('');
       menu.classList.toggle('hidden', list.length===0);
     }
     function openPlanMenu(){

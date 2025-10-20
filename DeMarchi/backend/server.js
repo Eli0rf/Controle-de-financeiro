@@ -4652,27 +4652,22 @@ app.get('/api/accounts', authenticateToken, async (req, res) => {
 // Rota para buscar planos de conta disponíveis
 app.get('/api/account-plans', authenticateToken, async (req, res) => {
     try {
-        console.log('📋 Buscando planos de conta disponíveis...');
-        
-        // Retornar lista fixa de planos de conta baseada no sistema existente
-        const accountPlans = [
-            { PlanoContasID: 1, NomePlanoConta: 'Alimentação' },
-            { PlanoContasID: 2, NomePlanoConta: 'Transporte' },
-            { PlanoContasID: 3, NomePlanoConta: 'Moradia' },
-            { PlanoContasID: 4, NomePlanoConta: 'Saúde' },
-            { PlanoContasID: 5, NomePlanoConta: 'Educação' },
-            { PlanoContasID: 6, NomePlanoConta: 'Lazer' },
-            { PlanoContasID: 7, NomePlanoConta: 'Vestuário' },
-            { PlanoContasID: 8, NomePlanoConta: 'Serviços' },
-            { PlanoContasID: 9, NomePlanoConta: 'Investimentos' },
-            { PlanoContasID: 10, NomePlanoConta: 'Diversos' }
-        ];
-        
-        console.log(`✅ Retornando ${accountPlans.length} planos de conta`);
-        res.json(accountPlans);
-        
+        const { type } = req.query; // business | personal (opcional)
+        const config = accountsConfig.getChartOfAccounts ? accountsConfig.getChartOfAccounts() : null;
+        const plans = (config && Array.isArray(config.plans)) ? config.plans : [];
+        let list = plans.map(p => ({
+            id: p.id,
+            name: p.name || `Plano ${p.id}`,
+            description: p.description || '',
+            type: p.type || 'personal',
+            defaultBudget: p.defaultBudget != null ? Number(p.defaultBudget) : 0
+        }));
+        if (type && (type === 'business' || type === 'personal')) {
+            list = list.filter(p => (p.type||'').toLowerCase() === type.toLowerCase());
+        }
+        res.json(list);
     } catch (error) {
-        console.error('❌ Erro ao buscar planos de conta:', error);
+        console.error('❌ Erro ao buscar planos de conta (central):', error);
         res.status(500).json({ 
             message: 'Erro interno do servidor ao buscar planos de conta',
             error: error.message 
