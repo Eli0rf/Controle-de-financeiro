@@ -85,6 +85,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const cancelEditBtn = document.getElementById('cancel-edit-btn');
     const editHasInvoiceCheckbox = document.getElementById('edit-has-invoice');
     const editInvoiceUpload = document.getElementById('edit-invoice-upload');
+    const addHasInvoiceCheckbox = document.getElementById('form-has-invoice-check');
     
     // Charts para análise por período
     let periodCharts = {
@@ -946,6 +947,11 @@ document.addEventListener('DOMContentLoaded', function() {
         if (!personalFields || !businessFields || !businessCheckbox) return;
         personalFields.classList.toggle('hidden', businessCheckbox.checked);
         businessFields.classList.toggle('hidden', !businessCheckbox.checked);
+        // Habilitar apenas o input de plano correspondente ao tipo
+        const personalPlanInput = document.getElementById('form-plan-code');
+        const businessPlanInput = document.getElementById('form-business-plan-code');
+        if (personalPlanInput) personalPlanInput.disabled = businessCheckbox.checked; // desabilita quando empresarial
+        if (businessPlanInput) businessPlanInput.disabled = !businessCheckbox.checked; // desabilita quando pessoal
     }
 
     // ========== GERENCIAMENTO DO CHART.JS ==========
@@ -3313,6 +3319,10 @@ document.addEventListener('DOMContentLoaded', function() {
 
             const formData = new FormData(addExpenseForm);
             formData.set('is_business_expense', businessCheckbox.checked);
+            // Normalizar has_invoice para 'true'/'false'
+            if (addHasInvoiceCheckbox) {
+                formData.set('has_invoice', addHasInvoiceCheckbox.checked ? 'true' : 'false');
+            }
             // Normalização de conta: se usuário ainda tiver valor obsoleto 'PIX' ou 'Boleto'
             const originalAccount = (formData.get('account') || '').trim();
             if (originalAccount.toUpperCase() === 'PIX' || originalAccount.toUpperCase() === 'BOLETO') {
@@ -6382,6 +6392,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     window.PLAN_BUDGETS = parsed.maps.budgets || {};
                     window.PLAN_NAMES = parsed.maps.names || {};
                     window.PLAN_DESCRIPTIONS = parsed.maps.descriptions || {};
+                    window.PLAN_TYPES = parsed.maps.types || {};
                     return parsed;
                 }
             }
@@ -6392,6 +6403,7 @@ document.addEventListener('DOMContentLoaded', function() {
             window.PLAN_BUDGETS = (data.maps && data.maps.budgets) || {};
             window.PLAN_NAMES = (data.maps && data.maps.names) || {};
             window.PLAN_DESCRIPTIONS = (data.maps && data.maps.descriptions) || {};
+            window.PLAN_TYPES = (data.maps && data.maps.types) || {};
             return data;
         } catch(e){
             console.warn('Não foi possível carregar planos de contas centralizados:', e.message);

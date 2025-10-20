@@ -1108,6 +1108,12 @@ app.post('/api/expenses', authenticateToken, upload.single('invoice'), async (re
             const { types } = accountsConfig.asMaps();
             const code = parseInt(account_plan_code, 10);
             const planType = types && types[code];
+            if (!planType) {
+                return res.status(400).json({
+                    error: 'INVALID_PLAN_CODE',
+                    message: `Plano de contas inválido: ${account_plan_code}. Verifique o cadastro central.`
+                });
+            }
             if (planType === 'business') {
                 // Plano empresarial: manter o código e marcar como empresarial
                 finalIsBusiness = 1;
@@ -1242,7 +1248,13 @@ app.get('/api/expenses', authenticateToken, async (req, res) => {
 
         sql += ' ORDER BY transaction_date DESC';
         const [rows] = await pool.query(sql, params);
-        res.json(rows);
+        // Enriquecer com planType baseado na configuração central
+        const { types } = accountsConfig.asMaps();
+        const enriched = rows.map(r => ({
+            ...r,
+            planType: (r.account_plan_code != null && types[Number(r.account_plan_code)] ) || null
+        }));
+        res.json(enriched);
     } catch (error) {
         console.error('Erro ao buscar despesas:', error);
         res.status(500).json({ message: 'Erro ao buscar despesas.' });
@@ -1280,7 +1292,9 @@ app.get('/api/expenses/history', authenticateToken, async (req, res) => {
         }
         sql += ' ORDER BY transaction_date ASC';
 
-        const [rows] = await pool.query(sql, params);
+    const [rows] = await pool.query(sql, params);
+    const { types } = accountsConfig.asMaps();
+    const rowsWithType = rows.map(r => ({...r, planType: (r.account_plan_code != null && types[Number(r.account_plan_code)]) || null }));
 
         if (aggregate === 'true') {
             const aggregation = {};
@@ -1302,7 +1316,7 @@ app.get('/api/expenses/history', authenticateToken, async (req, res) => {
             });
         }
 
-        res.json(rows);
+        res.json(rowsWithType);
     } catch (error) {
         console.error('Erro ao buscar histórico de despesas:', error);
         res.status(500).json({ message: 'Erro ao buscar histórico de despesas', error: error.message });
@@ -1354,6 +1368,12 @@ app.put('/api/expenses/:id', authenticateToken, upload.single('invoice'), async 
             const { types } = accountsConfig.asMaps();
             const code = parseInt(account_plan_code, 10);
             const planType = types && types[code];
+            if (!planType) {
+                return res.status(400).json({
+                    error: 'INVALID_PLAN_CODE',
+                    message: `Plano de contas inválido: ${account_plan_code}. Verifique o cadastro central.`
+                });
+            }
             if (planType === 'business') {
                 finalIsBusiness = 1;
                 finalAccountPlanCode = code; // manter código do plano empresarial
