@@ -3200,7 +3200,13 @@ document.addEventListener('DOMContentLoaded', function() {
             if (Array.isArray(data) && data.length > 0) {
                 // Se data já é um array processado (vem do dashboard)
                 if (data[0] && typeof data[0] === 'object' && 'account_plan_code' in data[0]) {
-                    processedData = data;
+                    // Converter para estrutura padronizada { account_plan_code, total, count?, name? }
+                    processedData = data.map(d => ({
+                        account_plan_code: d.account_plan_code,
+                        total: Number(d.total || d.Total || 0),
+                        count: Number(d.count || d.Count || 0),
+                        name: d.name || (window.PLAN_NAMES && window.PLAN_NAMES[Number(d.account_plan_code)]) || null
+                    }));
                 } else {
                     // Processar gastos brutos agrupando por plano de conta
                     const planTotals = {};
@@ -3239,13 +3245,14 @@ document.addEventListener('DOMContentLoaded', function() {
             
             console.log('📊 Dados processados para plan-chart:', processedData);
             
-            const max = Math.max(...processedData.map(d => d.total));
+            const max = Math.max(...processedData.map(d => d.total), 0);
             const labels = processedData.map(d => {
                 const planCode = d.account_plan_code;
+                const name = d.name || (window.PLAN_NAMES && window.PLAN_NAMES[Number(planCode)]);
                 if (planCode === 'Sem Categoria' || !planCode || planCode === '') {
                     return '🔸 Sem Categoria';
                 }
-                return `📋 Plano ${planCode}`;
+                return name ? `📋 ${name}` : `📋 Plano ${planCode}`;
             });
             
             const values = processedData.map(d => d.total);

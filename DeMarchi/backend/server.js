@@ -1655,24 +1655,31 @@ app.get('/api/dashboard', authenticateToken, async (req, res) => {
                  GROUP BY account`,
                 [userId, year, month]
             ),
-            // Gastos por Plano de Conta (Bar Chart)
+            // Gastos por Plano de Conta (Bar Chart) - inclui pessoais e empresariais
             pool.query(
                 `SELECT account_plan_code, SUM(amount) as total
                  FROM expenses
-                 WHERE user_id = ? AND is_business_expense = 0 AND account_plan_code IS NOT NULL AND YEAR(transaction_date) = ? AND MONTH(transaction_date) = ?
+                 WHERE user_id = ? AND account_plan_code IS NOT NULL AND YEAR(transaction_date) = ? AND MONTH(transaction_date) = ?
                  GROUP BY account_plan_code`,
                 [userId, year, month]
             )
         ]);
 
         const nextMonthProjection = parseFloat(projectionData[0][0]?.total || 0);
+        // Anexar nomes dos planos aos dados de barra
+        const { names: planNames } = accountsConfig.asMaps();
+        const planChartEnriched = (planChartData[0]||[]).map(r => ({
+            account_plan_code: r.account_plan_code,
+            total: r.total,
+            name: planNames && planNames[Number(r.account_plan_code)] ? planNames[Number(r.account_plan_code)] : null
+        }));
 
         res.json({
             projection: { nextMonthEstimate: nextMonthProjection.toFixed(2) },
             lineChartData: lineChartData[0],
             pieChartData: pieChartData[0],
             mixedTypeChartData: mixedTypeChartData[0],
-            planChartData: planChartData[0]
+            planChartData: planChartEnriched
         });
 
     } catch (error) {
