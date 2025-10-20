@@ -5311,7 +5311,6 @@ app.post('/api/recurring-expenses/process', authenticateToken, async (req, res) 
 
 // --- 12. GASTOS RECORRENTES PIX/BOLETO BI ---
 // Cache helpers (Redis when available, fallback to in-memory)
-const { getRedis } = require('./utils/redisClient');
 const redisClient = getRedis();
 const inMemoryCache = new Map();
 const RECURRING_BI_TTL_SEC = 60; // 1 minuto
