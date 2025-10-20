@@ -1124,8 +1124,15 @@ app.post('/api/expenses', authenticateToken, upload.single('invoice'), async (re
                 finalAccountPlanCode = code;
             }
         } else {
-            // Sem plano informado → empresarial automático
-            finalIsBusiness = 1;
+            // Sem plano informado
+            if (explicitBusiness) {
+                // Empresarial exige plano de contas
+                return res.status(400).json({
+                    error: 'MISSING_BUSINESS_PLAN',
+                    message: 'Para gastos empresariais é obrigatório selecionar um plano de contas empresarial.'
+                });
+            }
+            finalIsBusiness = 0;
             finalAccountPlanCode = null;
         }
 
@@ -1382,8 +1389,14 @@ app.put('/api/expenses/:id', authenticateToken, upload.single('invoice'), async 
                 finalAccountPlanCode = code; // plano pessoal ou sem tipo
             }
         } else {
-            // Sem plano informado → empresarial
-            finalIsBusiness = 1;
+            // Sem plano informado
+            if (is_business_expense) {
+                return res.status(400).json({
+                    error: 'MISSING_BUSINESS_PLAN',
+                    message: 'Para gastos empresariais é obrigatório selecionar um plano de contas empresarial.'
+                });
+            }
+            finalIsBusiness = 0;
             finalAccountPlanCode = null;
         }
 

@@ -920,6 +920,7 @@ document.addEventListener('DOMContentLoaded', function() {
         populateFilterOptions();
         fetchAllData();
         toggleExpenseFields();
+        populateBusinessPlanSelect();
         initializeTabs(); // Adicionar inicialização das tabs
         
         // Inicializar sistema de insights após delay maior para garantir que tudo está pronto
@@ -949,9 +950,51 @@ document.addEventListener('DOMContentLoaded', function() {
         businessFields.classList.toggle('hidden', !businessCheckbox.checked);
         // Habilitar apenas o input de plano correspondente ao tipo
         const personalPlanInput = document.getElementById('form-plan-code');
-        const businessPlanInput = document.getElementById('form-business-plan-code');
-        if (personalPlanInput) personalPlanInput.disabled = businessCheckbox.checked; // desabilita quando empresarial
-        if (businessPlanInput) businessPlanInput.disabled = !businessCheckbox.checked; // desabilita quando pessoal
+        const businessPlanSelect = document.getElementById('form-business-plan-select');
+        if (personalPlanInput) {
+            personalPlanInput.disabled = businessCheckbox.checked; // desabilita quando empresarial
+            personalPlanInput.required = false; // pessoal não é obrigatório
+        }
+        if (businessPlanSelect) {
+            businessPlanSelect.disabled = !businessCheckbox.checked; // desabilita quando pessoal
+            businessPlanSelect.required = businessCheckbox.checked; // exigir quando empresarial
+            if (businessCheckbox.checked) populateBusinessPlanSelect();
+        }
+    }
+
+    // Carrega e popula o select de planos empresariais a partir da configuração central
+    async function populateBusinessPlanSelect(){
+        try{
+            const sel = document.getElementById('form-business-plan-select');
+            if(!sel) return;
+            // Tenta cache em sessionStorage
+            let data = null;
+            try{
+                const cached = sessionStorage.getItem('chartOfAccounts');
+                if(cached) data = JSON.parse(cached);
+            }catch(e){ /* ignore */ }
+            if(!data || !data.plans){
+                data = await loadChartOfAccountsConfig(true);
+            }
+            const plans = (data && data.plans) || [];
+            const businessPlans = plans.filter(p => (p.type||'').toLowerCase() === 'business');
+            // Preserva seleção atual
+            const current = sel.value;
+            // Recria options
+            sel.innerHTML = '';
+            const placeholder = document.createElement('option');
+            placeholder.value = '';
+            placeholder.textContent = 'Selecione um plano empresarial…';
+            sel.appendChild(placeholder);
+            businessPlans.forEach(p => {
+                const opt = document.createElement('option');
+                opt.value = String(p.id);
+                // Mostrar nome (sem forçar exibir o número); se desejar, inclua descrição entre parênteses
+                opt.textContent = p.name || `Plano ${p.id}`;
+                sel.appendChild(opt);
+            });
+            if (current && [...sel.options].some(o=>o.value===current)) sel.value = current;
+        }catch(e){ console.warn('Falha ao popular planos empresariais:', e); }
     }
 
     // ========== GERENCIAMENTO DO CHART.JS ==========
@@ -3451,6 +3494,15 @@ document.addEventListener('DOMContentLoaded', function() {
                 method: 'PUT',
                 body: formData
             });
+            // Validação: se empresarial, exigir plano selecionado
+            if (businessCheckbox && businessCheckbox.checked) {
+                const businessPlan = document.getElementById('form-business-plan-select');
+                const planVal = businessPlan ? (businessPlan.value||'').trim() : '';
+                if (!planVal) {
+                    showNotification('Selecione um Plano de Conta Empresarial.', 'warning');
+                    return;
+                }
+            }
             
             if (!response.ok) {
                 const error = await response.json();

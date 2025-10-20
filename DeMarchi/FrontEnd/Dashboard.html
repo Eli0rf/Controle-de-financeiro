@@ -1611,9 +1611,11 @@
                             </div>
                             <div id="business-fields-container" class="field-container hidden space-y-4">
                                 <div>
-                                    <label for="form-business-plan-code" class="block text-sm font-medium">Plano de Conta Empresarial (opcional)</label>
-                                    <input type="number" id="form-business-plan-code" name="account_plan_code" placeholder="Código do plano empresarial" class="mt-1 block w-full md:w-1/2 p-2 border rounded-lg">
-                                    <p class="text-xs text-gray-500 mt-1">Se informado, deve existir no cadastro central de planos de contas empresariais.</p>
+                                    <label for="form-business-plan-select" class="block text-sm font-medium">Plano de Conta Empresarial</label>
+                                    <select id="form-business-plan-select" name="account_plan_code" class="mt-1 block w-full md:w-1/2 p-2 border rounded-lg" required>
+                                        <option value="">Selecione um plano empresarial…</option>
+                                    </select>
+                                    <p class="text-xs text-gray-500 mt-1">A lista é carregada do cadastro central (Admin Planos) apenas com planos marcados como Empresarial.</p>
                                 </div>
                                 <div class="flex items-center">
                                     <input type="checkbox" id="form-has-invoice-check" name="has_invoice" class="h-4 w-4">
