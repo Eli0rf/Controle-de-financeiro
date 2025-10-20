@@ -8892,8 +8892,9 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
             }
 
-            // Refresh dados e UI
-            await loadRecurringPixBoletoBI(true);
+            // Refresh dados e UI (forçar recomputo e ignorar cache)
+            clearRecurringBICache();
+            await loadRecurringPixBoletoBI(true, true);
             showNotification('Pagamento registrado com sucesso!', 'success');
         } catch (e) {
             console.error('Falha ao registrar pagamento:', e);
