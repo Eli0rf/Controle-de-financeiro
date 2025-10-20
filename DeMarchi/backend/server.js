@@ -1699,7 +1699,7 @@ app.get('/api/expenses-goals', authenticateToken, async (req, res) => {
         let sql = `
             SELECT account_plan_code, SUM(amount) as Total
             FROM expenses
-            WHERE user_id = ? AND account_plan_code IS NOT NULL
+            WHERE user_id = ? AND account_plan_code IS NOT NULL AND account_plan_code <> ''
         `;
         const params = [userId];
 
@@ -1723,13 +1723,15 @@ app.get('/api/expenses-goals', authenticateToken, async (req, res) => {
         sql += ' GROUP BY account_plan_code ORDER BY Total DESC';
 
         const [results] = await pool.query(sql, params);
-        const { budgets: centralBudgets } = accountsConfig.asMaps();
+        const { budgets: centralBudgets, names: centralNames } = accountsConfig.asMaps();
 
-        const dataWithLimits = results.map(item => {
-            const planoId = parseInt(item.account_plan_code);
-            const teto = (centralBudgets && centralBudgets[planoId] !== undefined) ? Number(centralBudgets[planoId]) : 0;
-            const percentual = teto > 0 ? (item.Total / teto) * 100 : 0;
-            let alerta = null;
+        const dataWithLimits = results
+            .map(item => {
+                const planoId = Number(item.account_plan_code);
+                if (!Number.isFinite(planoId)) return null; // descarta inválidos
+                const teto = (centralBudgets && centralBudgets[planoId] !== undefined) ? Number(centralBudgets[planoId]) : 0;
+                const percentual = teto > 0 ? (Number(item.Total) / teto) * 100 : 0;
+                let alerta = null;
 
             // Mensagens focadas em não ultrapassar o teto
             if (percentual > 101) {
@@ -1774,14 +1776,16 @@ app.get('/api/expenses-goals', authenticateToken, async (req, res) => {
                 };
             }
 
-            return {
-                PlanoContasID: planoId,
-                Total: item.Total,
-                Teto: teto,
-                Percentual: percentual,
-                Alerta: alerta
-            };
-        });
+                return {
+                    PlanoContasID: planoId,
+                    NomePlano: (centralNames && centralNames[planoId]) || null,
+                    Total: Number(item.Total) || 0,
+                    Teto: teto,
+                    Percentual: percentual,
+                    Alerta: alerta
+                };
+            })
+            .filter(Boolean);
 
         res.json(dataWithLimits);
     } catch (error) {

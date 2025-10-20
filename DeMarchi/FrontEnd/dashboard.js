@@ -1320,12 +1320,15 @@ document.addEventListener('DOMContentLoaded', function() {
             }
 
             // Normalizar dados agregados vindos do backend (PlanoContasID, Total, Teto, Percentual)
-            const chartData = (data || []).map(item => ({
-                PlanoContasID: String(item.PlanoContasID),
-                Total: parseFloat(item.Total) || 0,
-                Teto: parseFloat(item.Teto) || 0,
-                Percentual: parseFloat(item.Percentual) || 0
-            }));
+            const chartData = (data || [])
+                .map(item => ({
+                    PlanoContasID: String(item.PlanoContasID),
+                    NomePlano: item.NomePlano || (window.PLAN_NAMES && window.PLAN_NAMES[Number(item.PlanoContasID)]) || null,
+                    Total: parseFloat(item.Total) || 0,
+                    Teto: parseFloat(item.Teto) || 0,
+                    Percentual: parseFloat(item.Percentual) || 0
+                }))
+                .filter(d => d.PlanoContasID && d.PlanoContasID !== 'NaN' && d.PlanoContasID !== 'undefined');
 
             if (chartData.length === 0) {
                 console.log('❌ Nenhum plano com gastos ou limites para exibir');
@@ -1338,7 +1341,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
             console.log('📊 Dados do gráfico:', sortedData);
 
-            const labels = sortedData.map(d => `Plano ${d.PlanoContasID}`);
+            const labels = sortedData.map(d => d.NomePlano ? d.NomePlano : `Plano ${d.PlanoContasID}`);
             const limitData = sortedData.map(d => d.Teto);
             const currentData = sortedData.map(d => d.Total);
 
