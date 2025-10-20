@@ -8,39 +8,122 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css">
 </head>
 <body class="bg-gray-50">
-  <div class="max-w-5xl mx-auto py-8 px-4">
-    <h1 class="text-2xl font-bold mb-4">Administração - Planos de Contas</h1>
-
-    <div class="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded text-yellow-900">
-      Informe seu token JWT abaixo para autenticar. Você pode obtê-lo após login no sistema.
+  <!-- Header -->
+  <header class="bg-gradient-to-r from-slate-900 via-indigo-900 to-blue-600 text-white">
+    <div class="max-w-7xl mx-auto px-4 py-6 flex items-center justify-between">
+      <div>
+        <h1 class="text-2xl font-bold">Administração - Planos de Contas</h1>
+        <p class="text-sm text-blue-100">CRUD de planos e tetos centralizados</p>
+      </div>
+      <div class="flex items-center gap-2">
+        <input id="jwt" type="password" placeholder="JWT Token" class="border border-blue-300 bg-white text-gray-900 p-2 rounded w-72" />
+        <button id="btnLoad" class="bg-white text-blue-700 px-4 py-2 rounded">Carregar</button>
+      </div>
     </div>
+  </header>
 
-    <div class="mb-6 flex space-x-2">
-      <input id="jwt" type="password" placeholder="JWT Token" class="flex-1 border p-2 rounded" />
-      <button id="btnLoad" class="bg-blue-600 text-white px-4 py-2 rounded">Carregar</button>
-    </div>
+  <main class="max-w-7xl mx-auto py-6 px-4">
+    <!-- Filtros -->
+    <section class="bg-white shadow rounded p-4 mb-4">
+      <div class="grid grid-cols-1 md:grid-cols-5 gap-3">
+        <div class="md:col-span-3">
+          <label class="text-xs text-gray-500">Buscar</label>
+          <input id="filter-q" type="text" class="border p-2 rounded w-full" placeholder="Código, nome ou descrição...">
+        </div>
+        <div>
+          <label class="text-xs text-gray-500">Tipo</label>
+          <select id="filter-type" class="border p-2 rounded w-full">
+            <option value="ALL">Todos</option>
+            <option value="personal">Pessoal</option>
+            <option value="business">Empresarial</option>
+          </select>
+        </div>
+        <div class="flex items-end">
+          <button id="apply-filters" class="bg-blue-600 text-white px-4 py-2 rounded w-full">Aplicar</button>
+        </div>
+      </div>
+    </section>
 
-    <div class="bg-white shadow rounded p-4">
-      <div class="flex justify-between items-center mb-4">
-        <h2 class="text-xl font-semibold">Planos</h2>
-        <button id="btnAdd" class="bg-green-600 text-white px-3 py-1 rounded">Adicionar</button>
+    <section class="bg-white shadow rounded">
+      <div class="px-4 py-3 border-b flex items-center justify-between">
+        <h2 class="text-lg font-semibold">Planos</h2>
+        <div class="flex items-center gap-2">
+          <span id="result-count" class="text-sm text-gray-500">0 resultados</span>
+          <button id="btnAdd" class="bg-green-600 text-white px-3 py-2 rounded">Novo Plano</button>
+        </div>
       </div>
 
-      <table class="min-w-full">
-        <thead class="bg-gray-100">
-          <tr>
-            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Código</th>
-            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Nome</th>
-            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Descrição</th>
-            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Tipo</th>
-            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Teto (R$)</th>
-            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Ações</th>
-          </tr>
-        </thead>
-        <tbody id="tbody" class="divide-y divide-gray-200"></tbody>
-      </table>
+      <div class="overflow-x-auto">
+        <table class="min-w-full">
+          <thead class="bg-gray-100">
+            <tr>
+              <th id="th-id" class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer">Código</th>
+              <th id="th-name" class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer">Nome</th>
+              <th id="th-description" class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer">Descrição</th>
+              <th id="th-type" class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer">Tipo</th>
+              <th id="th-budget" class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer">Teto (R$)</th>
+              <th class="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">Ações</th>
+            </tr>
+          </thead>
+          <tbody id="tbody" class="divide-y divide-gray-200"></tbody>
+        </table>
+      </div>
+      <div class="flex items-center justify-between px-4 py-3 border-t bg-gray-50">
+        <div class="flex items-center space-x-2">
+          <label class="text-sm text-gray-600">Itens por página</label>
+          <select id="page-size" class="border p-1 rounded text-sm">
+            <option>10</option>
+            <option selected>25</option>
+            <option>50</option>
+            <option>100</option>
+          </select>
+        </div>
+        <div class="flex items-center space-x-3">
+          <button id="page-prev" class="px-3 py-1 border rounded text-sm">Anterior</button>
+          <span id="page-info" class="text-sm text-gray-600">Página 1 de 1</span>
+          <button id="page-next" class="px-3 py-1 border rounded text-sm">Próxima</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Drawer Novo/Editar Plano -->
+  <div id="drawer-overlay" class="fixed inset-0 bg-black bg-opacity-40 hidden opacity-0" onclick="closePlanDrawer()"></div>
+  <aside id="drawer" class="fixed top-0 right-0 h-full w-full sm:w-[440px] bg-white shadow-2xl p-5 translate-x-full transition-transform" onclick="event.stopPropagation()">
+    <div class="flex items-center justify-between mb-4">
+      <h3 id="drawer-title" class="text-xl font-semibold">Novo Plano</h3>
+      <button class="text-gray-500 hover:text-gray-700" onclick="closePlanDrawer()">✕</button>
     </div>
-  </div>
+    <form id="plan-form" onsubmit="handleSavePlan(event)">
+      <div class="mb-3">
+        <label class="block text-sm text-gray-600 mb-1">Código</label>
+        <input id="plan-id" type="number" class="border p-2 rounded w-full" required>
+      </div>
+      <div class="mb-3">
+        <label class="block text-sm text-gray-600 mb-1">Nome</label>
+        <input id="plan-name" type="text" class="border p-2 rounded w-full" required>
+      </div>
+      <div class="mb-3">
+        <label class="block text-sm text-gray-600 mb-1">Descrição</label>
+        <input id="plan-description" type="text" class="border p-2 rounded w-full">
+      </div>
+      <div class="mb-3">
+        <label class="block text-sm text-gray-600 mb-1">Tipo</label>
+        <select id="plan-type" class="border p-2 rounded w-full">
+          <option value="personal">Pessoal</option>
+          <option value="business">Empresarial</option>
+        </select>
+      </div>
+      <div class="mb-3">
+        <label class="block text-sm text-gray-600 mb-1">Teto (R$)</label>
+        <input id="plan-budget" type="number" step="0.01" min="0" class="border p-2 rounded w-full" required>
+      </div>
+      <div class="mt-4 flex justify-end space-x-2">
+        <button type="button" class="px-4 py-2 rounded border" onclick="closePlanDrawer()">Cancelar</button>
+        <button type="submit" class="px-4 py-2 rounded bg-blue-600 text-white">Salvar</button>
+      </div>
+    </form>
+  </aside>
 
   <script src="config.js"></script>
   <script>
@@ -59,6 +142,14 @@
     })();
     const API_BASE_URL = window.__ADMIN_API_BASE__;
 
+    const state = {
+      plans: [],
+      sort: { key: 'id', dir: 'asc' },
+      pagination: { page: 1, pageSize: 25 },
+      filters: { q: '', type: 'ALL' },
+      editingId: null
+    };
+
     // Autofill do JWT e auto-carregamento
     (function initJwtPrefill(){
       try {
@@ -74,19 +165,19 @@
 
     function rowTemplate(p){
       return `<tr>
-        <td class="px-3 py-2">${p.id}</td>
-        <td class="px-3 py-2"><input data-id="${p.id}" data-k="name" value="${p.name||''}" class="border p-1 rounded w-full"/></td>
-        <td class="px-3 py-2"><input data-id="${p.id}" data-k="description" value="${p.description||''}" class="border p-1 rounded w-full"/></td>
+        <td class="px-3 py-2 text-sm text-gray-700">${p.id}</td>
+        <td class="px-3 py-2"><input data-id="${p.id}" data-k="name" value="${p.name||''}" class="border p-1 rounded w-full text-sm"/></td>
+        <td class="px-3 py-2"><input data-id="${p.id}" data-k="description" value="${p.description||''}" class="border p-1 rounded w-full text-sm"/></td>
         <td class="px-3 py-2">
-          <select data-id="${p.id}" data-k="type" class="border p-1 rounded">
+          <select data-id="${p.id}" data-k="type" class="border p-1 rounded text-sm">
             <option value="personal" ${p.type==='personal'?'selected':''}>Pessoal</option>
             <option value="business" ${p.type==='business'?'selected':''}>Empresarial</option>
           </select>
         </td>
-        <td class="px-3 py-2"><input type="number" step="0.01" data-id="${p.id}" data-k="defaultBudget" value="${p.defaultBudget||0}" class="border p-1 rounded w-32"/></td>
-        <td class="px-3 py-2 space-x-2">
-          <button data-act="save" data-id="${p.id}" class="bg-blue-600 text-white px-2 py-1 rounded">Salvar</button>
-          <button data-act="delete" data-id="${p.id}" class="bg-red-600 text-white px-2 py-1 rounded">Excluir</button>
+        <td class="px-3 py-2"><input type="number" step="0.01" min="0" data-id="${p.id}" data-k="defaultBudget" value="${p.defaultBudget||0}" class="border p-1 rounded w-32 text-sm"/></td>
+        <td class="px-3 py-2 text-right space-x-2">
+          <button data-act="save" data-id="${p.id}" class="bg-blue-600 text-white px-2 py-1 rounded text-sm">Salvar</button>
+          <button data-act="delete" data-id="${p.id}" class="bg-red-600 text-white px-2 py-1 rounded text-sm">Excluir</button>
         </td>
       </tr>`;
     }
@@ -103,8 +194,8 @@
           return alert('Admin GET 404 e leitura pública falhou: ' + tt);
         }
         const data = await pub.json();
-        const plans = (data && data.plans) || [];
-        document.getElementById('tbody').innerHTML = plans.map(rowTemplate).join('');
+        state.plans = (data && data.plans) || [];
+        renderPlans();
         return alert('Aviso: endpoints admin não estão no backend atual (404). Mostrando lista pública somente leitura. Faça deploy do backend atualizado para habilitar CRUD.');
       }
       if(!resp.ok){
@@ -112,8 +203,8 @@
         return alert('Erro ao carregar: ' + t);
       }
       const json = await resp.json();
-      const plans = json.plans || [];
-      document.getElementById('tbody').innerHTML = plans.map(rowTemplate).join('');
+      state.plans = json.plans || [];
+      renderPlans();
     }
 
     async function upsertPlan(plan){
@@ -140,16 +231,105 @@
 
     document.getElementById('btnLoad').addEventListener('click', loadPlans);
 
-    document.getElementById('btnAdd').addEventListener('click', async () => {
-      const id = prompt('Código do plano (número):');
-      if(!id) return;
-      const name = prompt('Nome do plano:') || '';
-      const description = prompt('Descrição:') || '';
-      const type = (prompt('Tipo (personal/business):','personal')||'personal').toLowerCase()==='business'?'business':'personal';
-      const defaultBudget = Number(prompt('Teto padrão (R$):') || '0');
-      try { await upsertPlan({ id: Number(id), name, description, defaultBudget, type }); await loadPlans(); }
-      catch(e){ alert('Erro ao adicionar: ' + e.message); }
-    });
+    // CRUD UI Helpers
+    function getFilters(){
+      state.filters.q = document.getElementById('filter-q').value.trim();
+      state.filters.type = document.getElementById('filter-type').value;
+      return state.filters;
+    }
+    function applyFilters(plans){
+      const { q, type } = state.filters;
+      const ql = (q||'').toLowerCase();
+      return plans.filter(p =>
+        (!q || String(p.id).includes(q) || (p.name||'').toLowerCase().includes(ql) || (p.description||'').toLowerCase().includes(ql)) &&
+        (type==='ALL' || (p.type||'').toLowerCase()===type)
+      );
+    }
+    function setSort(key){
+      if (state.sort.key===key) state.sort.dir = state.sort.dir==='asc'?'desc':'asc'; else { state.sort.key=key; state.sort.dir = key==='id'?'asc':'asc'; }
+      renderPlans();
+    }
+    function sortPlans(plans){
+      const { key, dir } = state.sort; const mul = dir==='asc'?1:-1;
+      return plans.slice().sort((a,b)=>{
+        let va, vb;
+        switch(key){
+          case 'id': va=Number(a.id); vb=Number(b.id); break;
+          case 'name': va=(a.name||'').toLowerCase(); vb=(b.name||'').toLowerCase(); return va<vb?-1*mul:va>vb?1*mul:0;
+          case 'description': va=(a.description||'').toLowerCase(); vb=(b.description||'').toLowerCase(); return va<vb?-1*mul:va>vb?1*mul:0;
+          case 'type': va=(a.type||'').toLowerCase()==='business'?1:0; vb=(b.type||'').toLowerCase()==='business'?1:0; break;
+          case 'budget': va=Number(a.defaultBudget||0); vb=Number(b.defaultBudget||0); break;
+          default: va=0; vb=0;
+        }
+        return (va - vb)*mul;
+      });
+    }
+    function renderPlans(){
+      getFilters();
+      const filtered = applyFilters(state.plans);
+      const sorted = sortPlans(filtered);
+      const total = sorted.length;
+      const size = state.pagination.pageSize;
+      const pages = Math.max(1, Math.ceil(total/size));
+      state.pagination.page = Math.min(state.pagination.page, pages);
+      const start = (state.pagination.page-1)*size;
+      const paged = sorted.slice(start, start+size);
+      document.getElementById('tbody').innerHTML = paged.map(rowTemplate).join('');
+      document.getElementById('result-count').textContent = `${total} resultados`;
+      const pageInfo = document.getElementById('page-info');
+      if (pageInfo) pageInfo.textContent = `Página ${state.pagination.page} de ${pages}`;
+      document.getElementById('page-prev').disabled = state.pagination.page<=1;
+      document.getElementById('page-next').disabled = state.pagination.page>=pages;
+    }
+
+    // Drawer handlers
+    function openPlanDrawer(editPlan){
+      const overlay = document.getElementById('drawer-overlay');
+      const drawer = document.getElementById('drawer');
+      const title = document.getElementById('drawer-title');
+      state.editingId = editPlan? editPlan.id : null;
+      title.textContent = editPlan? `Editar Plano ${editPlan.id}` : 'Novo Plano';
+      document.getElementById('plan-id').value = editPlan? editPlan.id : '';
+      document.getElementById('plan-name').value = editPlan? (editPlan.name||'') : '';
+      document.getElementById('plan-description').value = editPlan? (editPlan.description||'') : '';
+      document.getElementById('plan-type').value = editPlan? (editPlan.type||'personal') : 'personal';
+      document.getElementById('plan-budget').value = editPlan? (Number(editPlan.defaultBudget)||0) : 0;
+      overlay.classList.remove('hidden');
+      setTimeout(()=>{ overlay.classList.remove('opacity-0'); drawer.classList.remove('translate-x-full'); }, 10);
+    }
+    function closePlanDrawer(){
+      const overlay = document.getElementById('drawer-overlay');
+      const drawer = document.getElementById('drawer');
+      overlay.classList.add('opacity-0');
+      drawer.classList.add('translate-x-full');
+      setTimeout(()=> overlay.classList.add('hidden'), 200);
+    }
+    window.closePlanDrawer = closePlanDrawer; // expose to onclick
+
+    async function handleSavePlan(e){
+      e.preventDefault();
+      const plan = {
+        id: Number(document.getElementById('plan-id').value),
+        name: document.getElementById('plan-name').value.trim(),
+        description: document.getElementById('plan-description').value.trim(),
+        type: document.getElementById('plan-type').value,
+        defaultBudget: Number(document.getElementById('plan-budget').value||0)
+      };
+      if (!plan.id || !plan.name || plan.defaultBudget<0) { alert('Preencha código, nome e teto válido.'); return; }
+      try { await upsertPlan(plan); closePlanDrawer(); await loadPlans(); } catch(err){ alert('Erro ao salvar: '+err.message); }
+    }
+    window.handleSavePlan = handleSavePlan;
+
+    document.getElementById('btnAdd').addEventListener('click', ()=> openPlanDrawer(null));
+    document.getElementById('apply-filters').addEventListener('click', ()=>{ state.pagination.page=1; renderPlans(); });
+    document.getElementById('page-size').addEventListener('change', (e)=>{ state.pagination.pageSize=Number(e.target.value)||25; state.pagination.page=1; renderPlans(); });
+    document.getElementById('page-prev').addEventListener('click', ()=>{ if(state.pagination.page>1){ state.pagination.page--; renderPlans(); } });
+    document.getElementById('page-next').addEventListener('click', ()=>{ state.pagination.page++; renderPlans(); });
+    document.getElementById('th-id').addEventListener('click', ()=> setSort('id'));
+    document.getElementById('th-name').addEventListener('click', ()=> setSort('name'));
+    document.getElementById('th-description').addEventListener('click', ()=> setSort('description'));
+    document.getElementById('th-type').addEventListener('click', ()=> setSort('type'));
+    document.getElementById('th-budget').addEventListener('click', ()=> setSort('budget'));
 
     document.getElementById('tbody').addEventListener('click', async (e) => {
       const act = e.target.getAttribute('data-act');
