@@ -27,15 +27,16 @@ function getChartOfAccounts(){
 
 function asMaps(){
   const { plans } = getChartOfAccounts();
-  const budgets = {}; const names = {}; const descriptions = {};
+  const budgets = {}; const names = {}; const descriptions = {}; const types = {};
   for (const p of plans) {
     if (p && p.id != null) {
       if (typeof p.defaultBudget === 'number') budgets[p.id] = p.defaultBudget;
       if (p.name) names[p.id] = p.name;
       if (p.description) descriptions[p.id] = p.description;
+      if (p.type) types[p.id] = p.type;
     }
   }
-  return { budgets, names, descriptions };
+  return { budgets, names, descriptions, types };
 }
 
 // Persistência segura (write-through)

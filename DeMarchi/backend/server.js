@@ -1100,10 +1100,28 @@ app.post('/api/expenses', authenticateToken, upload.single('invoice'), async (re
         const userId = req.user.id;
         const has_invoice = req.body.has_invoice === 'true' || req.body.has_invoice === true;
         const invoicePath = req.file ? req.file.path : null;
-        // Regra: se não informar plano de contas, classifica como empresarial automaticamente
+        // Classificação: usa tipo do plano (central) quando presente; se vazio, segue regra automática empresarial
         const explicitBusiness = req.body.is_business_expense === 'true' || req.body.is_business_expense === true;
-        const finalIsBusiness = explicitBusiness || !account_plan_code ? 1 : 0;
-        const finalAccountPlanCode = finalIsBusiness ? null : (account_plan_code || null);
+        let finalIsBusiness = 0;
+        let finalAccountPlanCode = null;
+        if (account_plan_code) {
+            const { types } = accountsConfig.asMaps();
+            const code = parseInt(account_plan_code, 10);
+            const planType = types && types[code];
+            if (planType === 'business') {
+                // Plano empresarial: manter o código e marcar como empresarial
+                finalIsBusiness = 1;
+                finalAccountPlanCode = code;
+            } else {
+                // Plano pessoal (ou sem tipo): manter código e marcar como pessoal
+                finalIsBusiness = explicitBusiness ? 1 : 0;
+                finalAccountPlanCode = code;
+            }
+        } else {
+            // Sem plano informado → empresarial automático
+            finalIsBusiness = 1;
+            finalAccountPlanCode = null;
+        }
 
         // Validação básica
     if (!transaction_date || !amount || !description || !account) {
@@ -1329,9 +1347,25 @@ app.put('/api/expenses/:id', authenticateToken, upload.single('invoice'), async 
         const has_invoice = req.body.has_invoice === 'true';
         const invoicePath = req.file ? req.file.path : null;
 
-        // REGRA AUTOMÁTICA: Se não tem plano de conta, é automaticamente empresarial
-        const finalIsBusiness = !account_plan_code || is_business_expense;
-        const finalAccountPlanCode = finalIsBusiness ? null : (account_plan_code || null);
+        // Classificação com base no tipo do plano central quando informado
+        let finalIsBusiness;
+        let finalAccountPlanCode;
+        if (account_plan_code) {
+            const { types } = accountsConfig.asMaps();
+            const code = parseInt(account_plan_code, 10);
+            const planType = types && types[code];
+            if (planType === 'business') {
+                finalIsBusiness = 1;
+                finalAccountPlanCode = code; // manter código do plano empresarial
+            } else {
+                finalIsBusiness = is_business_expense ? 1 : 0;
+                finalAccountPlanCode = code; // plano pessoal ou sem tipo
+            }
+        } else {
+            // Sem plano informado → empresarial
+            finalIsBusiness = 1;
+            finalAccountPlanCode = null;
+        }
 
         console.log('📝 Dados de atualização de despesa:', {
             account_plan_code,
