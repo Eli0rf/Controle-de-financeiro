@@ -88,6 +88,18 @@
       const jwt = document.getElementById('jwt').value.trim();
       if(!jwt) return alert('Informe o JWT');
       const resp = await fetch(`${API_BASE_URL}/api/admin/chart-of-accounts`, { headers: { Authorization: `Bearer ${jwt}` } });
+      if(resp.status === 404){
+        // Fallback: listar via endpoint público somente leitura
+        const pub = await fetch(`${API_BASE_URL}/api/config/chart-of-accounts`, { credentials: 'include' });
+        if(!pub.ok){
+          const tt = await pub.text();
+          return alert('Admin GET 404 e leitura pública falhou: ' + tt);
+        }
+        const data = await pub.json();
+        const plans = (data && data.plans) || [];
+        document.getElementById('tbody').innerHTML = plans.map(rowTemplate).join('');
+        return alert('Aviso: endpoints admin não estão no backend atual (404). Mostrando lista pública somente leitura. Faça deploy do backend atualizado para habilitar CRUD.');
+      }
       if(!resp.ok){
         const t = await resp.text();
         return alert('Erro ao carregar: ' + t);
@@ -104,6 +116,7 @@
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${jwt}` },
         body: JSON.stringify(plan)
       });
+      if(resp.status === 404){ throw new Error('Endpoints admin não encontrados (404). Faça deploy do backend com as novas rotas.'); }
       if(!resp.ok){ const t = await resp.text(); throw new Error(t); }
       return resp.json();
     }
@@ -113,6 +126,7 @@
       const resp = await fetch(`${API_BASE_URL}/api/admin/chart-of-accounts/plan/${id}`, {
         method: 'DELETE', headers: { Authorization: `Bearer ${jwt}` }
       });
+      if(resp.status === 404){ throw new Error('Endpoints admin não encontrados (404). Faça deploy do backend com as novas rotas.'); }
       if(!resp.ok){ const t = await resp.text(); throw new Error(t); }
       return resp.json();
     }
