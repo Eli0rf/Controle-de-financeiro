@@ -8902,12 +8902,24 @@ document.addEventListener('DOMContentLoaded', function() {
             const val = existing ? Number(existing.amount||0) : Number(item.plannedAmount || 0);
             const desc = existing ? (existing.description || '') : `Pagamento ${item.description || ''}`.trim();
             const plan = existing ? (existing.account_plan_code || item.account_plan_code || '') : (item.account_plan_code || '');
+            // Construir opções de planos conhecidos a partir dos dados carregados
+            const planCodesSet = new Set();
+            if (plan) planCodesSet.add(String(plan));
+            if (Array.isArray(item.planCodes)) item.planCodes.filter(Boolean).forEach(pc => planCodesSet.add(String(pc)));
+            (currentRecurringBIData?.expenses || []).forEach(e => { if (e.account_plan_code) planCodesSet.add(String(e.account_plan_code)); });
+            const planCodes = Array.from(planCodesSet).sort((a,b)=> Number(a)-Number(b));
+            const optionsHtml = ['<option value="">— Selecione —</option>']
+                .concat(planCodes.map(code => `<option value="${code}" ${String(code)===String(plan)?'selected':''}>${code}</option>`))
+                .join('');
 
             const content = `
                 <form id="edit-rec-month-form" class="space-y-3">
                     <div>
                         <label class="block text-sm font-medium text-gray-700">Valor do mês</label>
-                        <input type="number" step="0.01" id="erm-amount" value="${(val||0).toFixed(2)}" class="mt-1 w-full border rounded px-2 py-1" />
+                        <div class="flex gap-2 items-center">
+                            <input type="number" step="0.01" id="erm-amount" value="${(val||0).toFixed(2)}" class="mt-1 flex-1 border rounded px-2 py-1" />
+                            <button type="button" id="erm-copy-plan" class="mt-1 px-2 py-1 rounded border text-sm">Copiar valor do plano</button>
+                        </div>
                     </div>
                     <div>
                         <label class="block text-sm font-medium text-gray-700">Data</label>
@@ -8915,11 +8927,14 @@ document.addEventListener('DOMContentLoaded', function() {
                     </div>
                     <div>
                         <label class="block text-sm font-medium text-gray-700">Descrição</label>
-                        <input type="text" id="erm-desc" value="${desc.replace(/"/g,'&quot;')}" class="mt-1 w-full border rounded px-2 py-1" />
+                        <input type="text" id="erm-desc" value="${desc.replace(/\"/g,'&quot;')}" class="mt-1 w-full border rounded px-2 py-1" />
                     </div>
                     <div>
                         <label class="block text-sm font-medium text-gray-700">Plano de Conta</label>
-                        <input type="text" id="erm-plan" value="${(plan||'').toString().replace(/"/g,'&quot;')}" class="mt-1 w-full border rounded px-2 py-1" placeholder="ex: 45" />
+                        <select id="erm-plan-select" class="mt-1 w-full border rounded px-2 py-1">
+                            ${optionsHtml}
+                        </select>
+                        <div class="text-[10px] text-gray-500 mt-1">Use a lista para evitar digitar manualmente o código do plano.</div>
                     </div>
                     <div class="flex justify-end gap-2 pt-2">
                         <button type="button" id="erm-cancel" class="px-3 py-1 rounded border">Cancelar</button>
@@ -8932,12 +8947,19 @@ document.addEventListener('DOMContentLoaded', function() {
             const form = document.getElementById('edit-rec-month-form');
             const btnCancel = document.getElementById('erm-cancel');
             btnCancel?.addEventListener('click', closeModal);
+            // Botão: copiar valor do plano (usa plannedAmount base ou amount de fallback)
+            const btnCopy = document.getElementById('erm-copy-plan');
+            btnCopy?.addEventListener('click', ()=>{
+                const baseVal = Number(item.plannedAmount || item.amount || 0);
+                const amtEl = document.getElementById('erm-amount');
+                if(amtEl){ amtEl.value = (isNaN(baseVal)? 0 : baseVal).toFixed(2); }
+            });
             form?.addEventListener('submit', async (e)=>{
                 e.preventDefault();
                 const amount = parseFloat(document.getElementById('erm-amount').value || '0');
                 const transaction_date = document.getElementById('erm-date').value;
                 const description = document.getElementById('erm-desc').value || undefined;
-                const account_plan_code = document.getElementById('erm-plan').value || undefined;
+                const account_plan_code = (document.getElementById('erm-plan-select')?.value || '').trim() || undefined;
                 if(!amount || amount <= 0){ showNotification('Informe um valor válido', 'error'); return; }
                 try{
                     if(existing){
