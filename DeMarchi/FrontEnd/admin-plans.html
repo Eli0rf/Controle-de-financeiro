@@ -32,7 +32,8 @@
             <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Código</th>
             <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Nome</th>
             <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Descrição</th>
-            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Orçamento</th>
+            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Tipo</th>
+            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Teto (R$)</th>
             <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Ações</th>
           </tr>
         </thead>
@@ -76,6 +77,12 @@
         <td class="px-3 py-2">${p.id}</td>
         <td class="px-3 py-2"><input data-id="${p.id}" data-k="name" value="${p.name||''}" class="border p-1 rounded w-full"/></td>
         <td class="px-3 py-2"><input data-id="${p.id}" data-k="description" value="${p.description||''}" class="border p-1 rounded w-full"/></td>
+        <td class="px-3 py-2">
+          <select data-id="${p.id}" data-k="type" class="border p-1 rounded">
+            <option value="personal" ${p.type==='personal'?'selected':''}>Pessoal</option>
+            <option value="business" ${p.type==='business'?'selected':''}>Empresarial</option>
+          </select>
+        </td>
         <td class="px-3 py-2"><input type="number" step="0.01" data-id="${p.id}" data-k="defaultBudget" value="${p.defaultBudget||0}" class="border p-1 rounded w-32"/></td>
         <td class="px-3 py-2 space-x-2">
           <button data-act="save" data-id="${p.id}" class="bg-blue-600 text-white px-2 py-1 rounded">Salvar</button>
@@ -138,8 +145,9 @@
       if(!id) return;
       const name = prompt('Nome do plano:') || '';
       const description = prompt('Descrição:') || '';
-      const defaultBudget = Number(prompt('Orçamento padrão (R$):') || '0');
-      try { await upsertPlan({ id: Number(id), name, description, defaultBudget, type: 'business' }); await loadPlans(); }
+      const type = (prompt('Tipo (personal/business):','personal')||'personal').toLowerCase()==='business'?'business':'personal';
+      const defaultBudget = Number(prompt('Teto padrão (R$):') || '0');
+      try { await upsertPlan({ id: Number(id), name, description, defaultBudget, type }); await loadPlans(); }
       catch(e){ alert('Erro ao adicionar: ' + e.message); }
     });
 

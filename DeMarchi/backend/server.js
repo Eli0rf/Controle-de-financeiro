@@ -1600,22 +1600,8 @@ app.get('/api/dashboard', authenticateToken, async (req, res) => {
 });
 
 // --- 8.1. ROTA DE TETOS POR PLANO DE CONTAS (ALERTAS) ---
-// Tetos de gastos por plano de contas - baseado na planilha atualizada
-// Observação: estendido até o plano 47. Caso não haja teto definido, permanece 0.00.
-const tetos = {
-    1: 1000.00, 2: 2782.47, 3: 2431.67, 4: 350.00, 5: 2100.00,
-    6: 550.00, 7: 270.00, 8: 1200.00, 9: 1200.00, 10: 270.00,
-    11: 1895.40, 12: 2627.60, 13: 270.00, 14: 55.00, 15: 129.90,
-    16: 59.90, 17: 4100.00, 18: 1570.00, 19: 500.00, 20: 500.00,
-    21: 150.00, 22: 1134.00, 23: 500.00, 24: 1000.00, 25: 350.00,
-    26: 1000.00, 27: 500.00, 28: 450.00, 29: 285.00, 30: 700.00,
-    31: 200.00, 32: 450.00, 33: 100.00, 34: 54.80, 35: 0.00,
-    36: 0.00, 37: 0.00, 38: 0.00, 39: 400.00, 40: 0.00,
-    41: 0.00, 42: 0.00, 43: 210.00, 44: 0.00, 45: 12700.00,
-    46: 1000.00, 47: 1000.00
-};
 
-// Rota protegida para tetos por plano de contas
+// Rota protegida para tetos por plano de contas - usando budgets centralizados do config
 app.get('/api/expenses-goals', authenticateToken, async (req, res) => {
     try {
         const userId = req.user.id;
@@ -1648,10 +1634,11 @@ app.get('/api/expenses-goals', authenticateToken, async (req, res) => {
         sql += ' GROUP BY account_plan_code ORDER BY Total DESC';
 
         const [results] = await pool.query(sql, params);
+        const { budgets: centralBudgets } = accountsConfig.asMaps();
 
         const dataWithLimits = results.map(item => {
             const planoId = parseInt(item.account_plan_code);
-            const teto = tetos[planoId] || 0;
+            const teto = (centralBudgets && centralBudgets[planoId] !== undefined) ? Number(centralBudgets[planoId]) : 0;
             const percentual = teto > 0 ? (item.Total / teto) * 100 : 0;
             let alerta = null;
 
@@ -3301,16 +3288,19 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
         // Bloco Alertas de Tetos
         doc.roundedRect(rightX, bloco2Y, boxWidth, 110, 14).fill('#FFF1F2');
         doc.fillColor('#BE123C').fontSize(14).text('Alertas de Teto', rightX + 15, bloco2Y + 12);
-        const planosCriticos = Object.entries(porPlano)
-              .filter(([p,v]) => tetos[p] && v / tetos[p] >= 0.9)
-              .sort((a,b) => (b[1]/tetos[b[0]]) - (a[1]/tetos[a[0]]))
-              .slice(0,4);
+      const budgetsMaps = accountsConfig.asMaps();
+      const budgets = budgetsMaps?.budgets || {};
+      const planosCriticos = Object.entries(porPlano)
+          .filter(([p,v]) => budgets[p] && v / budgets[p] >= 0.9)
+          .sort((a,b) => (b[1]/(budgets[b[0]]||1)) - (a[1]/(budgets[a[0]]||1)))
+          .slice(0,4);
         if (planosCriticos.length === 0) {
             doc.fontSize(11).fillColor('#4B5563').text('Nenhum plano acima de 90% 👍', rightX + 15, bloco2Y + 42);
         } else {
             let offsetY = bloco2Y + 34;
             planosCriticos.forEach(([p,v]) => {
-                const perc = ((v / tetos[p]) * 100).toFixed(1);
+                const budget = budgets[p] || 0;
+                const perc = (budget>0 ? ((v / budget) * 100).toFixed(1) : '0.0');
                 doc.fontSize(11).fillColor('#DC2626').text(`⚠️ Plano ${p}: ${perc}%`, rightX + 15, offsetY);
                 offsetY += 18;
             });
@@ -3380,8 +3370,8 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
                     const transacoesPlano = expenses.filter(e => e.installment_plan == plano).length;
                     doc.fontSize(11).fillColor('#334155').text(`📊 ${percentual}%  •  📝 ${transacoesPlano} transação${transacoesPlano !== 1 ? 's' : ''}`, 95, cardY + 50, { width: 300 });
                     // Uso vs teto (linha 2 direita)
-                    if (tetos && tetos[plano] !== undefined && tetos[plano] > 0) {
-                        const teto = tetos[plano];
+                    if (budgets && budgets[plano] !== undefined && budgets[plano] > 0) {
+                        const teto = budgets[plano];
                         const usoPercent = (valor / teto) * 100;
                         let statusColor = '#10B981'; let statusEmoji = '✅';
                         if (usoPercent >= 100) { statusColor = '#DC2626'; statusEmoji = '🔥'; }
@@ -3600,7 +3590,7 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
                 const val = planGroup.total;
                 const pctTotal = (val/totalEmpresarial)*100;
                 const id = parseInt(planGroup.planCode); 
-                const teto = tetos[id] || 0; 
+                const budgetMaps = accountsConfig.asMaps(); const tetosLocal = budgetMaps?.budgets || {}; const teto = tetosLocal[id] || 0; 
                 const pctTeto = teto > 0 ? (val/teto)*100 : 0;
                 
                 const bg = i % 2 === 0 ? '#FFFFFF':'#F1F5F9';
@@ -3619,7 +3609,7 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
                 // Barra de uso
                 const barX=290; 
                 const barY=tableY+ (rowH-barHeight)/2; 
-                const pctClamped=Math.min(100,(val/(tetos[id]||val))*100);
+                const tetosLocal2 = (accountsConfig.asMaps()?.budgets)||{}; const pctClamped=Math.min(100,(val/((tetosLocal2[id]||val)||1))*100);
                 doc.roundedRect(barX,barY,barWidth,barHeight,barHeight/2).fill('#E2E8F0');
                 doc.roundedRect(barX,barY,(pctClamped/100)*barWidth,barHeight,barHeight/2).fill(pctClamped>100?'#DC2626':pctClamped>85?'#F59E0B':'#10B981');
                 
@@ -3649,7 +3639,7 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
                 
                 const acima85 = planosOrdenadosEmp.filter(planGroup => {
                     const id = parseInt(planGroup.planCode); 
-                    const teto = tetos[id] || 0; 
+                    const tetosLocal3 = (accountsConfig.asMaps()?.budgets)||{}; const teto = tetosLocal3[id] || 0; 
                     return teto > 0 && (planGroup.total / teto) * 100 >= 85;
                 }).length;
                 
@@ -3964,7 +3954,7 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
     miniCard(375,165,'Crescimento',`${crescimentoProj>=0?'+':''}${crescimentoProj.toFixed(1)}%`,'#A855F7');
     if(!isMesAtual) doc.fontSize(7).fillColor('#DDD6FE').text('Mês encerrado: projeção = total realizado.',55,projY+64,{width:500});
     // Resumo de Tetos (Top 4 por % de utilização)
-    const usoTetos = Object.entries(currByPlan).map(([pl,val])=>{ const id=parseInt(pl); const teto = tetos[id]||0; return {pl,val,teto,pct: teto>0?(val/teto)*100:0}; }).filter(o=>o.teto>0).sort((a,b)=> b.pct - a.pct).slice(0,4);
+    const tetosMap = (accountsConfig.asMaps()?.budgets)||{}; const usoTetos = Object.entries(currByPlan).map(([pl,val])=>{ const id=parseInt(pl); const teto = tetosMap[id]||0; return {pl,val,teto,pct: teto>0?(val/teto)*100:0}; }).filter(o=>o.teto>0).sort((a,b)=> b.pct - a.pct).slice(0,4);
     let chipY = projY + 74; doc.fontSize(11).fillColor('#EDE9FE').text('Utilização de Tetos (Top)',55,chipY); chipY+=16; doc.fontSize(7.5);
     usoTetos.forEach((o,i)=>{ const chipW= (o.pct>100?210:200); const x=55 + i* (chipW+10); if(x+chipW>540) return; const cor = o.pct>100?'#DC2626':o.pct>85?'#F59E0B':'#10B981'; doc.roundedRect(x,chipY,chipW,30,8).fill('#1E1B4B'); doc.fillColor('#F8FAFC').fontSize(8).text(`Plano ${o.pl}`,x+10,chipY+6,{width:chipW-20}); doc.fontSize(10).fillColor(cor).text(`${Math.min(o.pct,999).toFixed(0)}%`,x+10,chipY+16,{width:chipW-20}); doc.roundedRect(x+chipW-70,chipY+16,60,8,4).fill('#334155'); const barW = Math.min(60,(o.pct/100)*60); doc.roundedRect(x+chipW-70,chipY+16,barW,8,4).fill(cor); });
     // Concentração (Top 5) ultracompacta lateral
@@ -4027,7 +4017,8 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
             if (expenses && Array.isArray(expenses) && expenses.length > 0 && total !== undefined && startDate && endDate) {
                 console.log('📊 [FALLBACK] Dados suficientes disponíveis, gerando PDF simplificado...');
                 
-                const simpleDoc = await generateSimplePDF(expenses, total, startDate, endDate, contaNome, year, month, { budgets: tetos });
+                const budgetsMapForPdf = (accountsConfig.asMaps()?.budgets) || {};
+                const simpleDoc = await generateSimplePDF(expenses, total, startDate, endDate, contaNome, year, month, { budgets: budgetsMapForPdf });
                 simpleDoc.end();
                 res.setHeader('Content-Type', 'application/pdf');
                 res.setHeader('Content-Disposition', `attachment; filename=relatorio-simplificado-${year}-${month}${account ? '-' + account : ''}.pdf`);
