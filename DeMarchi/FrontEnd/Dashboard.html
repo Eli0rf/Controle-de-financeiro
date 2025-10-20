@@ -1606,8 +1606,11 @@
                         </div>
                         <div class="pl-2 space-y-4">
                             <div id="personal-fields-container" class="field-container">
-                                <label for="form-plan-code" class="block text-sm font-medium">Plano de Conta Pessoal</label>
-                                <input type="number" id="form-plan-code" name="account_plan_code" placeholder="Código de 1 a 47" class="mt-1 block w-full md:w-1/2 p-2 border rounded-lg">
+                                <label for="form-personal-plan-select" class="block text-sm font-medium">Plano de Conta Pessoal</label>
+                                <select id="form-personal-plan-select" name="account_plan_code" class="mt-1 block w-full md:w-1/2 p-2 border rounded-lg">
+                                    <option value="">Selecione um plano pessoal…</option>
+                                </select>
+                                <p class="text-xs text-gray-500 mt-1">Planos carregados do cadastro central (Admin Planos) filtrando apenas Pessoal.</p>
                             </div>
                             <div id="business-fields-container" class="field-container hidden space-y-4">
                                 <div>
@@ -1837,7 +1840,7 @@
                 <div class="grid grid-cols-1 xl:grid-cols-1 gap-8 mb-8">
                     <!-- Distribuição de Gastos -->
                     <div class="bg-white p-6 rounded-lg shadow-lg">
-                        <div class="flex items-center justify-between mb-4">
+                        <div class="flex items-center justify-between mb-2">
                             <h3 class="text-xl font-bold text-gray-800">📊 Distribuição por Plano</h3>
                             <div class="flex items-center gap-2">
                                 <button id="refresh-distribution-btn" class="text-blue-600 hover:text-blue-800" title="Atualizar gráfico">
@@ -1850,6 +1853,14 @@
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
                                     </svg>
                                 </button>
+                            </div>
+                        </div>
+                        <div class="flex items-center justify-end gap-2 mb-2 text-sm">
+                            <span class="text-gray-600">Tipo:</span>
+                            <div class="inline-flex rounded-md shadow-sm border overflow-hidden" role="group">
+                                <button type="button" id="goals-type-all" class="px-3 py-1 text-gray-700 bg-white hover:bg-gray-50 border-r">Todos</button>
+                                <button type="button" id="goals-type-personal" class="px-3 py-1 text-gray-700 bg-white hover:bg-gray-50 border-r">Somente Pessoal</button>
+                                <button type="button" id="goals-type-business" class="px-3 py-1 text-gray-700 bg-white hover:bg-gray-50">Somente Empresarial</button>
                             </div>
                         </div>
                         <div class="relative h-80">
@@ -1885,7 +1896,7 @@
                         </div>
                         
                         <!-- Estatísticas rápidas -->
-                        <div id="category-stats" class="grid grid-cols-3 gap-4 mb-4 p-3 bg-gray-50 rounded-lg">
+                        <div id="category-stats" class="grid grid-cols-3 gap-4 mb-2 p-3 bg-gray-50 rounded-lg">
                             <div class="text-center">
                                 <div class="text-sm text-gray-600">Total de Categorias</div>
                                 <div id="total-categories" class="text-lg font-bold text-blue-600">-</div>
@@ -1899,7 +1910,30 @@
                                 <div id="uncategorized-count" class="text-lg font-bold text-orange-600">-</div>
                             </div>
                         </div>
+                        <!-- Badge Sem Plano -->
+                        <div id="uncategorized-badge" class="flex items-center justify-between mb-4 p-3 rounded-lg border border-orange-200 bg-orange-50">
+                            <div class="flex items-center gap-2 text-orange-700">
+                                <span class="inline-flex items-center justify-center w-6 h-6 rounded-full bg-orange-500 text-white text-sm">!</span>
+                                <span class="font-medium">Sem Plano</span>
+                                <span class="text-sm text-orange-600">Lançamentos sem categoria</span>
+                            </div>
+                            <div class="flex items-center gap-3">
+                                <span class="text-sm text-gray-600">Qtd:</span>
+                                <span id="uncategorized-badge-count" class="px-2 py-1 rounded bg-orange-600 text-white text-sm font-bold">0</span>
+                                <button id="view-uncategorized-btn" class="text-orange-700 hover:text-orange-900 text-sm underline">ver detalhes</button>
+                            </div>
+                        </div>
                         
+                        <!-- Filtro por tipo para Análise por Categoria -->
+                        <div class="flex items-center justify-end gap-2 mb-2 text-sm">
+                            <span class="text-gray-600">Tipo:</span>
+                            <div class="inline-flex rounded-md shadow-sm border overflow-hidden" role="group">
+                                <button type="button" id="plan-type-all" class="px-3 py-1 text-gray-700 bg-white hover:bg-gray-50 border-r">Todos</button>
+                                <button type="button" id="plan-type-personal" class="px-3 py-1 text-gray-700 bg-white hover:bg-gray-50 border-r">Somente Pessoal</button>
+                                <button type="button" id="plan-type-business" class="px-3 py-1 text-gray-700 bg-white hover:bg-gray-50">Somente Empresarial</button>
+                            </div>
+                        </div>
+
                         <div class="relative h-80">
                             <canvas id="plan-chart" class="w-full h-full"></canvas>
                         </div>

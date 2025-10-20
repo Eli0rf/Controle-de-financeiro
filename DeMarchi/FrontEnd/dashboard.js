@@ -920,8 +920,11 @@ document.addEventListener('DOMContentLoaded', function() {
         populateFilterOptions();
         fetchAllData();
         toggleExpenseFields();
-        populateBusinessPlanSelect();
-        initializeTabs(); // Adicionar inicialização das tabs
+    populateBusinessPlanSelect();
+    populatePersonalPlanSelect();
+    initializeTabs(); // Adicionar inicialização das tabs
+    setupTypeSwitches();
+    setupUncategorizedDetails();
         
         // Inicializar sistema de insights após delay maior para garantir que tudo está pronto
         console.log('✅ Dashboard inicializado, agendando sistema de insights...');
@@ -949,17 +952,48 @@ document.addEventListener('DOMContentLoaded', function() {
         personalFields.classList.toggle('hidden', businessCheckbox.checked);
         businessFields.classList.toggle('hidden', !businessCheckbox.checked);
         // Habilitar apenas o input de plano correspondente ao tipo
-        const personalPlanInput = document.getElementById('form-plan-code');
+        const personalPlanInput = document.getElementById('form-personal-plan-select');
         const businessPlanSelect = document.getElementById('form-business-plan-select');
         if (personalPlanInput) {
             personalPlanInput.disabled = businessCheckbox.checked; // desabilita quando empresarial
-            personalPlanInput.required = false; // pessoal não é obrigatório
+            personalPlanInput.required = !businessCheckbox.checked; // pessoal obrigatório quando não empresarial
         }
         if (businessPlanSelect) {
             businessPlanSelect.disabled = !businessCheckbox.checked; // desabilita quando pessoal
             businessPlanSelect.required = businessCheckbox.checked; // exigir quando empresarial
             if (businessCheckbox.checked) populateBusinessPlanSelect();
         }
+    }
+
+    // Carrega e popula o select de planos pessoais a partir da configuração central
+    async function populatePersonalPlanSelect(){
+        try{
+            const sel = document.getElementById('form-personal-plan-select');
+            if(!sel) return;
+            let data = null;
+            try{
+                const cached = sessionStorage.getItem('chartOfAccounts');
+                if(cached) data = JSON.parse(cached);
+            }catch(e){}
+            if(!data || !data.plans){
+                data = await loadChartOfAccountsConfig(true);
+            }
+            const plans = (data && data.plans) || [];
+            const personalPlans = plans.filter(p => (p.type||'').toLowerCase() === 'personal');
+            const current = sel.value;
+            sel.innerHTML = '';
+            const placeholder = document.createElement('option');
+            placeholder.value = '';
+            placeholder.textContent = 'Selecione um plano pessoal…';
+            sel.appendChild(placeholder);
+            personalPlans.forEach(p => {
+                const opt = document.createElement('option');
+                opt.value = String(p.id);
+                opt.textContent = p.name || `Plano ${p.id}`;
+                sel.appendChild(opt);
+            });
+            if (current && [...sel.options].some(o=>o.value===current)) sel.value = current;
+        }catch(e){ console.warn('Falha ao popular planos pessoais:', e); }
     }
 
     // Carrega e popula o select de planos empresariais a partir da configuração central
@@ -3136,7 +3170,8 @@ document.addEventListener('DOMContentLoaded', function() {
         // Atualizar elementos das estatísticas
         const totalCategoriesEl = document.getElementById('total-categories');
         const topCategoryEl = document.getElementById('top-category');
-        const uncategorizedCountEl = document.getElementById('uncategorized-count');
+    const uncategorizedCountEl = document.getElementById('uncategorized-count');
+    const uncategorizedBadgeEl = document.getElementById('uncategorized-badge-count');
         
         if (totalCategoriesEl) {
             totalCategoriesEl.textContent = totalCategories;
@@ -3150,9 +3185,8 @@ document.addEventListener('DOMContentLoaded', function() {
             topCategoryEl.title = `${categoryName}: ${formatCurrency(topCategory.total)} (${topCategory.count} gastos)`;
         }
         
-        if (uncategorizedCountEl) {
-            uncategorizedCountEl.textContent = uncategorizedCount;
-        }
+        if (uncategorizedCountEl) uncategorizedCountEl.textContent = uncategorizedCount;
+        if (uncategorizedBadgeEl) uncategorizedBadgeEl.textContent = uncategorizedCount;
         
         console.log('📊 Estatísticas de categoria atualizadas:', {
             totalCategories,
@@ -3160,6 +3194,10 @@ document.addEventListener('DOMContentLoaded', function() {
             uncategorizedCount
         });
     }
+
+    // Estado global simples para filtros de tipo
+    let PLAN_CHART_TYPE_FILTER = 'all'; // all | personal | business
+    let GOALS_CHART_TYPE_FILTER = 'all'; // all | personal | business
 
     function renderPlanChart(data = []) {
         console.log('🎯 DEBUG renderPlanChart - início:', { 
@@ -3243,6 +3281,17 @@ document.addEventListener('DOMContentLoaded', function() {
                 return;
             }
             
+            // Filtrar por tipo, se disponível
+            if (PLAN_CHART_TYPE_FILTER !== 'all' && window.PLAN_TYPES) {
+                processedData = processedData.filter(d => {
+                    const code = d.account_plan_code;
+                    const idNum = Number(code);
+                    const type = window.PLAN_TYPES[idNum];
+                    if (!code || code === 'Sem Categoria' || isNaN(idNum)) return PLAN_CHART_TYPE_FILTER === 'all';
+                    return PLAN_CHART_TYPE_FILTER === 'business' ? (type === 'business') : (type === 'personal');
+                });
+            }
+
             // Atualizar estatísticas antes de renderizar o gráfico
             updateCategoryStats(processedData);
             
@@ -3384,6 +3433,21 @@ document.addEventListener('DOMContentLoaded', function() {
                 formData.set('account', 'PIX/Boleto');
             }
             
+            // Garantir que apenas o campo ativo seja enviado
+            if (businessCheckbox.checked) {
+                // usar plano empresarial
+                const biz = document.getElementById('form-business-plan-select');
+                if (!biz || !biz.value) throw new Error('Selecione um plano empresarial');
+                formData.set('account_plan_code', biz.value);
+                formData.delete('form-personal-plan-select');
+            } else {
+                // usar plano pessoal
+                const per = document.getElementById('form-personal-plan-select');
+                if (!per || !per.value) throw new Error('Selecione um plano pessoal');
+                formData.set('account_plan_code', per.value);
+                formData.delete('form-business-plan-select');
+            }
+
             const response = await authenticatedFetch(`${API_BASE_URL}/api/expenses`, { 
                 method: 'POST', 
                 body: formData 
@@ -6916,6 +6980,119 @@ document.addEventListener('DOMContentLoaded', function() {
         } catch (error) {
             console.error('❌ Erro ao renderizar gráficos:', error);
         }
+    }
+
+    // === Eventos dos switches de tipo para os gráficos ===
+    function setupTypeSwitches() {
+        const btnAll = document.getElementById('plan-type-all');
+        const btnPersonal = document.getElementById('plan-type-personal');
+        const btnBusiness = document.getElementById('plan-type-business');
+        const goalsAll = document.getElementById('goals-type-all');
+        const goalsPersonal = document.getElementById('goals-type-personal');
+        const goalsBusiness = document.getElementById('goals-type-business');
+
+        const setActive = (group, activeEl) => {
+            group.forEach(el => el && el.classList.remove('bg-blue-600','text-white'));
+            if (activeEl) {
+                activeEl.classList.add('bg-blue-600','text-white');
+            }
+        };
+
+        if (btnAll && btnPersonal && btnBusiness) {
+            btnAll.addEventListener('click', async () => {
+                PLAN_CHART_TYPE_FILTER = 'all';
+                setActive([btnAll, btnPersonal, btnBusiness], btnAll);
+                const expenses = await fetchExpenses();
+                const categoryData = processCategoryData(expenses);
+                renderPlanChart(categoryData);
+            });
+            btnPersonal.addEventListener('click', async () => {
+                PLAN_CHART_TYPE_FILTER = 'personal';
+                setActive([btnAll, btnPersonal, btnBusiness], btnPersonal);
+                const expenses = await fetchExpenses();
+                const categoryData = processCategoryData(expenses);
+                renderPlanChart(categoryData);
+            });
+            btnBusiness.addEventListener('click', async () => {
+                PLAN_CHART_TYPE_FILTER = 'business';
+                setActive([btnAll, btnPersonal, btnBusiness], btnBusiness);
+                const expenses = await fetchExpenses();
+                const categoryData = processCategoryData(expenses);
+                renderPlanChart(categoryData);
+            });
+        }
+
+        if (goalsAll && goalsPersonal && goalsBusiness) {
+            goalsAll.addEventListener('click', async () => {
+                GOALS_CHART_TYPE_FILTER = 'all';
+                setActive([goalsAll, goalsPersonal, goalsBusiness], goalsAll);
+                await refreshGoalsPlanChart();
+            });
+            goalsPersonal.addEventListener('click', async () => {
+                GOALS_CHART_TYPE_FILTER = 'personal';
+                setActive([goalsAll, goalsPersonal, goalsBusiness], goalsPersonal);
+                await refreshGoalsPlanChart();
+            });
+            goalsBusiness.addEventListener('click', async () => {
+                GOALS_CHART_TYPE_FILTER = 'business';
+                setActive([goalsAll, goalsPersonal, goalsBusiness], goalsBusiness);
+                await refreshGoalsPlanChart();
+            });
+        }
+
+        // Estado inicial visual
+        setActive([btnAll, btnPersonal, btnBusiness], btnAll);
+        setActive([goalsAll, goalsPersonal, goalsBusiness], goalsAll);
+    }
+
+    async function refreshGoalsPlanChart(){
+        // Reutiliza filtros de período padrão (ano/mês atuais)
+        const now = new Date();
+        const year = document.getElementById('budget-year')?.value || now.getFullYear();
+        const month = document.getElementById('budget-month')?.value || (now.getMonth()+1);
+        const params = new URLSearchParams({ year, month });
+        // Enviar filtro de tipo se disponível
+        if (GOALS_CHART_TYPE_FILTER && GOALS_CHART_TYPE_FILTER !== 'all') {
+            params.set('type', GOALS_CHART_TYPE_FILTER);
+        }
+        try{
+            const resp = await authenticatedFetch(`${API_BASE_URL}/api/expenses-goals?${params.toString()}`);
+            let data = await resp.json();
+            // Filtro client-side por tipo, caso backend não suporte
+            if (Array.isArray(data) && GOALS_CHART_TYPE_FILTER !== 'all' && window.PLAN_TYPES) {
+                data = data.filter(item => {
+                    const idNum = Number(item.PlanoContasID);
+                    const type = window.PLAN_TYPES[idNum];
+                    return GOALS_CHART_TYPE_FILTER === 'business' ? (type === 'business') : (type === 'personal');
+                });
+            }
+            renderGoalsPlanChart(data);
+        }catch(e){
+            console.warn('Falha ao atualizar goals-plan-chart:', e);
+        }
+    }
+
+    // Botão "ver detalhes" do badge Sem Plano
+    function setupUncategorizedDetails(){
+        const btn = document.getElementById('view-uncategorized-btn');
+        if (!btn) return;
+        btn.addEventListener('click', () => {
+            try {
+                // Ir para aba de Gastos
+                const expensesTabBtn = document.querySelector('[data-tab="expenses"]');
+                if (expensesTabBtn) expensesTabBtn.click();
+                // Aplicar filtro de busca por sem categoria
+                const input = document.getElementById('filter-search');
+                if (input) {
+                    input.value = 'sem-categoria';
+                    const evt = new Event('input', { bubbles: true });
+                    input.dispatchEvent(evt);
+                }
+                // Scroll para a lista
+                const list = document.getElementById('expenses-tab');
+                if (list) list.scrollIntoView({ behavior: 'smooth' });
+            } catch (e) { console.warn('Falha ao navegar para sem categoria:', e); }
+        });
     }
 
     // Função para processar dados para análise por categoria
