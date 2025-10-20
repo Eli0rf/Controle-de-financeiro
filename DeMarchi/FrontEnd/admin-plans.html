@@ -58,6 +58,19 @@
     })();
     const API_BASE_URL = window.__ADMIN_API_BASE__;
 
+    // Autofill do JWT e auto-carregamento
+    (function initJwtPrefill(){
+      try {
+        const stored = localStorage.getItem('token') || sessionStorage.getItem('token');
+        const inp = document.getElementById('jwt');
+        if (stored && inp) {
+          inp.value = stored;
+          // Auto carregar após pequeno delay para garantir DOM pronto
+          setTimeout(() => { const btn = document.getElementById('btnLoad'); btn && btn.click(); }, 200);
+        }
+      } catch(e) {}
+    })();
+
     function rowTemplate(p){
       return `<tr>
         <td class="px-3 py-2">${p.id}</td>
