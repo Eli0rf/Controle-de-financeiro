@@ -7862,7 +7862,12 @@ document.addEventListener('DOMContentLoaded', function() {
                     return;
                 }
             console.log('🔄 Iniciando carregamento de dados BI PIX/Boleto...');
-            const url = `${API_BASE_URL}/api/recurring-pix-boleto${debug ? '?debug=1' : ''}`;
+            // Incluir filtros selecionados (ano/mês) quando existirem para alinhar série e mês base
+            const params = new URLSearchParams();
+            if (yearSel) params.append('year', yearSel);
+            if (monthSel) params.append('month', monthSel);
+            if (debug) params.append('debug', '1');
+            const url = `${API_BASE_URL}/api/recurring-pix-boleto${params.toString() ? '?' + params.toString() : ''}`;
             const response = await authenticatedFetch(url);
             
             if (!response.ok) {
