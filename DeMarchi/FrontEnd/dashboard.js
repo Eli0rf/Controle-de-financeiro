@@ -6688,10 +6688,32 @@ document.addEventListener('DOMContentLoaded', function() {
                     return parsed;
                 }
             }
-            // Importante: não enviar credenciais para evitar CORS com '*' em dev/local
-            const resp = await fetch(`${API_BASE_URL}/api/config/chart-of-accounts`, { credentials: 'omit', mode: 'cors' });
-            if(!resp.ok) throw new Error(`Config HTTP ${resp.status}`);
-            const data = await resp.json();
+            // Tentar primeiro via endpoint ADMIN (se autenticado), depois cair para público
+            let data = null;
+            const token = (typeof getToken === 'function') ? getToken() : null;
+            if (token) {
+                try {
+                    const adminResp = await fetch(`${API_BASE_URL}/api/admin/chart-of-accounts`, {
+                        headers: { 'Authorization': `Bearer ${token}` },
+                        mode: 'cors'
+                    });
+                    if (adminResp.ok) {
+                        data = await adminResp.json();
+                        console.debug('📥 Planos carregados via ADMIN endpoint');
+                    } else {
+                        console.debug('Admin GET falhou ou indisponível:', adminResp.status);
+                    }
+                } catch (e) {
+                    console.debug('Admin GET erro:', e.message);
+                }
+            }
+            if (!data) {
+                // Importante: não enviar credenciais para evitar CORS com '*' em dev/local
+                const resp = await fetch(`${API_BASE_URL}/api/config/chart-of-accounts`, { credentials: 'omit', mode: 'cors' });
+                if(!resp.ok) throw new Error(`Config HTTP ${resp.status}`);
+                data = await resp.json();
+                console.debug('📥 Planos carregados via endpoint PÚBLICO');
+            }
             sessionStorage.setItem(cacheKey, JSON.stringify(data));
             window.PLAN_BUDGETS = (data.maps && data.maps.budgets) || {};
             window.PLAN_NAMES = (data.maps && data.maps.names) || {};
