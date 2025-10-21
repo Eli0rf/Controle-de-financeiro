@@ -1053,7 +1053,11 @@ document.addEventListener('DOMContentLoaded', function() {
             try{ const cached = sessionStorage.getItem('chartOfAccounts'); if(cached) data = JSON.parse(cached); }catch(e){}
             if(!data || !data.plans){ data = await loadChartOfAccountsConfig(true); }
             const plans = (data && data.plans) || [];
-            const personalPlans = plans.filter(p => (p.type||'').toLowerCase() === 'personal');
+            let personalPlans = plans.filter(p => (p.type||'').toLowerCase() === 'personal');
+            // Fallback: se não houver tipo definido, use todos os planos
+            if (personalPlans.length === 0 && plans.length > 0) {
+                personalPlans = plans;
+            }
             const current = selectedValue || sel.value;
             sel.innerHTML = '';
             const placeholder = document.createElement('option');
@@ -1078,7 +1082,10 @@ document.addEventListener('DOMContentLoaded', function() {
             try{ const cached = sessionStorage.getItem('chartOfAccounts'); if(cached) data = JSON.parse(cached); }catch(e){}
             if(!data || !data.plans){ data = await loadChartOfAccountsConfig(true); }
             const plans = (data && data.plans) || [];
-            const businessPlans = plans.filter(p => (p.type||'').toLowerCase() === 'business');
+            let businessPlans = plans.filter(p => (p.type||'').toLowerCase() === 'business');
+            if (businessPlans.length === 0 && plans.length > 0) {
+                businessPlans = plans;
+            }
             const current = selectedValue || sel.value;
             sel.innerHTML = '';
             const placeholder = document.createElement('option');
@@ -2603,8 +2610,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 
                 if (expense.account_plan_code !== null && expense.account_plan_code !== undefined && expense.account_plan_code !== '') {
                     const planName = getPlanName(expense.account_plan_code, window.PLAN_NAMES);
-                    planCode = `<span class=\"bg-gray-100 text-gray-800 px-2 py-1 rounded font-mono text-sm\">${expense.account_plan_code}</span>`;
-                    planNameHtml = planName ? `<div class=\"text-xs text-gray-500 mt-0.5\">${planName}</div>` : '';
+                    planCode = `<span class="bg-gray-100 text-gray-800 px-2 py-1 rounded font-mono text-sm">${expense.account_plan_code}</span>`;
+                    planNameHtml = planName ? `<div class="text-xs text-gray-500 mt-0.5">${planName}</div>` : '';
                 } else {
                     if (expense.is_business_expense) {
                         planCode = '<span class="text-orange-600 font-semibold">Sem Categoria</span>';
