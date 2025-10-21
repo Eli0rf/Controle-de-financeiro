@@ -938,6 +938,10 @@ document.addEventListener('DOMContentLoaded', function() {
     initializeTabs(); // Adicionar inicialização das tabs
     setupTypeSwitches();
     setupUncategorizedDetails();
+        // Garante que os selects foram realmente populados (retries suaves)
+        ensurePlanSelectsPopulated();
+        setTimeout(ensurePlanSelectsPopulated, 600);
+        setTimeout(ensurePlanSelectsPopulated, 1500);
         
         // Inicializar sistema de insights após delay maior para garantir que tudo está pronto
         console.log('✅ Dashboard inicializado, agendando sistema de insights...');
@@ -945,6 +949,31 @@ document.addEventListener('DOMContentLoaded', function() {
             console.log('🚀 Inicializando sistema de insights...');
             initInsightSystem();
         }, 5000);  // 5 segundos de delay
+    }
+
+    function ensurePlanSelectsPopulated(){
+        try{
+            const per = document.getElementById('form-personal-plan-select');
+            if(per && per.options.length <= 1){
+                console.debug('🔁 Re-populando planos pessoais (fallback ensure)...');
+                populatePersonalPlanSelect();
+            }
+            const biz = document.getElementById('form-business-plan-select');
+            if(biz && biz.options.length <= 1){
+                console.debug('🔁 Re-populando planos empresariais (fallback ensure)...');
+                populateBusinessPlanSelect();
+            }
+            const editPer = document.getElementById('edit-personal-plan-select');
+            if(editPer && editPer.options.length <= 1){
+                console.debug('🔁 Re-populando planos pessoais (edição ensure)...');
+                populateEditPersonalPlanSelect('');
+            }
+            const editBiz = document.getElementById('edit-business-plan-select');
+            if(editBiz && editBiz.options.length <= 1){
+                console.debug('🔁 Re-populando planos empresariais (edição ensure)...');
+                populateEditBusinessPlanSelect('');
+            }
+        }catch(e){ console.warn('ensurePlanSelectsPopulated falhou:', e); }
     }
 
     function populateFilterOptions() {
@@ -1009,6 +1038,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 opt.textContent = p.name || `Plano ${p.id}`;
                 sel.appendChild(opt);
             });
+            console.debug('✅ Planos pessoais carregados:', personalPlans.length);
             if (current && [...sel.options].some(o=>o.value===current)) sel.value = current;
         }catch(e){ console.warn('Falha ao popular planos pessoais:', e); }
     }
@@ -1047,6 +1077,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 opt.textContent = p.name || `Plano ${p.id}`;
                 sel.appendChild(opt);
             });
+            console.debug('✅ Planos empresariais carregados:', businessPlans.length);
             if (current && [...sel.options].some(o=>o.value===current)) sel.value = current;
         }catch(e){ console.warn('Falha ao popular planos empresariais:', e); }
     }
