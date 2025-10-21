@@ -992,7 +992,11 @@ document.addEventListener('DOMContentLoaded', function() {
                 data = await loadChartOfAccountsConfig(true);
             }
             const plans = (data && data.plans) || [];
-            const personalPlans = plans.filter(p => (p.type||'').toLowerCase() === 'personal');
+            let personalPlans = plans.filter(p => (p.type||'').toLowerCase() === 'personal');
+            if (personalPlans.length === 0 && plans.length > 0) {
+                // Fallback: se não houver tipo, usar todos os planos
+                personalPlans = plans;
+            }
             const current = sel.value;
             sel.innerHTML = '';
             const placeholder = document.createElement('option');
@@ -1024,7 +1028,10 @@ document.addEventListener('DOMContentLoaded', function() {
                 data = await loadChartOfAccountsConfig(true);
             }
             const plans = (data && data.plans) || [];
-            const businessPlans = plans.filter(p => (p.type||'').toLowerCase() === 'business');
+            let businessPlans = plans.filter(p => (p.type||'').toLowerCase() === 'business');
+            if (businessPlans.length === 0 && plans.length > 0) {
+                businessPlans = plans;
+            }
             // Preserva seleção atual
             const current = sel.value;
             // Recria options
