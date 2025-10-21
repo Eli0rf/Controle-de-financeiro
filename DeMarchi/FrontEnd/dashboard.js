@@ -4242,26 +4242,19 @@ document.addEventListener('DOMContentLoaded', function() {
             if (!checkAuthentication()) return;
 
             const response = await authenticatedFetch(`${API_BASE_URL}/api/accounts`);
-        if (activeContent) {
             if (!response.ok) {
                 if (response.status === 403 || response.status === 401) {
                     console.log('Erro de autenticação ao carregar contas');
-                    // handleAuthError já foi chamado pelo authenticatedFetch
-        if (tabName === 'business-analysis') {
+                    // authenticatedFetch já trata o erro de auth
+                    return;
                 }
-                const error = await response.json();
-        } else if (tabName === 'reports') {
+                const err = await response.json().catch(() => ({}));
+                throw new Error(err.message || 'Falha ao carregar contas');
             }
-        } else if (tabName === 'pix-boleto') {
+
             let accounts = await response.json();
-        } else if (tabName === 'expenses') {
-            // Ao entrar na aba de Gastos, recarregar listas de planos para refletir Admin Planos
-            try {
-                populatePersonalPlanSelect();
-                populateBusinessPlanSelect();
-            } catch (e) {
-                console.warn('Falha ao atualizar listas de planos na aba Gastos:', e);
-            }
+            if (!Array.isArray(accounts)) accounts = [];
+
             // Garantir que conta unificada exista mesmo que ainda não haja registros
             if (!accounts.includes('PIX/Boleto')) accounts.push('PIX/Boleto');
             // Remover legados se ainda vierem do backend
@@ -4276,7 +4269,7 @@ document.addEventListener('DOMContentLoaded', function() {
             });
         } catch (error) {
             console.error('Erro ao carregar contas:', error);
-            if (!error.message.includes('Autenticação falhou')) {
+            if (!String(error.message || '').includes('Autenticação falhou')) {
                 showNotification('Erro ao carregar contas.', 'error');
             }
         }
@@ -14276,7 +14269,22 @@ document.addEventListener('DOMContentLoaded', function() {
     if(typeof renderPlanProjectionChart==='function' && !window.__advancedPlanProjection){
         window.__advancedPlanProjection = true;
         function linearRegression(values){ const n=values.length; if(!n) return {a:0,b:0}; const sumX=(n-1)*n/2; const sumY=values.reduce((s,v)=>s+v,0); const sumXY=values.reduce((s,v,i)=>s+i*v,0); const sumX2=(n-1)*n*(2*n-1)/6; const denom=(n*sumX2 - sumX*sumX)||1; const a=(n*sumXY - sumX*sumY)/denom; const b=(sumY - a*sumX)/n; return {a,b}; }
-        async function fetchAggregatedPlanHistory(planId, monthsWindow){ try { const now=new Date(); const endYear=now.getFullYear(); const endMonth=now.getMonth()+1; const start=new Date(now.getFullYear(), now.getMonth()-(monthsWindow-1),1); const startYear=start.getFullYear(); const startMonth=start.getMonth()+1; const params=new URLSearchParams({startYear,startMonth,endYear,endMonth,plan:planId,aggregate:'true'}); const resp= await authenticatedFetch(`${API_BASE_URL}/api/expenses/history?${params.toString()}`); if(resp.ok) return resp.json(); } catch(e){ console.warn('Histórico agregado indisponível', e.message);} return null; }
+        async function fetchAggregatedPlanHistory(planId, monthsWindow){
+            try {
+                const now = new Date();
+                const endYear = now.getFullYear();
+                const endMonth = now.getMonth() + 1;
+                const start = new Date(now.getFullYear(), now.getMonth() - (monthsWindow - 1), 1);
+                const startYear = start.getFullYear();
+                const startMonth = start.getMonth() + 1;
+                const params = new URLSearchParams({ startYear, startMonth, endYear, endMonth, plan: planId, aggregate: 'true' });
+                const resp = await authenticatedFetch(`${API_BASE_URL}/api/expenses/history?${params.toString()}`);
+                if (resp.ok) return resp.json();
+            } catch (e) {
+                console.warn('Histórico agregado indisponível', e.message);
+            }
+            return null;
+        }
         function computeValueProjection(data){ if(!data||!data.months) return null; const months=data.months; if(!months.length) return null; const last3=months.slice(-3); const avg= last3.length? last3.reduce((s,m)=>s+m.total,0)/last3.length:0; const {a,b}=linearRegression(months.map(m=>m.total)); const lastKey=months[months.length-1].month; let [y,m]=lastKey.split('-').map(Number); const projections=[]; const base=months.length; for(let i=1;i<=3;i++){ m++; if(m>12){m=1;y++;} const idx=base-1+i; const v=a*idx+b; projections.push({month:`${y}-${String(m).padStart(2,'0')}`, projected:Math.max(0,v)});} return {planId:data.plan||'', history: months.map(m=>({month:m.month,value:m.total})), projections, average:avg, regression:{a,b}}; }
         const oldCountFn = computePlanCountProjection; // já existe
         window.renderPlanProjectionChart = function(planId, mode='count', override=null){
