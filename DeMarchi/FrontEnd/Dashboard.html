@@ -2537,14 +2537,25 @@
                     </select>
                 </div>
                 
-                <!-- Plano de Contas -->
+                <!-- Plano de Contas (usando a mesma lista do Admin Plans) -->
                 <div class="mb-4">
-                    <label for="edit-account-plan-code" class="block text-sm font-medium text-gray-700 mb-1">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">
                         Plano de Contas
                     </label>
-                    <input type="text" id="edit-account-plan-code" name="account_plan_code"
-                           class="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                           placeholder="Ex: 1.1.01.001">
+                    <!-- Container Pessoal -->
+                    <div id="edit-personal-fields-container" class="field-container">
+                        <select id="edit-personal-plan-select" class="w-full p-2 border rounded-md">
+                            <option value="">Selecione um plano pessoal…</option>
+                        </select>
+                        <p class="text-xs text-gray-500 mt-1">Planos carregados do cadastro central (Admin Planos) — tipo Pessoal.</p>
+                    </div>
+                    <!-- Container Empresarial -->
+                    <div id="edit-business-fields-container" class="field-container hidden mt-2">
+                        <select id="edit-business-plan-select" class="w-full p-2 border rounded-md">
+                            <option value="">Selecione um plano empresarial…</option>
+                        </select>
+                        <p class="text-xs text-gray-500 mt-1">Planos carregados do cadastro central (Admin Planos) — tipo Empresarial.</p>
+                    </div>
                 </div>
                 
                 <!-- Checkbox Gasto Empresarial -->

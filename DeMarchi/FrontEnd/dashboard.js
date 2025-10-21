@@ -1044,6 +1044,57 @@ document.addEventListener('DOMContentLoaded', function() {
         }catch(e){ console.warn('Falha ao popular planos empresariais:', e); }
     }
 
+    // Popula os selects do modal de edição com a lista central de planos
+    async function populateEditPersonalPlanSelect(selectedValue){
+        try{
+            const sel = document.getElementById('edit-personal-plan-select');
+            if(!sel) return;
+            let data = null;
+            try{ const cached = sessionStorage.getItem('chartOfAccounts'); if(cached) data = JSON.parse(cached); }catch(e){}
+            if(!data || !data.plans){ data = await loadChartOfAccountsConfig(true); }
+            const plans = (data && data.plans) || [];
+            const personalPlans = plans.filter(p => (p.type||'').toLowerCase() === 'personal');
+            const current = selectedValue || sel.value;
+            sel.innerHTML = '';
+            const placeholder = document.createElement('option');
+            placeholder.value = '';
+            placeholder.textContent = 'Selecione um plano pessoal…';
+            sel.appendChild(placeholder);
+            personalPlans.forEach(p => {
+                const opt = document.createElement('option');
+                opt.value = String(p.id);
+                opt.textContent = p.name || `Plano ${p.id}`;
+                sel.appendChild(opt);
+            });
+            if (current && [...sel.options].some(o=>o.value===String(current))) sel.value = String(current);
+        }catch(e){ console.warn('Falha ao popular planos pessoais (edição):', e); }
+    }
+
+    async function populateEditBusinessPlanSelect(selectedValue){
+        try{
+            const sel = document.getElementById('edit-business-plan-select');
+            if(!sel) return;
+            let data = null;
+            try{ const cached = sessionStorage.getItem('chartOfAccounts'); if(cached) data = JSON.parse(cached); }catch(e){}
+            if(!data || !data.plans){ data = await loadChartOfAccountsConfig(true); }
+            const plans = (data && data.plans) || [];
+            const businessPlans = plans.filter(p => (p.type||'').toLowerCase() === 'business');
+            const current = selectedValue || sel.value;
+            sel.innerHTML = '';
+            const placeholder = document.createElement('option');
+            placeholder.value = '';
+            placeholder.textContent = 'Selecione um plano empresarial…';
+            sel.appendChild(placeholder);
+            businessPlans.forEach(p => {
+                const opt = document.createElement('option');
+                opt.value = String(p.id);
+                opt.textContent = p.name || `Plano ${p.id}`;
+                sel.appendChild(opt);
+            });
+            if (current && [...sel.options].some(o=>o.value===String(current))) sel.value = String(current);
+        }catch(e){ console.warn('Falha ao popular planos empresariais (edição):', e); }
+    }
+
     // ========== GERENCIAMENTO DO CHART.JS ==========
     
     /**
@@ -2541,6 +2592,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 
                 // Melhor tratamento do plano de conta
                 let planCode = '';
+                let planNameHtml = '';
                 let planStatus = '';
                 let rowClass = 'border-b hover:bg-gray-50';
                 
@@ -2550,7 +2602,9 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
                 
                 if (expense.account_plan_code !== null && expense.account_plan_code !== undefined && expense.account_plan_code !== '') {
-                    planCode = `<span class="bg-gray-100 text-gray-800 px-2 py-1 rounded font-mono text-sm">${expense.account_plan_code}</span>`;
+                    const planName = getPlanName(expense.account_plan_code, window.PLAN_NAMES);
+                    planCode = `<span class=\"bg-gray-100 text-gray-800 px-2 py-1 rounded font-mono text-sm\">${expense.account_plan_code}</span>`;
+                    planNameHtml = planName ? `<div class=\"text-xs text-gray-500 mt-0.5\">${planName}</div>` : '';
                 } else {
                     if (expense.is_business_expense) {
                         planCode = '<span class="text-orange-600 font-semibold">Sem Categoria</span>';
@@ -2590,7 +2644,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         </span>
                     </td>
                     <td class="p-3">${tipoGasto}</td>
-                    <td class="p-3">${planCode}</td>
+                    <td class="p-3">${planCode}${planNameHtml}</td>
                     <td class="p-3 text-center">${invoiceLink}</td>
                     <td class="p-3">
                         <div class="flex gap-1">
@@ -3534,9 +3588,55 @@ document.addEventListener('DOMContentLoaded', function() {
             document.getElementById('edit-amount').value = expense.amount;
             document.getElementById('edit-description').value = expense.description;
             document.getElementById('edit-account').value = expense.account;
-            document.getElementById('edit-account-plan-code').value = expense.account_plan_code || '';
             document.getElementById('edit-is-business').checked = expense.is_business_expense;
             document.getElementById('edit-has-invoice').checked = expense.has_invoice;
+            
+            // Exibir o container correto e popular o select correspondente
+            const editPersonalContainer = document.getElementById('edit-personal-fields-container');
+            const editBusinessContainer = document.getElementById('edit-business-fields-container');
+            if (expense.is_business_expense) {
+                if (editPersonalContainer) editPersonalContainer.classList.add('hidden');
+                if (editBusinessContainer) editBusinessContainer.classList.remove('hidden');
+                await populateEditBusinessPlanSelect(expense.account_plan_code || '');
+                // aplicar required/disabled nativo
+                const selBiz = document.getElementById('edit-business-plan-select');
+                const selPer = document.getElementById('edit-personal-plan-select');
+                if (selBiz) { selBiz.disabled = false; selBiz.required = true; }
+                if (selPer) { selPer.disabled = true; selPer.required = false; }
+            } else {
+                if (editBusinessContainer) editBusinessContainer.classList.add('hidden');
+                if (editPersonalContainer) editPersonalContainer.classList.remove('hidden');
+                await populateEditPersonalPlanSelect(expense.account_plan_code || '');
+                const selBiz = document.getElementById('edit-business-plan-select');
+                const selPer = document.getElementById('edit-personal-plan-select');
+                if (selPer) { selPer.disabled = false; selPer.required = true; }
+                if (selBiz) { selBiz.disabled = true; selBiz.required = false; }
+            }
+            // Alternar containers se usuário mudar o tipo no modal
+            const editIsBiz = document.getElementById('edit-is-business');
+            if (editIsBiz && !editIsBiz.dataset._bound) {
+                editIsBiz.addEventListener('change', async () => {
+                    const isBiz = editIsBiz.checked;
+                    if (isBiz) {
+                        if (editPersonalContainer) editPersonalContainer.classList.add('hidden');
+                        if (editBusinessContainer) editBusinessContainer.classList.remove('hidden');
+                        await populateEditBusinessPlanSelect('');
+                        const selBiz = document.getElementById('edit-business-plan-select');
+                        const selPer = document.getElementById('edit-personal-plan-select');
+                        if (selBiz) { selBiz.disabled = false; selBiz.required = true; }
+                        if (selPer) { selPer.disabled = true; selPer.required = false; }
+                    } else {
+                        if (editBusinessContainer) editBusinessContainer.classList.add('hidden');
+                        if (editPersonalContainer) editPersonalContainer.classList.remove('hidden');
+                        await populateEditPersonalPlanSelect('');
+                        const selBiz = document.getElementById('edit-business-plan-select');
+                        const selPer = document.getElementById('edit-personal-plan-select');
+                        if (selPer) { selPer.disabled = false; selPer.required = true; }
+                        if (selBiz) { selBiz.disabled = true; selBiz.required = false; }
+                    }
+                });
+                editIsBiz.dataset._bound = '1';
+            }
             
             // Mostrar/esconder upload de fatura
             toggleEditInvoiceUpload();
@@ -3578,20 +3678,25 @@ document.addEventListener('DOMContentLoaded', function() {
             
             const formData = new FormData(editExpenseForm);
             const expenseId = document.getElementById('edit-expense-id').value;
-            
+            // Definir plano de contas conforme tipo e validar seleção
+            const isBiz = document.getElementById('edit-is-business')?.checked;
+            const selBiz = document.getElementById('edit-business-plan-select');
+            const selPer = document.getElementById('edit-personal-plan-select');
+            const chosen = isBiz ? (selBiz?.value || '') : (selPer?.value || '');
+            if (isBiz && !chosen) {
+                showNotification('Selecione um Plano de Conta Empresarial.', 'warning');
+                return;
+            }
+            if (!isBiz && !chosen) {
+                showNotification('Selecione um Plano de Conta Pessoal.', 'warning');
+                return;
+            }
+            formData.set('account_plan_code', chosen);
+
             const response = await authenticatedFetch(`${API_BASE_URL}/api/expenses/${expenseId}`, {
                 method: 'PUT',
                 body: formData
             });
-            // Validação: se empresarial, exigir plano selecionado
-            if (businessCheckbox && businessCheckbox.checked) {
-                const businessPlan = document.getElementById('form-business-plan-select');
-                const planVal = businessPlan ? (businessPlan.value||'').trim() : '';
-                if (!planVal) {
-                    showNotification('Selecione um Plano de Conta Empresarial.', 'warning');
-                    return;
-                }
-            }
             
             if (!response.ok) {
                 const error = await response.json();

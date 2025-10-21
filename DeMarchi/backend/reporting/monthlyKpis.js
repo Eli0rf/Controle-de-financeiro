@@ -126,12 +126,11 @@ const computeMonthlyKPIs = async ({ pool, userId, year, month, account }) => {
     });
   }
 
-  // "outliers" aqui é um array; usar seu length diretamente
-  if (outliers.length > 0) {
+  if (outliers.top.length > 0) {
     recommendations.push({
       type: 'OUTLIER_REVIEW',
       priority: 'MEDIUM',
-      message: `${outliers.length} transação(ões) atípica(s) detectada(s)`,
+      message: `${outliers.top.length} transação(ões) atípica(s) detectada(s)`,
       action: 'Revisar gastos excepcionais'
     });
   }
@@ -153,8 +152,7 @@ const computeMonthlyKPIs = async ({ pool, userId, year, month, account }) => {
         activeSpendingDays: diasComGasto,
         concentrationRisk: hhi > 0.25,
         projectionRisk: crescimentoProj > 15,
-        // "outliers" é um array, portanto usar length diretamente
-        outlierCount: outliers.length
+        outlierCount: outliers.top.length
       }
     },
     meta: { comentario: 'KPIs with integrated Business Intelligence analysis' }
