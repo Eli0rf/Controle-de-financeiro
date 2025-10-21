@@ -920,8 +920,21 @@ document.addEventListener('DOMContentLoaded', function() {
         populateFilterOptions();
         fetchAllData();
         toggleExpenseFields();
+    // Carregar listas de planos a partir do cadastro central
     populateBusinessPlanSelect();
     populatePersonalPlanSelect();
+    // Garantir que novas alterações no Admin Planos reflitam sem recarregar a página:
+    // ao focar nos selects, recarregue do backend.
+    const personalPlanSel = document.getElementById('form-personal-plan-select');
+    if (personalPlanSel && !personalPlanSel.dataset._refreshOnFocus) {
+        personalPlanSel.addEventListener('focus', () => populatePersonalPlanSelect());
+        personalPlanSel.dataset._refreshOnFocus = '1';
+    }
+    const businessPlanSel = document.getElementById('form-business-plan-select');
+    if (businessPlanSel && !businessPlanSel.dataset._refreshOnFocus) {
+        businessPlanSel.addEventListener('focus', () => populateBusinessPlanSelect());
+        businessPlanSel.dataset._refreshOnFocus = '1';
+    }
     initializeTabs(); // Adicionar inicialização das tabs
     setupTypeSwitches();
     setupUncategorizedDetails();
@@ -4229,18 +4242,26 @@ document.addEventListener('DOMContentLoaded', function() {
             if (!checkAuthentication()) return;
 
             const response = await authenticatedFetch(`${API_BASE_URL}/api/accounts`);
-            
+        if (activeContent) {
             if (!response.ok) {
                 if (response.status === 403 || response.status === 401) {
                     console.log('Erro de autenticação ao carregar contas');
                     // handleAuthError já foi chamado pelo authenticatedFetch
-                    return;
+        if (tabName === 'business-analysis') {
                 }
                 const error = await response.json();
-                throw new Error(error.message || 'Erro ao buscar contas.');
+        } else if (tabName === 'reports') {
             }
-            
+        } else if (tabName === 'pix-boleto') {
             let accounts = await response.json();
+        } else if (tabName === 'expenses') {
+            // Ao entrar na aba de Gastos, recarregar listas de planos para refletir Admin Planos
+            try {
+                populatePersonalPlanSelect();
+                populateBusinessPlanSelect();
+            } catch (e) {
+                console.warn('Falha ao atualizar listas de planos na aba Gastos:', e);
+            }
             // Garantir que conta unificada exista mesmo que ainda não haja registros
             if (!accounts.includes('PIX/Boleto')) accounts.push('PIX/Boleto');
             // Remover legados se ainda vierem do backend
