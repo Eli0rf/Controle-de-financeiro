@@ -6650,7 +6650,8 @@ document.addEventListener('DOMContentLoaded', function() {
                     return parsed;
                 }
             }
-            const resp = await fetch(`${API_BASE_URL}/api/config/chart-of-accounts`, { credentials: 'include' });
+            // Importante: não enviar credenciais para evitar CORS com '*' em dev/local
+            const resp = await fetch(`${API_BASE_URL}/api/config/chart-of-accounts`, { credentials: 'omit', mode: 'cors' });
             if(!resp.ok) throw new Error(`Config HTTP ${resp.status}`);
             const data = await resp.json();
             sessionStorage.setItem(cacheKey, JSON.stringify(data));
