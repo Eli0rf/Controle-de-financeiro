@@ -101,7 +101,6 @@ document.addEventListener('DOMContentLoaded', function() {
     const chartBudgetAlertsContainer = document.getElementById('chart-budget-alerts');
     const budgetSummary = document.getElementById('budget-summary');
     
-            const personalPlans = plans.filter(p => (p.type||'').toLowerCase() === 'personal');
     const chartUsageInsights = document.getElementById('chart-usage-insights');
     const chartDetailsTbody = document.getElementById('chart-details-tbody');
     
@@ -111,14 +110,9 @@ document.addEventListener('DOMContentLoaded', function() {
     // Configurações de orçamento (localStorage)
     let budgetConfig = {
         monthlyLimit: 0,
-                opt.textContent = p.name ? `${p.id} — ${p.name}` : `Plano ${p.id}`;
     };
 
     // Dados globais para sorting da tabela de gastos recorrentes
-            if (personalPlans.length === 0) {
-                console.warn('⚠️ Nenhum plano PESSOAL encontrado. Verifique Admin Planos.');
-                try { showNotification('Nenhum plano pessoal cadastrado no Admin Planos.', 'warning'); } catch {}
-            }
     let currentRecurringExpenses = [];
     // Cache das despesas PIX/Boleto brutas (para cruzamentos e gráficos)
     let currentPixBoletoExpenses = [];
