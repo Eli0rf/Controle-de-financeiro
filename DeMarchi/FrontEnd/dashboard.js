@@ -1014,8 +1014,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 data = await loadChartOfAccountsConfig(true);
             }
             const plans = (data && data.plans) || [];
-            // Filtra ESTRITAMENTE por planos pessoais
-            const personalPlans = plans.filter(p => (p.type||'').toLowerCase() === 'personal');
+            // Filtra ESTRITAMENTE por planos pessoais (com normalização de tipo)
+            const personalPlans = plans.filter(p => normalizePlanType(p.type) === 'personal');
             const current = sel.value;
             sel.innerHTML = '';
             const placeholder = document.createElement('option');
@@ -1054,7 +1054,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 data = await loadChartOfAccountsConfig(true);
             }
             const plans = (data && data.plans) || [];
-            let businessPlans = plans.filter(p => (p.type||'').toLowerCase() === 'business');
+            let businessPlans = plans.filter(p => normalizePlanType(p.type) === 'business');
             if (businessPlans.length === 0 && plans.length > 0) {
                 businessPlans = plans;
             }
@@ -1099,8 +1099,8 @@ document.addEventListener('DOMContentLoaded', function() {
             try{ const cached = sessionStorage.getItem('chartOfAccounts'); if(cached) data = JSON.parse(cached); }catch(e){}
             if(!data || !data.plans){ data = await loadChartOfAccountsConfig(true); }
             const plans = (data && data.plans) || [];
-            // Filtra ESTRITAMENTE por pessoal
-            const personalPlans = plans.filter(p => (p.type||'').toLowerCase() === 'personal');
+            // Filtra ESTRITAMENTE por pessoal (com normalização de tipo)
+            const personalPlans = plans.filter(p => normalizePlanType(p.type) === 'personal');
             const current = selectedValue || sel.value;
             sel.innerHTML = '';
             const placeholder = document.createElement('option');
@@ -1146,8 +1146,8 @@ document.addEventListener('DOMContentLoaded', function() {
             try{ const cached = sessionStorage.getItem('chartOfAccounts'); if(cached) data = JSON.parse(cached); }catch(e){}
             if(!data || !data.plans){ data = await loadChartOfAccountsConfig(true); }
             const plans = (data && data.plans) || [];
-            // Filtra ESTRITAMENTE por empresarial
-            const businessPlans = plans.filter(p => (p.type||'').toLowerCase() === 'business');
+            // Filtra ESTRITAMENTE por empresarial (com normalização de tipo)
+            const businessPlans = plans.filter(p => normalizePlanType(p.type) === 'business');
             const current = selectedValue || sel.value;
             sel.innerHTML = '';
             const placeholder = document.createElement('option');
@@ -6743,6 +6743,18 @@ document.addEventListener('DOMContentLoaded', function() {
     window.exportFullReportsPrint = exportFullReportsPrint;
 
     // ========== CONFIGURAÇÃO CENTRAL DE PLANOS DE CONTAS ==========
+    // Normaliza variações do "type" vindas do backend (ex.: 'pessoal' -> 'personal', 'empresarial' -> 'business')
+    function normalizePlanType(t){
+        if (t == null) return '';
+        const s = String(t).trim().toLowerCase();
+        if (!s) return '';
+        if (s === 'personal' || s === 'p') return 'personal';
+        if (s === 'business' || s === 'b') return 'business';
+        // Variações em PT-BR e abreviações comuns
+        if (s.startsWith('pesso') || s.startsWith('pers')) return 'personal';
+        if (s.startsWith('empre') || s.startsWith('bus')) return 'business';
+        return s; // devolve como veio se não reconhecido
+    }
     // Carrega planos de contas do backend e armazena em sessionStorage
     async function loadChartOfAccountsConfig(force=false){
         try {
