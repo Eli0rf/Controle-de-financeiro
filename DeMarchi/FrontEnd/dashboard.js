@@ -963,16 +963,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 console.debug('🔁 Re-populando planos empresariais (fallback ensure)...');
                 populateBusinessPlanSelect();
             }
-            const editPer = document.getElementById('edit-personal-plan-select');
-            if(editPer && editPer.options.length <= 1){
-                console.debug('🔁 Re-populando planos pessoais (edição ensure)...');
-                populateEditPersonalPlanSelect('');
-            }
-            const editBiz = document.getElementById('edit-business-plan-select');
-            if(editBiz && editBiz.options.length <= 1){
-                console.debug('🔁 Re-populando planos empresariais (edição ensure)...');
-                populateEditBusinessPlanSelect('');
-            }
+            // Importante: não tocar nos selects do modal de edição aqui para evitar sobrescrever seleção
         }catch(e){ console.warn('ensurePlanSelectsPopulated falhou:', e); }
     }
 
@@ -3639,6 +3630,7 @@ document.addEventListener('DOMContentLoaded', function() {
             // Exibir o container correto e popular o select correspondente
             const editPersonalContainer = document.getElementById('edit-personal-fields-container');
             const editBusinessContainer = document.getElementById('edit-business-fields-container');
+            console.debug('📝 Abrindo edição', { id: expense.id, is_business_expense: expense.is_business_expense, account_plan_code: expense.account_plan_code });
             if (expense.is_business_expense) {
                 if (editPersonalContainer) editPersonalContainer.classList.add('hidden');
                 if (editBusinessContainer) editBusinessContainer.classList.remove('hidden');
@@ -3648,6 +3640,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 const selPer = document.getElementById('edit-personal-plan-select');
                 if (selBiz) { selBiz.disabled = false; selBiz.required = true; }
                 if (selPer) { selPer.disabled = true; selPer.required = false; }
+                console.debug('↪️ Edit Biz options:', selBiz ? selBiz.options.length : 0, 'selected:', selBiz ? selBiz.value : '');
             } else {
                 if (editBusinessContainer) editBusinessContainer.classList.add('hidden');
                 if (editPersonalContainer) editPersonalContainer.classList.remove('hidden');
@@ -3656,6 +3649,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 const selPer = document.getElementById('edit-personal-plan-select');
                 if (selPer) { selPer.disabled = false; selPer.required = true; }
                 if (selBiz) { selBiz.disabled = true; selBiz.required = false; }
+                console.debug('↪️ Edit Personal options:', selPer ? selPer.options.length : 0, 'selected:', selPer ? selPer.value : '');
             }
             // Alternar containers se usuário mudar o tipo no modal
             const editIsBiz = document.getElementById('edit-is-business');
