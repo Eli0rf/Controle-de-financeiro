@@ -730,6 +730,11 @@ document.addEventListener('DOMContentLoaded', function() {
         if (businessCheckbox) businessCheckbox.addEventListener('change', toggleExpenseFields);
         document.getElementById('filter-account').addEventListener('change', fetchAllData);
         if (filterPlan) filterPlan.addEventListener('input', applyAllFilters);
+    // Atualizar código do plano no formulário de adição quando o usuário mudar o select
+    const perSel = document.getElementById('form-personal-plan-select');
+    const bizSel = document.getElementById('form-business-plan-select');
+    if (perSel && !perSel.dataset._bound) { perSel.addEventListener('change', updateAddPlanCodeDisplay); perSel.dataset._bound = '1'; }
+    if (bizSel && !bizSel.dataset._bound) { bizSel.addEventListener('change', updateAddPlanCodeDisplay); bizSel.dataset._bound = '1'; }
         if (interactiveReportBtn) interactiveReportBtn.addEventListener('click', () => {
             if (interactiveReportModal) {
                 interactiveReportModal.classList.remove('hidden');
@@ -942,6 +947,8 @@ document.addEventListener('DOMContentLoaded', function() {
         ensurePlanSelectsPopulated();
         setTimeout(ensurePlanSelectsPopulated, 600);
         setTimeout(ensurePlanSelectsPopulated, 1500);
+        // Preencher o campo de código inicial (se já houver seleção cacheada)
+        setTimeout(updateAddPlanCodeDisplay, 700);
         
         // Inicializar sistema de insights após delay maior para garantir que tudo está pronto
         console.log('✅ Dashboard inicializado, agendando sistema de insights...');
@@ -996,6 +1003,7 @@ document.addEventListener('DOMContentLoaded', function() {
             businessPlanSelect.required = businessCheckbox.checked; // exigir quando empresarial
             if (businessCheckbox.checked) populateBusinessPlanSelect();
         }
+        updateAddPlanCodeDisplay();
     }
 
     // Carrega e popula o select de planos pessoais a partir da configuração central
@@ -1026,11 +1034,12 @@ document.addEventListener('DOMContentLoaded', function() {
             personalPlans.forEach(p => {
                 const opt = document.createElement('option');
                 opt.value = String(p.id);
-                opt.textContent = p.name || `Plano ${p.id}`;
+                opt.textContent = p.name ? `${p.id} — ${p.name}` : `Plano ${p.id}`;
                 sel.appendChild(opt);
             });
             console.debug('✅ Planos pessoais carregados:', personalPlans.length);
             if (current && [...sel.options].some(o=>o.value===current)) sel.value = current;
+            updateAddPlanCodeDisplay();
         }catch(e){ console.warn('Falha ao popular planos pessoais:', e); }
     }
 
@@ -1064,13 +1073,25 @@ document.addEventListener('DOMContentLoaded', function() {
             businessPlans.forEach(p => {
                 const opt = document.createElement('option');
                 opt.value = String(p.id);
-                // Mostrar nome (sem forçar exibir o número); se desejar, inclua descrição entre parênteses
-                opt.textContent = p.name || `Plano ${p.id}`;
+                opt.textContent = p.name ? `${p.id} — ${p.name}` : `Plano ${p.id}`;
                 sel.appendChild(opt);
             });
             console.debug('✅ Planos empresariais carregados:', businessPlans.length);
             if (current && [...sel.options].some(o=>o.value===current)) sel.value = current;
+            updateAddPlanCodeDisplay();
         }catch(e){ console.warn('Falha ao popular planos empresariais:', e); }
+    }
+
+    function updateAddPlanCodeDisplay(){
+        try{
+            const codeInput = document.getElementById('form-plan-code');
+            if(!codeInput) return;
+            const isBiz = document.getElementById('form-is-business')?.checked;
+            const selBiz = document.getElementById('form-business-plan-select');
+            const selPer = document.getElementById('form-personal-plan-select');
+            const val = isBiz ? (selBiz?.value || '') : (selPer?.value || '');
+            codeInput.value = val || '';
+        }catch(e){ /* noop */ }
     }
 
     // Popula os selects do modal de edição com a lista central de planos
