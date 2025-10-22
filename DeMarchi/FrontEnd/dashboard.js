@@ -1097,24 +1097,28 @@ document.addEventListener('DOMContentLoaded', function() {
             try{ const cached = sessionStorage.getItem('chartOfAccounts'); if(cached) data = JSON.parse(cached); }catch(e){}
             if(!data || !data.plans){ data = await loadChartOfAccountsConfig(true); }
             const plans = (data && data.plans) || [];
-            let personalPlans = plans.filter(p => (p.type||'').toLowerCase() === 'personal');
-            // Fallback: se não houver tipo definido, use todos os planos
-            if (personalPlans.length === 0 && plans.length > 0) {
-                personalPlans = plans;
-            }
+            // Filtra ESTRITAMENTE por pessoal
+            const personalPlans = plans.filter(p => (p.type||'').toLowerCase() === 'personal');
             const current = selectedValue || sel.value;
             sel.innerHTML = '';
             const placeholder = document.createElement('option');
             placeholder.value = '';
             placeholder.textContent = 'Selecione um plano pessoal…';
             sel.appendChild(placeholder);
-            personalPlans.forEach(p => {
-                const opt = document.createElement('option');
-                opt.value = String(p.id);
-                opt.textContent = p.name ? `${p.id} — ${p.name}` : `Plano ${p.id}`;
-                sel.appendChild(opt);
-            });
-            if (current && [...sel.options].some(o=>o.value===String(current))) sel.value = String(current);
+            if (personalPlans.length === 0) {
+                console.warn('⚠️ Nenhum plano pessoal encontrado para o modal de edição.');
+                try { showNotification('Nenhum plano pessoal cadastrado no Admin Planos.', 'warning'); } catch {}
+            } else {
+                personalPlans.forEach(p => {
+                    const opt = document.createElement('option');
+                    opt.value = String(p.id);
+                    opt.textContent = p.name ? `${p.id} — ${p.name}` : `Plano ${p.id}`;
+                    sel.appendChild(opt);
+                });
+            }
+            if (current && [...sel.options].some(o=>o.value===String(current))) {
+                sel.value = String(current);
+            }
             updateEditPlanCodeDisplay();
         }catch(e){ console.warn('Falha ao popular planos pessoais (edição):', e); }
     }
@@ -1127,23 +1131,28 @@ document.addEventListener('DOMContentLoaded', function() {
             try{ const cached = sessionStorage.getItem('chartOfAccounts'); if(cached) data = JSON.parse(cached); }catch(e){}
             if(!data || !data.plans){ data = await loadChartOfAccountsConfig(true); }
             const plans = (data && data.plans) || [];
-            let businessPlans = plans.filter(p => (p.type||'').toLowerCase() === 'business');
-            if (businessPlans.length === 0 && plans.length > 0) {
-                businessPlans = plans;
-            }
+            // Filtra ESTRITAMENTE por empresarial
+            const businessPlans = plans.filter(p => (p.type||'').toLowerCase() === 'business');
             const current = selectedValue || sel.value;
             sel.innerHTML = '';
             const placeholder = document.createElement('option');
             placeholder.value = '';
             placeholder.textContent = 'Selecione um plano empresarial…';
             sel.appendChild(placeholder);
-            businessPlans.forEach(p => {
-                const opt = document.createElement('option');
-                opt.value = String(p.id);
-                opt.textContent = p.name ? `${p.id} — ${p.name}` : `Plano ${p.id}`;
-                sel.appendChild(opt);
-            });
-            if (current && [...sel.options].some(o=>o.value===String(current))) sel.value = String(current);
+            if (businessPlans.length === 0) {
+                console.warn('⚠️ Nenhum plano empresarial encontrado para o modal de edição.');
+                try { showNotification('Nenhum plano empresarial cadastrado no Admin Planos.', 'warning'); } catch {}
+            } else {
+                businessPlans.forEach(p => {
+                    const opt = document.createElement('option');
+                    opt.value = String(p.id);
+                    opt.textContent = p.name ? `${p.id} — ${p.name}` : `Plano ${p.id}`;
+                    sel.appendChild(opt);
+                });
+            }
+            if (current && [...sel.options].some(o=>o.value===String(current))) {
+                sel.value = String(current);
+            }
             updateEditPlanCodeDisplay();
         }catch(e){ console.warn('Falha ao popular planos empresariais (edição):', e); }
     }
