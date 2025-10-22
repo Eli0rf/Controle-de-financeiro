@@ -8515,6 +8515,8 @@ document.addEventListener('DOMContentLoaded', function() {
                     updateProjections(safeProjections);
                     // Tabela (minimalmente preenchida)
                     renderRecurringExpensesTable(fb.expenses);
+                    await updateNonRecurringComparison(fb);
+                    await updateNonRecurringMonthlyPanel(fb);
                     showNotification('Exibindo dados PIX/Boleto via fallback', 'warning');
                     return;
                 }
@@ -8550,6 +8552,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     updateProjections(safeProjections);
                     renderRecurringExpensesTable(fb.expenses);
                     await updateNonRecurringComparison(fb);
+                    await updateNonRecurringMonthlyPanel(fb);
                     showNotification('Exibindo dados PIX/Boleto via fallback de emergência', 'warning');
                     return;
                 }
@@ -8589,6 +8592,61 @@ document.addEventListener('DOMContentLoaded', function() {
             nonRecEl.textContent = formatCurrency(nonRec);
             shareEl.textContent = share.toFixed(1)+'%';
         } catch(e){ console.warn('updateNonRecurringComparison falhou:', e.message); }
+    }
+
+    // UI: Lista do mês de gastos não recorrentes (PIX/Boleto) ao lado do header BI
+    async function updateNonRecurringMonthlyPanel(biData){
+        try {
+            const panel = document.getElementById('nonrecurring-monthly-panel');
+            const sumEl = document.getElementById('nonrecurring-monthly-summary');
+            const listEl = document.getElementById('nonrecurring-monthly-list');
+            if(!panel || !sumEl || !listEl) return;
+
+            // Determinar ano/mês alvo: filtros selecionados ou último da série
+            let targetYear = Number(document.getElementById('recurring-year')?.value || 0) || null;
+            let targetMonth = Number(document.getElementById('recurring-month')?.value || 0) || null;
+            const monthlyHistory = Array.isArray(biData?.monthlyHistory) ? biData.monthlyHistory : [];
+            if(!(targetYear && targetMonth) && monthlyHistory.length){
+                const t = monthlyHistory[monthlyHistory.length-1];
+                targetYear = t.year; targetMonth = t.month;
+            }
+            if(!(targetYear && targetMonth)){
+                // Se ainda não há alvo, limpa painel
+                sumEl.textContent = 'R$ 0,00 • 0 lançamentos';
+                listEl.innerHTML = '<li class="text-white/80">Sem dados para exibir</li>';
+                return;
+            }
+
+            const params = new URLSearchParams({year: targetYear, month: targetMonth, account: 'PIX/Boleto', include_recurring: 'true'});
+            const resp = await authenticatedFetch(`${API_BASE_URL}/api/expenses?${params.toString()}`);
+            let items = [];
+            if(resp.ok){
+                const raw = await resp.json();
+                items = raw.filter(e => !e.recurring_expense_id);
+            }
+            // Ordena por data desc (quando disponível)
+            items.sort((a,b)=> new Date(b.transaction_date || b.date || 0) - new Date(a.transaction_date || a.date || 0));
+
+            const total = items.reduce((s,e)=> s + Number(e.amount||e.valor||e.value||0), 0);
+            sumEl.textContent = `${formatCurrency(total)} • ${items.length} lançamento${items.length===1?'':'s'}`;
+
+            if(items.length===0){
+                listEl.innerHTML = '<li class="text-white/80">Sem gastos não recorrentes neste mês</li>';
+                return;
+            }
+
+            const fmtDate = (d)=>{
+                try{ return new Date(d).toLocaleDateString('pt-BR'); }catch{ return ''; }
+            };
+            listEl.innerHTML = items.slice(0, 20).map(e=>{
+                const d = fmtDate(e.transaction_date || e.date);
+                const desc = (e.description||'').toString().replace(/\n/g,' ');
+                const amt = formatCurrency(Number(e.amount||e.valor||e.value||0));
+                return `<li class="flex justify-between items-center"><span class="opacity-90">${d} • ${desc}</span><span class="font-semibold">${amt}</span></li>`;
+            }).join('');
+        } catch(e){
+            console.warn('updateNonRecurringMonthlyPanel falhou:', e.message);
+        }
     }
 
     // Atualizar KPIs principais do dashboard
@@ -9896,6 +9954,8 @@ document.addEventListener('DOMContentLoaded', function() {
                     const safeProjections = fb.projections || { nextMonth: 0, threeMonths: 0, yearEnd: 0 };
                     updateProjections(safeProjections);
                     renderRecurringExpensesTable(fb.expenses);
+                    await updateNonRecurringComparison(fb);
+                    await updateNonRecurringMonthlyPanel(fb);
                     showNotification('Filtros aplicados (fallback)', 'warning');
                     return;
                 }
@@ -10014,6 +10074,7 @@ document.addEventListener('DOMContentLoaded', function() {
             renderRecurringExpensesTable(data.expenses);
             // Sem await para não bloquear
             updateNonRecurringComparison(data);
+            updateNonRecurringMonthlyPanel(data);
         } catch (e) {
             console.error('Erro ao aplicar dados BI recorrentes na UI:', e);
         }
