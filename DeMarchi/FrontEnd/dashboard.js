@@ -2214,6 +2214,20 @@ document.addEventListener('DOMContentLoaded', function() {
                 console.log('🔄 Aba PIX-Boleto ativada, carregando dados...');
                 // Forçar recarregamento dos dados PIX/Boleto
                 loadPixBoletoData();
+            } else if (tabName === 'expenses') {
+                // Ao abrir a aba de gastos, força recarregar os planos de contas e repopular os selects
+                try {
+                    if (typeof window.reloadChartOfAccounts === 'function') {
+                        window.reloadChartOfAccounts(); // já repopula selects internamente
+                    } else {
+                        console.info('🔄 Recarregando planos (fallback sem helper global)…');
+                        sessionStorage.removeItem('chartOfAccounts');
+                        loadChartOfAccountsConfig(true).then(()=>{
+                            try { populatePersonalPlanSelect(); } catch {}
+                            try { populateBusinessPlanSelect(); } catch {}
+                        });
+                    }
+                } catch(e) { console.warn('Falha ao recarregar planos na aba de gastos:', e); }
             }
         }
         
