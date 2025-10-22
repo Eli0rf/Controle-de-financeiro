@@ -1096,10 +1096,11 @@ document.addEventListener('DOMContentLoaded', function() {
             personalPlans.forEach(p => {
                 const opt = document.createElement('option');
                 opt.value = String(p.id);
-                opt.textContent = p.name || `Plano ${p.id}`;
+                opt.textContent = p.name ? `${p.id} — ${p.name}` : `Plano ${p.id}`;
                 sel.appendChild(opt);
             });
             if (current && [...sel.options].some(o=>o.value===String(current))) sel.value = String(current);
+            updateEditPlanCodeDisplay();
         }catch(e){ console.warn('Falha ao popular planos pessoais (edição):', e); }
     }
 
@@ -1124,11 +1125,24 @@ document.addEventListener('DOMContentLoaded', function() {
             businessPlans.forEach(p => {
                 const opt = document.createElement('option');
                 opt.value = String(p.id);
-                opt.textContent = p.name || `Plano ${p.id}`;
+                opt.textContent = p.name ? `${p.id} — ${p.name}` : `Plano ${p.id}`;
                 sel.appendChild(opt);
             });
             if (current && [...sel.options].some(o=>o.value===String(current))) sel.value = String(current);
+            updateEditPlanCodeDisplay();
         }catch(e){ console.warn('Falha ao popular planos empresariais (edição):', e); }
+    }
+
+    function updateEditPlanCodeDisplay(){
+        try{
+            const codeInput = document.getElementById('edit-plan-code');
+            if(!codeInput) return;
+            const isBiz = document.getElementById('edit-is-business')?.checked;
+            const selBiz = document.getElementById('edit-business-plan-select');
+            const selPer = document.getElementById('edit-personal-plan-select');
+            const val = isBiz ? (selBiz?.value || '') : (selPer?.value || '');
+            codeInput.value = val || '';
+        }catch(e){ /* noop */ }
     }
 
     // ========== GERENCIAMENTO DO CHART.JS ==========
@@ -3641,6 +3655,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (selBiz) { selBiz.disabled = false; selBiz.required = true; }
                 if (selPer) { selPer.disabled = true; selPer.required = false; }
                 console.debug('↪️ Edit Biz options:', selBiz ? selBiz.options.length : 0, 'selected:', selBiz ? selBiz.value : '');
+                updateEditPlanCodeDisplay();
             } else {
                 if (editBusinessContainer) editBusinessContainer.classList.add('hidden');
                 if (editPersonalContainer) editPersonalContainer.classList.remove('hidden');
@@ -3650,6 +3665,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (selPer) { selPer.disabled = false; selPer.required = true; }
                 if (selBiz) { selBiz.disabled = true; selBiz.required = false; }
                 console.debug('↪️ Edit Personal options:', selPer ? selPer.options.length : 0, 'selected:', selPer ? selPer.value : '');
+                updateEditPlanCodeDisplay();
             }
             // Alternar containers se usuário mudar o tipo no modal
             const editIsBiz = document.getElementById('edit-is-business');
@@ -3664,6 +3680,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         const selPer = document.getElementById('edit-personal-plan-select');
                         if (selBiz) { selBiz.disabled = false; selBiz.required = true; }
                         if (selPer) { selPer.disabled = true; selPer.required = false; }
+                        updateEditPlanCodeDisplay();
                     } else {
                         if (editBusinessContainer) editBusinessContainer.classList.add('hidden');
                         if (editPersonalContainer) editPersonalContainer.classList.remove('hidden');
@@ -3672,10 +3689,17 @@ document.addEventListener('DOMContentLoaded', function() {
                         const selPer = document.getElementById('edit-personal-plan-select');
                         if (selPer) { selPer.disabled = false; selPer.required = true; }
                         if (selBiz) { selBiz.disabled = true; selBiz.required = false; }
+                        updateEditPlanCodeDisplay();
                     }
                 });
                 editIsBiz.dataset._bound = '1';
             }
+
+            // Atualizar código quando o usuário trocar a opção manualmente
+            const selBiz2 = document.getElementById('edit-business-plan-select');
+            const selPer2 = document.getElementById('edit-personal-plan-select');
+            if (selBiz2 && !selBiz2.dataset._bound) { selBiz2.addEventListener('change', updateEditPlanCodeDisplay); selBiz2.dataset._bound = '1'; }
+            if (selPer2 && !selPer2.dataset._bound) { selPer2.addEventListener('change', updateEditPlanCodeDisplay); selPer2.dataset._bound = '1'; }
             
             // Mostrar/esconder upload de fatura
             toggleEditInvoiceUpload();
