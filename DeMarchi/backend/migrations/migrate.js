@@ -177,6 +177,51 @@ async function createDatabase() {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
     `);
     
+    // Criar tabela de planos de contas (chart_of_accounts)
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS chart_of_accounts (
+        id INT NOT NULL,
+        name VARCHAR(255) NOT NULL,
+        description VARCHAR(255) DEFAULT NULL,
+        default_budget DECIMAL(12,2) NOT NULL DEFAULT 0,
+        type ENUM('personal','business') NOT NULL,
+        active TINYINT(1) NOT NULL DEFAULT 1,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY (id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+    `);
+
+    // Seed inicial a partir do arquivo JSON se a tabela estiver vazia
+    try {
+      const [cntRows] = await connection.query('SELECT COUNT(*) AS c FROM chart_of_accounts');
+      const count = cntRows[0]?.c || 0;
+      if (count === 0) {
+        console.log('📥 Sem planos no banco. Carregando do JSON inicial...');
+        const accountsConfig = require('../config/accounts');
+        const data = accountsConfig.getChartOfAccounts();
+        const plans = Array.isArray(data?.plans) ? data.plans : [];
+        if (plans.length) {
+          const values = plans.map(p => [
+            parseInt(p.id,10),
+            String(p.name||''),
+            p.description ? String(p.description) : null,
+            Number(p.defaultBudget || 0),
+            (p.type||'personal')
+          ]);
+          await connection.query(
+            'INSERT INTO chart_of_accounts (id, name, description, default_budget, type) VALUES ? ON DUPLICATE KEY UPDATE name=VALUES(name), description=VALUES(description), default_budget=VALUES(default_budget), type=VALUES(type)'
+            , [values]
+          );
+          console.log(`✓ Seed de planos concluído (${plans.length} registros).`);
+        } else {
+          console.log('ℹ️ Nenhum plano no JSON para seed.');
+        }
+      }
+    } catch (se) {
+      console.log('⚠️  Aviso ao executar seed de planos:', se.message);
+    }
+
     // Criar índices (verificar se já existem primeiro)
     try {
       // Verificar se índices já existem

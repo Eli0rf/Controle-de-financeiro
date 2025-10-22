@@ -364,18 +364,30 @@ app.get('/health', async (req, res) => {
     }
 });
 
-// Expor configuração de planos de contas (somente leitura)
-app.get('/api/config/chart-of-accounts', (req, res) => {
+// Helpers para ler planos de contas do banco (e montar maps)
+async function loadChartOfAccountsFromDb() {
+    const [rows] = await pool.query(`SELECT id, name, description, default_budget AS defaultBudget, type FROM chart_of_accounts WHERE active = 1 ORDER BY id`);
+    const plans = rows.map(r => ({ id: r.id, name: r.name, description: r.description, defaultBudget: Number(r.defaultBudget || 0), type: r.type }));
+    const maps = { budgets: {}, names: {}, descriptions: {}, types: {} };
+    for (const p of plans) {
+        maps.budgets[p.id] = Number(p.defaultBudget || 0);
+        maps.names[p.id] = p.name;
+        if (p.description) maps.descriptions[p.id] = p.description;
+        if (p.type) maps.types[p.id] = p.type;
+    }
+    return { ok: true, version: 1, generatedAt: new Date().toISOString(), plans, maps };
+}
+async function getPlanTypesMapFromDb() {
+    const [rows] = await pool.query(`SELECT id, type FROM chart_of_accounts WHERE active = 1`);
+    const types = {}; rows.forEach(r => { types[Number(r.id)] = r.type; });
+    return types;
+}
+
+// Expor configuração de planos de contas (somente leitura) a partir do banco
+app.get('/api/config/chart-of-accounts', async (req, res) => {
     try {
-        const data = accountsConfig.getChartOfAccounts();
-        const maps = accountsConfig.asMaps();
-        res.json({
-            ok: true,
-            version: data.version || 1,
-            generatedAt: data.generatedAt || null,
-            plans: data.plans || [],
-            maps
-        });
+        const data = await loadChartOfAccountsFromDb();
+        res.json(data);
     } catch (e) {
         res.status(500).json({ ok: false, error: 'Failed to load chart of accounts', message: e.message });
     }
@@ -383,22 +395,35 @@ app.get('/api/config/chart-of-accounts', (req, res) => {
 
 // Rotas administrativas para planos de contas
 const { authenticateToken } = require('./middleware/authMiddleware');
-app.get('/api/admin/chart-of-accounts', authenticateToken, (req,res)=>{
-    try { res.json(accountsConfig.getChartOfAccounts()); } catch(e){ res.status(500).json({error:e.message}); }
+app.get('/api/admin/chart-of-accounts', authenticateToken, async (req,res)=>{
+    try { const data = await loadChartOfAccountsFromDb(); res.json(data); } catch(e){ res.status(500).json({error:e.message}); }
 });
-app.post('/api/admin/chart-of-accounts/plan', authenticateToken, (req,res)=>{
+app.post('/api/admin/chart-of-accounts/plan', authenticateToken, async (req,res)=>{
     try {
         const plan = req.body;
         if(!plan || plan.id==null) return res.status(400).json({error:'id é obrigatório'});
-        const updated = accountsConfig.upsertPlan(plan);
-        res.json({ ok:true, data: updated });
+        const id = parseInt(plan.id, 10);
+        const name = String(plan.name || '').trim();
+        const description = plan.description ? String(plan.description) : null;
+        const defaultBudget = Number(plan.defaultBudget || 0);
+        const type = (plan.type||'personal');
+        if (!name || !['personal','business'].includes(type)) return res.status(400).json({ error: 'Dados inválidos' });
+        await pool.query(
+            `INSERT INTO chart_of_accounts (id, name, description, default_budget, type, active) 
+             VALUES (?,?,?,?,?,1)
+             ON DUPLICATE KEY UPDATE name=VALUES(name), description=VALUES(description), default_budget=VALUES(default_budget), type=VALUES(type), active=1`,
+            [id, name, description, defaultBudget, type]
+        );
+        const data = await loadChartOfAccountsFromDb();
+        res.json({ ok:true, data });
     } catch(e){ res.status(500).json({ ok:false, error: e.message }); }
 });
-app.delete('/api/admin/chart-of-accounts/plan/:id', authenticateToken, (req,res)=>{
+app.delete('/api/admin/chart-of-accounts/plan/:id', authenticateToken, async (req,res)=>{
     try {
         const { id } = req.params;
-        const updated = accountsConfig.deletePlan(id);
-        res.json({ ok:true, data: updated });
+        await pool.query('DELETE FROM chart_of_accounts WHERE id = ?', [parseInt(id,10)]);
+        const data = await loadChartOfAccountsFromDb();
+        res.json({ ok:true, data });
     } catch(e){ res.status(500).json({ ok:false, error: e.message }); }
 });
 
@@ -1120,7 +1145,7 @@ app.post('/api/expenses', authenticateToken, upload.single('invoice'), async (re
         let finalIsBusiness = 0;
         let finalAccountPlanCode = null;
         if (account_plan_code) {
-            const { types } = accountsConfig.asMaps();
+            const types = await getPlanTypesMapFromDb();
             const code = parseInt(account_plan_code, 10);
             const planType = types && types[code];
             if (!planType) {
@@ -1315,7 +1340,7 @@ app.get('/api/expenses/history', authenticateToken, async (req, res) => {
         sql += ' ORDER BY transaction_date ASC';
 
     const [rows] = await pool.query(sql, params);
-    const { types } = accountsConfig.asMaps();
+    const types = await getPlanTypesMapFromDb();
     const rowsWithType = rows.map(r => ({...r, planType: (r.account_plan_code != null && types[Number(r.account_plan_code)]) || null }));
 
         if (aggregate === 'true') {
@@ -1387,7 +1412,7 @@ app.put('/api/expenses/:id', authenticateToken, upload.single('invoice'), async 
         let finalIsBusiness;
         let finalAccountPlanCode;
         if (account_plan_code) {
-            const { types } = accountsConfig.asMaps();
+            const types = await getPlanTypesMapFromDb();
             const code = parseInt(account_plan_code, 10);
             const planType = types && types[code];
             if (!planType) {
