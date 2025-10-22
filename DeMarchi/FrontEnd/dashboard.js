@@ -1014,24 +1014,26 @@ document.addEventListener('DOMContentLoaded', function() {
                 data = await loadChartOfAccountsConfig(true);
             }
             const plans = (data && data.plans) || [];
-            let personalPlans = plans.filter(p => (p.type||'').toLowerCase() === 'personal');
-            if (personalPlans.length === 0 && plans.length > 0) {
-                // Fallback: se não houver tipo, usar todos os planos
-                personalPlans = plans;
-            }
+            // Filtra ESTRITAMENTE por planos pessoais
+            const personalPlans = plans.filter(p => (p.type||'').toLowerCase() === 'personal');
             const current = sel.value;
             sel.innerHTML = '';
             const placeholder = document.createElement('option');
             placeholder.value = '';
             placeholder.textContent = 'Selecione um plano pessoal…';
             sel.appendChild(placeholder);
-            personalPlans.forEach(p => {
-                const opt = document.createElement('option');
-                opt.value = String(p.id);
-                opt.textContent = p.name ? `${p.id} — ${p.name}` : `Plano ${p.id}`;
-                sel.appendChild(opt);
-            });
-            console.debug('✅ Planos pessoais carregados:', personalPlans.length);
+            if (personalPlans.length === 0) {
+                console.warn('⚠️ Nenhum plano pessoal encontrado para o formulário de inserção.');
+                try { showNotification('Nenhum plano pessoal cadastrado no Admin Planos.', 'warning'); } catch {}
+            } else {
+                personalPlans.forEach(p => {
+                    const opt = document.createElement('option');
+                    opt.value = String(p.id);
+                    opt.textContent = p.name ? `${p.id} — ${p.name}` : `Plano ${p.id}`;
+                    sel.appendChild(opt);
+                });
+                console.debug('✅ Planos pessoais carregados:', personalPlans.length);
+            }
             if (current && [...sel.options].some(o=>o.value===current)) sel.value = current;
             updateAddPlanCodeDisplay();
         }catch(e){ console.warn('Falha ao popular planos pessoais:', e); }
