@@ -6767,6 +6767,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     window.PLAN_NAMES = parsed.maps.names || {};
                     window.PLAN_DESCRIPTIONS = parsed.maps.descriptions || {};
                     window.PLAN_TYPES = parsed.maps.types || {};
+                    console.info('📦 Planos carregados via CACHE (sessionStorage)', { plans: (parsed.plans||[]).length, when: parsed.generatedAt || new Date().toISOString() });
                     return parsed;
                 }
             }
@@ -6781,12 +6782,12 @@ document.addEventListener('DOMContentLoaded', function() {
                     });
                     if (adminResp.ok) {
                         data = await adminResp.json();
-                        console.debug('📥 Planos carregados via ADMIN endpoint');
+                        console.info('📥 Planos carregados via ADMIN endpoint', { status: adminResp.status, count: (data.plans||[]).length });
                     } else {
-                        console.debug('Admin GET falhou ou indisponível:', adminResp.status);
+                        console.warn('Admin GET falhou ou indisponível:', adminResp.status);
                     }
                 } catch (e) {
-                    console.debug('Admin GET erro:', e.message);
+                    console.warn('Admin GET erro:', e.message);
                 }
             }
             if (!data) {
@@ -6794,7 +6795,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 const resp = await fetch(`${API_BASE_URL}/api/config/chart-of-accounts`, { credentials: 'omit', mode: 'cors' });
                 if(!resp.ok) throw new Error(`Config HTTP ${resp.status}`);
                 data = await resp.json();
-                console.debug('📥 Planos carregados via endpoint PÚBLICO');
+                console.info('📥 Planos carregados via endpoint PÚBLICO', { status: resp.status, count: (data.plans||[]).length });
             }
             sessionStorage.setItem(cacheKey, JSON.stringify(data));
             window.PLAN_BUDGETS = (data.maps && data.maps.budgets) || {};
@@ -6809,6 +6810,20 @@ document.addEventListener('DOMContentLoaded', function() {
             window.PLAN_DESCRIPTIONS = window.PLAN_DESCRIPTIONS || {};
             return null;
         }
+    }
+
+    // Helper para forçar recarregar planos (limpa cache e repopula selects)
+    window.reloadChartOfAccounts = async function(){
+        try{
+            console.info('🔄 Forçando recarga dos planos (limpando cache)…');
+            sessionStorage.removeItem('chartOfAccounts');
+            const data = await loadChartOfAccountsConfig(true);
+            // repopular selects do formulário principal (se existirem)
+            try { await populatePersonalPlanSelect(); } catch {}
+            try { await populateBusinessPlanSelect(); } catch {}
+            console.info('✅ Planos recarregados', { count: (data?.plans||[]).length });
+            return data;
+        }catch(e){ console.warn('Falha ao recarregar planos:', e); return null; }
     }
 
     // Helpers para obter orçamento e nome a partir da configuração central, com fallback
