@@ -6762,13 +6762,20 @@ document.addEventListener('DOMContentLoaded', function() {
             const cached = sessionStorage.getItem(cacheKey);
             if(!force && cached){
                 const parsed = JSON.parse(cached);
-                if(parsed && parsed.maps){
+                // TTL para cache (1 hora) — evita planos defasados
+                const TTL_MS = 60 * 60 * 1000;
+                const genAt = parsed?.generatedAt || parsed?.generated_at;
+                const genMs = genAt ? Date.parse(genAt) : 0;
+                const isStale = !genMs || (Date.now() - genMs) > TTL_MS;
+                if(parsed && parsed.maps && !isStale){
                     window.PLAN_BUDGETS = parsed.maps.budgets || {};
                     window.PLAN_NAMES = parsed.maps.names || {};
                     window.PLAN_DESCRIPTIONS = parsed.maps.descriptions || {};
                     window.PLAN_TYPES = parsed.maps.types || {};
-                    console.info('📦 Planos carregados via CACHE (sessionStorage)', { plans: (parsed.plans||[]).length, when: parsed.generatedAt || new Date().toISOString() });
+                    console.info('📦 Planos carregados via CACHE (sessionStorage)', { plans: (parsed.plans||[]).length, when: genAt || new Date().toISOString() });
                     return parsed;
+                } else {
+                    console.info('⏱️ Cache de planos ausente/obsoleto — forçando atualização', { when: genAt || null });
                 }
             }
             // Tentar primeiro via endpoint ADMIN (se autenticado), depois cair para público
