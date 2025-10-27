@@ -859,9 +859,23 @@ document.addEventListener('DOMContentLoaded', function() {
         
         // Event listener para botão de análise de tendências
         const budgetProjectionBtn = document.getElementById('budget-projection');
-        if (budgetProjectionBtn) {
-            budgetProjectionBtn.addEventListener('click', showBudgetProjection);
-            console.log('📊 Event listener do botão Projeção Mensal adicionado');
+        if (budgetProjectionBtn && !budgetProjectionBtn.dataset._projectionBound) {
+            if (typeof showBudgetProjection === 'function') {
+                budgetProjectionBtn.addEventListener('click', showBudgetProjection);
+                budgetProjectionBtn.dataset._projectionBound = '1';
+                console.log('📊 Event listener do botão Projeção Mensal adicionado');
+            } else {
+                // Fallback: adia o binding até a função existir ou usa um wrapper seguro
+                console.warn('⚠️ showBudgetProjection não está definido no momento do bind; usando wrapper seguro');
+                budgetProjectionBtn.addEventListener('click', async () => {
+                    if (typeof showBudgetProjection === 'function') {
+                        await showBudgetProjection();
+                    } else {
+                        showNotification('Função de projeção indisponível no momento.', 'error');
+                    }
+                });
+                budgetProjectionBtn.dataset._projectionBound = '1';
+            }
         } else {
             console.warn('⚠️ Botão budget-projection não encontrado no DOM');
         }
@@ -7882,10 +7896,13 @@ document.addEventListener('DOMContentLoaded', function() {
 
             // Botão de projeção mensal (gera PDF de tendências)
             const budgetProjectionBtn = document.getElementById('budget-projection');
-            if (budgetProjectionBtn) {
+            if (budgetProjectionBtn && !budgetProjectionBtn.dataset._projectionBound) {
                 budgetProjectionBtn.addEventListener('click', async () => {
-                    await showBudgetProjection();
+                    if (typeof showBudgetProjection === 'function') {
+                        await showBudgetProjection();
+                    }
                 });
+                budgetProjectionBtn.dataset._projectionBound = '1';
             }
 
         function generateDetailedReport() {
