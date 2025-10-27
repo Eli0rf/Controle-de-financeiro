@@ -103,6 +103,10 @@ document.addEventListener('DOMContentLoaded', function() {
     
     const chartUsageInsights = document.getElementById('chart-usage-insights');
     const chartDetailsTbody = document.getElementById('chart-details-tbody');
+    // Controles de análise de gráficos (IDs existem no HTML)
+    const analyzeChartUsageBtn = document.getElementById('analyze-chart-usage');
+    const chartAnalysisPeriod = document.getElementById('chart-analysis-period');
+    const chartAnalysisType = document.getElementById('chart-analysis-type');
     
     // Charts para análise de plano de contas
     let chartAnalysisChart = null;
