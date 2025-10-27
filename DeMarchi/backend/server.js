@@ -120,6 +120,42 @@ function ensurePrimaryFont(){
 async function generateSimplePDF(expenses, total, startDate, endDate, contaNome, year, month, opts={}){
     const doc = new pdfkit({ margin: 35, size: 'A4' });
     try { const f=ensurePrimaryFont(); if(f){ doc.registerFont('NotoSans', f); doc.font('NotoSans'); } } catch(e){ /* ignore */ }
+    // Paleta de cores acessível (inspirada em Okabe–Ito + Tailwind)
+    const palette = {
+        bg: '#FFFFFF',
+        text: '#1F2937',           // slate-800
+        textMuted: '#475569',      // slate-600
+        textSoft: '#64748B',       // slate-500
+        textStrong: '#0F172A',     // slate-900
+        border: '#E5E7EB',         // gray-200
+        surface: '#F8FAFC',        // slate-50
+        surfaceAlt: '#EEF2FF',     // indigo-50
+        primary: '#1D4ED8',        // blue-700
+        secondary: '#0EA5E9',      // sky-500
+        success: '#16A34A',        // green-600
+        warning: '#F59E0B',        // amber-500
+        danger: '#DC2626',         // red-600
+        info: '#6366F1',           // indigo-500
+        accentLine: '#CBD5E1'      // slate-300
+    };
+    // Página atual para numerador
+    let pageIndex = 1;
+    const drawPageNumber = () => {
+        doc.fontSize(10).fillColor('#E2E8F0').text(`Página ${pageIndex}`,
+            doc.page.width - 90, 20, { width: 80, align: 'right' });
+    };
+    const sectionTitle = (text, y = 50) => {
+        doc.fontSize(16).fillColor(palette.textStrong).text(text, 40, y);
+        doc.moveTo(40, y + 18).lineTo(doc.page.width - 40, y + 18).stroke(palette.accentLine);
+    };
+    const newPageWithTitle = (text) => {
+        doc.addPage();
+        pageIndex += 1;
+        // Cabeçalho leve com número da página
+        doc.fontSize(10).fillColor(palette.textSoft).text(`Página ${pageIndex}`,
+            doc.page.width - 90, 20, { width: 80, align: 'right' });
+        sectionTitle(text, 50);
+    };
     const safeExpenses = Array.isArray(expenses) ? expenses : [];
     const totalPessoal = safeExpenses.filter(e=>!e.is_business_expense).reduce((s,e)=>s+parseFloat(e.amount||0),0);
     const totalEmp = safeExpenses.filter(e=>e.is_business_expense).reduce((s,e)=>s+parseFloat(e.amount||0),0);
@@ -136,29 +172,32 @@ async function generateSimplePDF(expenses, total, startDate, endDate, contaNome,
     };
     try {
         // Capa / Header
-        const grad = doc.linearGradient(0,0,0,140); grad.stop(0,'#0F172A').stop(1,'#1E3A8A');
+    const grad = doc.linearGradient(0,0,0,140); grad.stop(0,'#0F172A').stop(1,'#0EA5E9');
         doc.rect(0,0,doc.page.width,140).fill(grad);
         doc.fillColor('#FFFFFF').fontSize(26).text('RELATÓRIO FINANCEIRO MENSAL',40,40,{width:doc.page.width-80});
-        doc.fontSize(13).fillColor('#E2E8F0').text(`${monthNames[month-1]}/${year} • ${contaNome}`,40,90);
-        doc.fontSize(10).fillColor('#94A3B8').text(`Gerado em ${new Date().toLocaleString('pt-BR')}`,40,108);
+    doc.fontSize(13).fillColor('#E2E8F0').text(`${monthNames[month-1]}/${year} • ${contaNome}`,40,90);
+    doc.fontSize(10).fillColor('#94A3B8').text(`Gerado em ${new Date().toLocaleString('pt-BR')}`,40,108);
+    drawPageNumber();
 
         doc.moveDown();
         doc.y = 155;
         // Resumo Geral (cards)
         const cardW = (doc.page.width-80)/3; const y0 = doc.y; const cardH=90;
         function card(x,color,title,value,sub){
-            doc.roundedRect(x,y0,cardW,cardH,10).fill(color); doc.fillColor('#FFFFFF').fontSize(12).text(title,x+12,y0+14,{width:cardW-24});
-            doc.fontSize(18).text(value,x+12,y0+38,{width:cardW-24});
-            doc.fontSize(10).fillColor('#F1F5F9').text(sub,x+12,y0+64,{width:cardW-24});
+            // Cartão com cor sólida acessível
+            doc.roundedRect(x,y0,cardW,cardH,10).fill(color);
+            doc.fillColor('#FFFFFF').fontSize(12).text(title,x+12,y0+14,{width:cardW-24});
+            doc.fontSize(20).text(value,x+12,y0+38,{width:cardW-24});
+            doc.fontSize(10).fillColor('#E5E7EB').text(sub,x+12,y0+64,{width:cardW-24});
         }
         const totalFmt = `R$ ${total.toLocaleString('pt-BR',{minimumFractionDigits:2})}`;
-        card(40,'#2563EB','💰 Total Geral', totalFmt, `${safeExpenses.length} transações`);
-        card(40+cardW+10,'#10B981','🏠 Pessoal', `R$ ${totalPessoal.toLocaleString('pt-BR',{minimumFractionDigits:2})}`, `${total>0?(totalPessoal/total*100).toFixed(1):0}% do total`);
-        card(40+2*(cardW+10),'#F59E0B','💼 Empresarial', `R$ ${totalEmp.toLocaleString('pt-BR',{minimumFractionDigits:2})}`, `${total>0?(totalEmp/total*100).toFixed(1):0}% do total`);
+        card(40, palette.primary,'💰 Total Geral', totalFmt, `${safeExpenses.length} transações`);
+        card(40+cardW+10, palette.success,'🏠 Pessoal', `R$ ${totalPessoal.toLocaleString('pt-BR',{minimumFractionDigits:2})}`, `${total>0?(totalPessoal/total*100).toFixed(1):0}% do total`);
+        card(40+2*(cardW+10), palette.warning,'💼 Empresarial', `R$ ${totalEmp.toLocaleString('pt-BR',{minimumFractionDigits:2})}`, `${total>0?(totalEmp/total*100).toFixed(1):0}% do total`);
         doc.y = y0 + cardH + 18;
 
         // Checklist do Conteúdo (explícito conforme solicitado)
-        doc.fontSize(13).fillColor('#0F172A').text('📊 O que será incluído no relatório:',40,doc.y); doc.moveDown(0.3);
+    doc.fontSize(13).fillColor(palette.textStrong).text('📊 O que será incluído no relatório:',40,doc.y); doc.moveDown(0.3);
         const checklist = [
             '✅ Resumo geral de gastos (Pessoal vs Empresarial)',
             '✅ 🥧 Distribuição por Plano de Conta (Pizza)',
@@ -174,7 +213,7 @@ async function generateSimplePDF(expenses, total, startDate, endDate, contaNome,
             '✅ Detalhamento de gastos empresariais',
             '✅ Lista completa de todas as despesas do período'
         ];
-        doc.fontSize(9).fillColor('#334155');
+    doc.fontSize(9).fillColor(palette.textSoft);
         checklist.forEach(item=>{ if(doc.y>doc.page.height-70){ doc.addPage(); } doc.text(item,50,doc.y,{width:doc.page.width-100}); doc.moveDown(0.3); });
 
         // Divisão por Plano de Conta — Pessoal e Empresarial (antes dos gráficos)
@@ -186,58 +225,63 @@ async function generateSimplePDF(expenses, total, startDate, endDate, contaNome,
         });
 
         // Seção Pessoal
-        doc.addPage();
-        doc.fontSize(16).fillColor('#1F2937').text('🏠 Análise por Plano de Conta — Pessoal',40,50);
+        newPageWithTitle('🏠 Análise por Plano de Conta — Pessoal');
         let tyP = 80; doc.fontSize(9).fillColor('#374151');
         const totalPersonalType = Object.values(byPlanPersonal).reduce((a,b)=>a+b,0);
         // Cabeçalho
-        doc.text('Plano',40,tyP); doc.text('Valor (R$)',200,tyP,{align:'right',width:120}); doc.text('%',330,tyP,{align:'right',width:40}); doc.text('Teto',380,tyP,{align:'right',width:80}); doc.text('Uso',470,tyP,{align:'left',width:60});
-        doc.moveTo(40,tyP+12).lineTo(doc.page.width-40,tyP+12).stroke('#E5E7EB'); tyP+=18;
+        doc.rect(40,tyP-4, doc.page.width-80,16).fill(palette.surface);
+        doc.fillColor(palette.text).text('Plano',40,tyP); doc.text('Valor (R$)',200,tyP,{align:'right',width:120}); doc.text('%',330,tyP,{align:'right',width:40}); doc.text('Teto',380,tyP,{align:'right',width:80}); doc.text('Uso',470,tyP,{align:'left',width:60});
+        doc.moveTo(40,tyP+12).lineTo(doc.page.width-40,tyP+12).stroke(palette.border); tyP+=18;
         let rowP = 0;
         Object.entries(byPlanPersonal).sort((a,b)=>b[1]-a[1]).forEach(([p,v])=>{
-            if(tyP>doc.page.height-70){ doc.addPage(); tyP=60; doc.fontSize(14).fillColor('#1F2937').text('🏠 Análise por Plano de Conta — Pessoal (cont.)',40,tyP); tyP+=20; doc.fontSize(9).fillColor('#374151'); }
+            if(tyP>doc.page.height-70){ doc.addPage(); pageIndex+=1; doc.fontSize(10).fillColor(palette.textSoft).text(`Página ${pageIndex}`, doc.page.width-90, 20, { width: 80, align:'right' }); doc.fontSize(14).fillColor(palette.text).text('🏠 Análise por Plano de Conta — Pessoal (cont.)',40,60); tyP=80; doc.fontSize(9).fillColor('#374151'); }
             const pct = totalPersonalType>0? (v/totalPersonalType*100) : 0;
             const code = p==='Sem Plano'? null : Number(p);
             const teto = code? (planBudgets[code]||0) : 0;
             const usedPct = teto>0? (v/teto*100) : 0;
-            const bg = (rowP++ % 2===0)? '#F8FAFC':'#FFFFFF';
+            const bg = (rowP++ % 2===0)? palette.surface:'#FFFFFF';
             doc.rect(40,tyP-4, doc.page.width-80,20).fill(bg);
-            doc.fillColor('#1F2937').fontSize(9).text(planDisplay(p),45,tyP);
+            doc.fillColor(palette.text).fontSize(9).text(planDisplay(p),45,tyP);
             doc.text(v.toLocaleString('pt-BR',{minimumFractionDigits:2}),200,tyP,{width:120,align:'right'});
             doc.text(pct.toFixed(1)+'%',330,tyP,{width:40,align:'right'});
             doc.text(teto>0? teto.toLocaleString('pt-BR',{minimumFractionDigits:2}) : '—',380,tyP,{width:80,align:'right'});
             // Barra de uso
             const barW = doc.page.width - 520; const used = Math.min(1, usedPct/100);
-            doc.rect(470,tyP+10,barW,6).fill('#E5E7EB');
-            doc.rect(470,tyP+10,Math.max(4,barW*used),6).fill(usedPct>100?'#DC2626':usedPct>=90?'#D97706':usedPct>=70?'#2563EB':'#10B981');
+            doc.rect(470,tyP+10,barW,6).fill(palette.border);
+            doc.rect(470,tyP+10,Math.max(4,barW*used),6).fill(usedPct>100?palette.danger:usedPct>=90?palette.warning:usedPct>=70?palette.secondary:palette.success);
+            // Rótulo percentual ao lado da barra
+            const pctTextX = Math.min(doc.page.width - 70, 470 + barW + 8);
+            doc.fillColor(palette.textMuted).fontSize(9).text(`${Math.round(usedPct)}%`, pctTextX, tyP+7, { width: 40, align:'left' });
             tyP+=20;
         });
 
         // Seção Empresarial
-        doc.addPage();
-        doc.fontSize(16).fillColor('#1F2937').text('💼 Análise por Plano de Conta — Empresarial',40,50);
+        newPageWithTitle('💼 Análise por Plano de Conta — Empresarial');
         let tyB = 80; doc.fontSize(9).fillColor('#374151');
         const totalBusinessType = Object.values(byPlanBusiness).reduce((a,b)=>a+b,0);
         // Cabeçalho
-        doc.text('Plano',40,tyB); doc.text('Valor (R$)',200,tyB,{align:'right',width:120}); doc.text('%',330,tyB,{align:'right',width:40}); doc.text('Teto',380,tyB,{align:'right',width:80}); doc.text('Uso',470,tyB,{align:'left',width:60});
-        doc.moveTo(40,tyB+12).lineTo(doc.page.width-40,tyB+12).stroke('#E5E7EB'); tyB+=18;
+        doc.rect(40,tyB-4, doc.page.width-80,16).fill(palette.surface);
+        doc.fillColor(palette.text).text('Plano',40,tyB); doc.text('Valor (R$)',200,tyB,{align:'right',width:120}); doc.text('%',330,tyB,{align:'right',width:40}); doc.text('Teto',380,tyB,{align:'right',width:80}); doc.text('Uso',470,tyB,{align:'left',width:60});
+        doc.moveTo(40,tyB+12).lineTo(doc.page.width-40,tyB+12).stroke(palette.border); tyB+=18;
         let rowB = 0;
         Object.entries(byPlanBusiness).sort((a,b)=>b[1]-a[1]).forEach(([p,v])=>{
-            if(tyB>doc.page.height-70){ doc.addPage(); tyB=60; doc.fontSize(14).fillColor('#1F2937').text('💼 Análise por Plano de Conta — Empresarial (cont.)',40,tyB); tyB+=20; doc.fontSize(9).fillColor('#374151'); }
+            if(tyB>doc.page.height-70){ doc.addPage(); pageIndex+=1; doc.fontSize(10).fillColor(palette.textSoft).text(`Página ${pageIndex}`, doc.page.width-90, 20, { width: 80, align:'right' }); doc.fontSize(14).fillColor(palette.text).text('💼 Análise por Plano de Conta — Empresarial (cont.)',40,60); tyB=80; doc.fontSize(9).fillColor('#374151'); }
             const pct = totalBusinessType>0? (v/totalBusinessType*100) : 0;
             const code = p==='Sem Plano'? null : Number(p);
             const teto = code? (planBudgets[code]||0) : 0;
             const usedPct = teto>0? (v/teto*100) : 0;
-            const bg = (rowB++ % 2===0)? '#F8FAFC':'#FFFFFF';
+            const bg = (rowB++ % 2===0)? palette.surface:'#FFFFFF';
             doc.rect(40,tyB-4, doc.page.width-80,20).fill(bg);
-            doc.fillColor('#1F2937').fontSize(9).text(planDisplay(p),45,tyB);
+            doc.fillColor(palette.text).fontSize(9).text(planDisplay(p),45,tyB);
             doc.text(v.toLocaleString('pt-BR',{minimumFractionDigits:2}),200,tyB,{width:120,align:'right'});
             doc.text(pct.toFixed(1)+'%',330,tyB,{width:40,align:'right'});
             doc.text(teto>0? teto.toLocaleString('pt-BR',{minimumFractionDigits:2}) : '—',380,tyB,{width:80,align:'right'});
             // Barra de uso
             const barWB = doc.page.width - 520; const usedB = Math.min(1, usedPct/100);
-            doc.rect(470,tyB+10,barWB,6).fill('#E5E7EB');
-            doc.rect(470,tyB+10,Math.max(4,barWB*usedB),6).fill(usedPct>100?'#DC2626':usedPct>=90?'#D97706':usedPct>=70?'#2563EB':'#10B981');
+            doc.rect(470,tyB+10,barWB,6).fill(palette.border);
+            doc.rect(470,tyB+10,Math.max(4,barWB*usedB),6).fill(usedPct>100?palette.danger:usedPct>=90?palette.warning:usedPct>=70?palette.secondary:palette.success);
+            const pctTextXB = Math.min(doc.page.width - 70, 470 + barWB + 8);
+            doc.fillColor(palette.textMuted).fontSize(9).text(`${Math.round(usedPct)}%`, pctTextXB, tyB+7, { width: 40, align:'left' });
             tyB+=20;
         });
 
@@ -246,8 +290,7 @@ async function generateSimplePDF(expenses, total, startDate, endDate, contaNome,
         const byAccount={}; safeExpenses.forEach(e=>{const c=e.account||'Sem Conta'; byAccount[c]=(byAccount[c]||0)+parseFloat(e.amount||0);});
         const byDay={}; safeExpenses.forEach(e=>{ const d=new Date(e.transaction_date); const key = d.toISOString().slice(0,10); byDay[key]=(byDay[key]||0)+parseFloat(e.amount||0); });
         if(opts.enableCharts!==false){
-            doc.addPage();
-            doc.fontSize(16).fillColor('#0F172A').text('📊 Visão Gráfica',40,40);
+            newPageWithTitle('📊 Visão Gráfica');
             try {
                 const { ChartJSNodeCanvas } = require('chartjs-node-canvas');
                 const width=480, height=260; const chart = new ChartJSNodeCanvas({width,height,backgroundColour:'#FFFFFF'});
@@ -293,7 +336,7 @@ async function generateSimplePDF(expenses, total, startDate, endDate, contaNome,
                 const showLegendPie = !(opts.legendSummary && manyPlansForPie);
                 const pieCfg={
                     type:'pie',
-                    data:{labels:pieLabels,datasets:[{data:pieValues,backgroundColor:['#2563EB','#10B981','#F59E0B','#6366F1','#EF4444','#0D9488','#D946EF','#94A3B8']} ]},
+                    data:{labels:pieLabels,datasets:[{data:pieValues,backgroundColor:['#56B4E9','#E69F00','#009E73','#F0E442','#0072B2','#D55E00','#CC79A7','#999999']} ]},
                     options:{plugins:{legend:{display:showLegendPie,position:'bottom',labels:{boxWidth:12,font:{size:9}}},tooltip:{enabled:true}}},
                     plugins:[valueLabelPlugin]
                 };
@@ -304,7 +347,7 @@ async function generateSimplePDF(expenses, total, startDate, endDate, contaNome,
                 const sortedAcc = Object.entries(byAccount).sort((a,b)=>b[1]-a[1]);
                 const barCfg={
                     type:'bar',
-                    data:{labels:sortedAcc.map(x=>x[0]),datasets:[{label:'Gasto (R$)',data:sortedAcc.map(x=>x[1]),backgroundColor:'#2563EB'}]},
+                    data:{labels:sortedAcc.map(x=>x[0]),datasets:[{label:'Gasto (R$)',data:sortedAcc.map(x=>x[1]),backgroundColor:'#0072B2'}]},
                     options:{plugins:{legend:{display:true,position:'bottom',labels:{font:{size:9}}},tooltip:{enabled:true}},scales:{x:{ticks:{display:false}},y:{display:false}}},
                     plugins:[valueLabelPlugin]
                 };
@@ -313,7 +356,7 @@ async function generateSimplePDF(expenses, total, startDate, endDate, contaNome,
                 // Donut Pessoal vs Empresarial
                 const donutCfg={
                     type:'doughnut',
-                    data:{labels:['Pessoal','Empresarial'],datasets:[{data:[totalPessoal,totalEmp],backgroundColor:['#10B981','#F59E0B']} ]},
+                    data:{labels:['Pessoal','Empresarial'],datasets:[{data:[totalPessoal,totalEmp],backgroundColor:['#009E73','#E69F00']} ]},
                     options:{plugins:{legend:{display:true,position:'bottom',labels:{font:{size:9}}},tooltip:{enabled:true}},cutout:'55%'},
                     plugins:[valueLabelPlugin]
                 };
@@ -323,7 +366,7 @@ async function generateSimplePDF(expenses, total, startDate, endDate, contaNome,
                 const daysSorted = Object.keys(byDay).sort(); const dailyValues = daysSorted.map(d=> byDay[d]);
                 const lineCfg={
                     type:'line',
-                    data:{labels:daysSorted.map(d=>d.slice(8,10)),datasets:[{label:'Dia',data:dailyValues,borderColor:'#6366F1',pointBackgroundColor:'#6366F1',pointRadius:3,backgroundColor:'rgba(99,102,241,0.3)',tension:0.3,fill:true}]},
+                    data:{labels:daysSorted.map(d=>d.slice(8,10)),datasets:[{label:'Dia',data:dailyValues,borderColor:'#56B4E9',pointBackgroundColor:'#56B4E9',pointRadius:3,backgroundColor:'rgba(86,180,233,0.25)',tension:0.3,fill:true}]},
                     options:{plugins:{legend:{display:true,position:'bottom',labels:{font:{size:9}}},tooltip:{enabled:true}},scales:{x:{display:false},y:{display:false}}},
                     plugins:[valueLabelPlugin]
                 };
@@ -332,82 +375,77 @@ async function generateSimplePDF(expenses, total, startDate, endDate, contaNome,
         }
 
         // Distribuição por Plano (tabela resumida)
-        doc.addPage();
-        doc.fontSize(14).fillColor('#0F172A').text('🥧 Distribuição por Plano de Conta',40,50);
+        newPageWithTitle('🥧 Distribuição por Plano de Conta');
         const sortedPlans2 = Object.entries(byPlan).sort((a,b)=>b[1]-a[1]);
-        doc.moveDown(0.5); doc.fontSize(9).fillColor('#374151');
+        doc.moveDown(0.5); doc.fontSize(9).fillColor(palette.textMuted);
         let ty = doc.y; doc.text('Plano',40,ty); doc.text('Valor (R$)',240,ty,{align:'right',width:120}); doc.text('%',380,ty,{align:'right',width:50});
-        doc.moveTo(40,ty+12).lineTo(doc.page.width-40,ty+12).stroke('#E5E7EB'); ty+=18;
+        doc.moveTo(40,ty+12).lineTo(doc.page.width-40,ty+12).stroke(palette.border); ty+=18;
         sortedPlans2.forEach(([p,v],i)=>{ const pct = total>0?(v/total*100).toFixed(1):'0.0'; if(ty>doc.page.height-80){ doc.addPage(); ty=60; }
-            const bg = i%2===0?'#F8FAFC':'#FFFFFF'; doc.rect(40,ty-4, doc.page.width-80,16).fill(bg);
-            doc.fillColor('#1F2937').fontSize(9).text(planDisplay(p),45,ty); doc.text(v.toLocaleString('pt-BR',{minimumFractionDigits:2}),240,ty,{width:120,align:'right'}); doc.text(pct+'%',380,ty,{width:50,align:'right'}); ty+=18; });
+            const bg = i%2===0?palette.surface:'#FFFFFF'; doc.rect(40,ty-4, doc.page.width-80,16).fill(bg);
+            doc.fillColor(palette.text).fontSize(9).text(planDisplay(p),45,ty); doc.text(v.toLocaleString('pt-BR',{minimumFractionDigits:2}),240,ty,{width:120,align:'right'}); doc.text(pct+'%',380,ty,{width:50,align:'right'}); ty+=18; });
         doc.y = ty + 10;
 
         // Limites vs Gastos
         if (planBudgets && Object.keys(planBudgets).length) {
-            doc.addPage();
-            doc.fontSize(14).fillColor('#0F172A').text('🎯 Análise de Limites vs Gastos / Comparativo Tetos',40,50); doc.moveDown(0.5);
+            newPageWithTitle('🎯 Análise de Limites vs Gastos / Comparativo Tetos'); doc.moveDown(0.5);
             const perPlan = sortedPlans2; // todos os planos
             let ly = doc.y;
-            perPlan.forEach(([p,v])=>{ const code = p==='Sem Plano'? null : Number(p); const teto = code ? (planBudgets[code]||0) : 0; const pct = teto>0?(v/teto*100):0; if(ly>doc.page.height-70){ doc.addPage(); ly=60; }
+            perPlan.forEach(([p,v])=>{ const code = p==='Sem Plano'? null : Number(p); const teto = code ? (planBudgets[code]||0) : 0; const pct = teto>0?(v/teto*100):0; if(ly>doc.page.height-70){ doc.addPage(); pageIndex+=1; doc.fontSize(10).fillColor(palette.textSoft).text(`Página ${pageIndex}`, doc.page.width-90, 20, { width: 80, align:'right' }); ly=60; }
                 const label = planDisplay(p);
                 doc.fontSize(9).fillColor('#111827').text(`${label}: R$ ${v.toLocaleString('pt-BR',{minimumFractionDigits:2})} / Teto R$ ${teto.toLocaleString('pt-BR',{minimumFractionDigits:2})} (${pct.toFixed(1)}%)`,40,ly,{width:doc.page.width-80});
-                const barW = doc.page.width-160; const used = Math.min(1,pct/100); doc.rect(40,ly+12,barW,6).fill('#E5E7EB'); doc.rect(40,ly+12,Math.max(4,barW*used),6).fill(pct>100?'#DC2626':pct>=90?'#D97706':pct>=70?'#2563EB':'#10B981'); ly+=24; });
+                const barW = doc.page.width-160; const used = Math.min(1,pct/100); doc.rect(40,ly+12,barW,6).fill(palette.border); doc.rect(40,ly+12,Math.max(4,barW*used),6).fill(pct>100?palette.danger:pct>=90?palette.warning:pct>=70?palette.secondary:palette.success);
+                doc.fillColor(palette.textMuted).fontSize(9).text(`${pct.toFixed(0)}%`, 40+barW+8, ly+9, { width: 40, align:'left' });
+                ly+=24; });
             doc.y = ly + 5;
             // Limites Monitorados (detalhado, sem "top")
-            doc.addPage();
-            doc.fontSize(14).fillColor('#0F172A').text('🎯 Limites Monitorados (detalhado):',40,50);
+            newPageWithTitle('🎯 Limites Monitorados (detalhado):');
             const usage = Object.entries(planBudgets).map(([p,t])=>{ const spent=byPlan[p]||0; const pct=t>0?spent/t*100:0; return {p,spent,t,pct}; }).filter(o=>o.t>0).sort((a,b)=> b.pct - a.pct);
-            let uy=80; usage.forEach((u, idx)=>{ if(uy>doc.page.height-70){ doc.addPage(); doc.fontSize(14).fillColor('#0F172A').text('🎯 Limites Monitorados (detalhado) (cont.)',40,50); uy=80; }
+            let uy=80; usage.forEach((u, idx)=>{ if(uy>doc.page.height-70){ doc.addPage(); pageIndex+=1; doc.fontSize(10).fillColor(palette.textSoft).text(`Página ${pageIndex}`, doc.page.width-90, 20, { width: 80, align:'right' }); doc.fontSize(14).fillColor(palette.text).text('🎯 Limites Monitorados (detalhado) (cont.)',40,50); uy=80; }
                 const emoji = u.pct>100?'🔴':(u.pct>=90?'🟡':'🟢');
                 const label = planDisplay(u.p);
-                doc.fontSize(11).fillColor('#1F2937').text(`${idx+1}. ${label}: R$ ${u.spent.toLocaleString('pt-BR',{minimumFractionDigits:2})} / Teto R$ ${u.t.toLocaleString('pt-BR',{minimumFractionDigits:2})}`,40,uy,{width:doc.page.width-80});
-                doc.fontSize(11).fillColor('#1F2937').text(`${emoji} ${u.pct.toFixed(1)}%`,40,uy+16);
+                doc.fontSize(11).fillColor(palette.text).text(`${idx+1}. ${label}: R$ ${u.spent.toLocaleString('pt-BR',{minimumFractionDigits:2})} / Teto R$ ${u.t.toLocaleString('pt-BR',{minimumFractionDigits:2})}`,40,uy,{width:doc.page.width-80});
+                doc.fontSize(11).fillColor(palette.text).text(`${emoji} ${u.pct.toFixed(1)}%`,40,uy+16);
                 uy+=28; });
         }
 
         // Alertas & Recomendações
-        doc.addPage();
-        doc.fontSize(14).fillColor('#0F172A').text('⚠️ Alertas & Recomendações',40,50); doc.moveDown(0.5);
+        newPageWithTitle('⚠️ Alertas & Recomendações'); doc.moveDown(0.5);
     const alerts = []; if (planBudgets){ Object.entries(byPlan).forEach(([p,v])=>{ const code = p==='Sem Plano'? null : Number(p); const teto= code? planBudgets[code] : 0; if(teto){ const pct=v/teto*100; const label = planDisplay(p); if(pct>100) alerts.push({level:'CRIT', msg:`${label} estourou o teto (${pct.toFixed(1)}%)`}); else if(pct>=90) alerts.push({level:'RISK', msg:`${label} em risco (${pct.toFixed(1)}%)`}); } }); }
-        if(alerts.length===0) { doc.fontSize(10).fillColor('#059669').text('Nenhum alerta crítico encontrado.'); }
-        else { alerts.slice(0,15).forEach(a=>{ if(doc.y>doc.page.height-70){ doc.addPage(); doc.fontSize(14).fillColor('#0F172A').text('⚠️ Alertas (cont.)',40,50); doc.y+=10;} doc.fontSize(10).fillColor(a.level==='CRIT'?'#B91C1C':'#D97706').text(`• ${a.msg}`,40,doc.y); doc.y+=14; }); }
+        if(alerts.length===0) { doc.fontSize(10).fillColor(palette.success).text('Nenhum alerta crítico encontrado.'); }
+        else { alerts.slice(0,15).forEach(a=>{ if(doc.y>doc.page.height-70){ doc.addPage(); pageIndex+=1; doc.fontSize(10).fillColor(palette.textSoft).text(`Página ${pageIndex}`, doc.page.width-90, 20, { width: 80, align:'right' }); doc.fontSize(14).fillColor(palette.text).text('⚠️ Alertas (cont.)',40,50); doc.y=70;} doc.fontSize(10).fillColor(a.level==='CRIT'?palette.danger:palette.warning).text(`• ${a.msg}`,40,doc.y); doc.y+=14; }); }
         doc.moveDown(0.5);
         // Recomendações básicas
         const recs = [];
     alerts.filter(a=>a.level==='CRIT').forEach(a=>{ recs.push(`Reduzir ou revisar gastos do plano indicado imediatamente.`); });
         if(totalEmp>0 && totalEmp/total>0.5) recs.push('Avaliar migração de parte dos custos empresariais para contratos/planos mais eficientes.');
         if(recs.length===0) recs.push('Manter a disciplina atual e revisar planos próximos de 90% do teto.');
-        doc.fontSize(12).fillColor('#1F2937').text('Recomendações:',40,doc.y+10); doc.moveDown(0.3);
-        doc.fontSize(10).fillColor('#334155'); recs.slice(0,8).forEach(r=>{ doc.text('• '+r,{width:doc.page.width-80}); doc.moveDown(0.2); });
+    doc.fontSize(12).fillColor(palette.text).text('Recomendações:',40,doc.y+10); doc.moveDown(0.3);
+    doc.fontSize(10).fillColor(palette.textSoft); recs.slice(0,8).forEach(r=>{ doc.text('• '+r,{width:doc.page.width-80}); doc.moveDown(0.2); });
 
         // Gastos por Conta
-        doc.addPage();
-        doc.fontSize(14).fillColor('#0F172A').text('🏦 Gastos por Conta',40,50); doc.moveDown(0.5);
-        Object.entries(byAccount).sort((a,b)=>b[1]-a[1]).forEach(([c,v])=>{ if(doc.y>doc.page.height-60){ doc.addPage(); doc.fontSize(14).fillColor('#0F172A').text('🏦 Gastos por Conta (cont.)',40,50); doc.y+=10; }
-            doc.fontSize(10).fillColor('#111827').text(`• ${c}: R$ ${v.toLocaleString('pt-BR',{minimumFractionDigits:2})}`,40,doc.y); doc.y+=14; });
+        newPageWithTitle('🏦 Gastos por Conta'); doc.moveDown(0.5);
+        Object.entries(byAccount).sort((a,b)=>b[1]-a[1]).forEach(([c,v])=>{ if(doc.y>doc.page.height-60){ doc.addPage(); pageIndex+=1; doc.fontSize(10).fillColor(palette.textSoft).text(`Página ${pageIndex}`, doc.page.width-90, 20, { width: 80, align:'right' }); doc.fontSize(14).fillColor(palette.text).text('🏦 Gastos por Conta (cont.)',40,50); doc.y=70; }
+            doc.fontSize(10).fillColor(palette.text).text(`• ${c}: R$ ${v.toLocaleString('pt-BR',{minimumFractionDigits:2})}`,40,doc.y); doc.y+=14; });
 
         
 
         // Detalhamento Empresarial
-        doc.addPage();
-        doc.fontSize(16).fillColor('#1F2937').text('💼 Detalhamento de Gastos Empresariais',40,50);
+        newPageWithTitle('💼 Detalhamento de Gastos Empresariais');
         const emp = safeExpenses.filter(e=>e.is_business_expense); let ey=90;
-        emp.slice(0,150).forEach((e,i)=>{ if(ey>doc.page.height-60){ doc.addPage(); ey=50; doc.fontSize(12).text('Continuação Empresarial',40,ey); ey+=30; }
+        emp.slice(0,150).forEach((e,i)=>{ if(ey>doc.page.height-60){ doc.addPage(); pageIndex+=1; doc.fontSize(10).fillColor(palette.textSoft).text(`Página ${pageIndex}`, doc.page.width-90, 20, { width: 80, align:'right' }); ey=50; doc.fontSize(12).fillColor(palette.text).text('Continuação Empresarial',40,ey); ey+=30; }
             const dt=new Date(e.transaction_date).toLocaleDateString('pt-BR'); const val=parseFloat(e.amount||0).toLocaleString('pt-BR',{minimumFractionDigits:2});
             const label = planDisplay(e.account_plan_code);
-            doc.fontSize(9).fillColor('#111827').text(`${i+1}. ${dt} • R$ ${val} • ${(e.description||'').slice(0,60)} (${label})`,40,ey,{width:doc.page.width-80}); ey+=14; });
+            doc.fontSize(9).fillColor(palette.text).text(`${i+1}. ${dt} • R$ ${val} • ${(e.description||'').slice(0,60)} (${label})`,40,ey,{width:doc.page.width-80}); ey+=14; });
 
         // Lista Completa de Despesas
-        doc.addPage();
-        doc.fontSize(16).fillColor('#1F2937').text('📋 Lista Completa de Despesas',40,50);
+        newPageWithTitle('📋 Lista Completa de Despesas');
         let ly2=90; safeExpenses.forEach((e,i)=>{ if(ly2>doc.page.height-60){ doc.addPage(); ly2=50; doc.fontSize(12).text('Continuação Despesas',40,ly2); ly2+=30; }
             const dt=new Date(e.transaction_date).toLocaleDateString('pt-BR'); const val=parseFloat(e.amount||0).toLocaleString('pt-BR',{minimumFractionDigits:2});
             const label = planDisplay(e.account_plan_code);
-            doc.fontSize(9).fillColor('#374151').text(`${i+1}. ${dt} • R$ ${val} • ${(e.description||'').slice(0,70)} • ${e.account||''} • ${label}`,40,ly2,{width:doc.page.width-80}); ly2+=12; });
+            doc.fontSize(9).fillColor(palette.textMuted).text(`${i+1}. ${dt} • R$ ${val} • ${(e.description||'').slice(0,70)} • ${e.account||''} • ${label}`,40,ly2,{width:doc.page.width-80}); ly2+=12; });
 
         // Rodapé final
-        doc.moveDown(2); doc.fontSize(9).fillColor('#6B7280').text('Relatório Moderno Compacto • Geração fallback aprimorada', {align:'center'});
+    doc.moveDown(2); doc.fontSize(9).fillColor(palette.textSoft).text('Relatório Moderno Compacto • Layout acessível aprimorado', {align:'center'});
     } catch(err){ console.warn('Falha generateSimplePDF (modern):', err); }
     return doc;
 }
