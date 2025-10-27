@@ -2578,6 +2578,28 @@ async function generateIntelligentBIReport(data) {
     // CRIAR DOCUMENTO PDF
     const doc = new pdfkit({ margin: 30, size: 'A4' });
     try { const f=ensurePrimaryFont(); if(f){ doc.registerFont('NotoSans', f); doc.font('NotoSans'); } } catch{}
+
+    // Paleta e numeração de páginas para padronização visual
+    const palette = {
+        bg: '#FFFFFF',
+        text: '#1F2937',
+        textMuted: '#475569',
+        textSoft: '#64748B',
+        textStrong: '#0F172A',
+        border: '#E5E7EB',
+        surface: '#F8FAFC',
+        primary: '#1D4ED8',
+        secondary: '#0EA5E9',
+        success: '#16A34A',
+        warning: '#F59E0B',
+        danger: '#DC2626',
+    };
+    let pageIndexBI = 1;
+    const drawPageNumberBI = () => {
+        // Cor clara sobre possíveis cabeçalhos escuros
+        doc.fontSize(10).fillColor('#E2E8F0').text(`Página ${pageIndexBI}`,
+            doc.page.width - 90, 20, { width: 80, align: 'right' });
+    };
     
     // Mapeamentos centrais de planos
     const planMaps = (accountsConfig && accountsConfig.asMaps) ? accountsConfig.asMaps() : { names:{}, budgets:{}, types:{} };
@@ -2607,22 +2629,31 @@ async function generateIntelligentBIReport(data) {
 
     // === 📊 PÁGINA 1: DASHBOARD EXECUTIVO ===
     await createExecutiveDashboard(doc, data);
+    drawPageNumberBI();
     
     // === 📈 PÁGINA 2: ANÁLISES BI E INSIGHTS ===
     doc.addPage();
+    pageIndexBI += 1;
     await createBIAnalyticsPage(doc, data);
+    drawPageNumberBI();
     
     // === 📋 PÁGINA 3: DETALHAMENTO INTELIGENTE ===
     doc.addPage();
+    pageIndexBI += 1;
     await createIntelligentDetailPage(doc, data);
+    drawPageNumberBI();
     
     // === 📊 PÁGINA 4: GRÁFICOS MODERNOS ===
     doc.addPage();
+    pageIndexBI += 1;
     await createModernChartsPage(doc, data);
+    drawPageNumberBI();
     
     // === 📜 PÁGINA 5: LISTA COMPLETA DE DESPESAS ===
     doc.addPage();
+    pageIndexBI += 1;
     await createFullExpenseListPage(doc, data);
+    drawPageNumberBI();
     
     return doc;
 }
@@ -2637,11 +2668,19 @@ async function generateCompactMonthlyReport({
     const doc = new pdfkit({ margin: 30, size: 'A4' });
     try { const f=ensurePrimaryFont(); if(f){ doc.registerFont('NotoSans', f); doc.font('NotoSans'); } } catch{}
 
-    // Header compacto
-    const grad = doc.linearGradient(0,0,doc.page.width,90); grad.stop(0,'#1d4ed8').stop(1,'#3b82f6');
+    // Paleta e numeração de página
+    let pageIndexSummary = 1;
+    const drawPageNumberSummary = () => {
+        doc.fontSize(10).fillColor('#E2E8F0').text(`Página ${pageIndexSummary}`,
+            doc.page.width - 90, 18, { width: 80, align: 'right' });
+    };
+
+    // Header compacto com gradiente padronizado
+    const grad = doc.linearGradient(0,0,0,90); grad.stop(0,'#0F172A').stop(1,'#0EA5E9');
     doc.rect(0,0,doc.page.width,90).fill(grad);
     doc.fillColor('#FFFFFF').fontSize(20).text('RESUMO EXECUTIVO MENSAL', 30, 26);
     doc.fontSize(11).fillColor('#E5E7EB').text(`Conta: ${contaNome || (account||'Todas')} • Período: ${startDate.toLocaleDateString('pt-BR')} a ${endDate.toLocaleDateString('pt-BR')}`, 30, 55);
+    drawPageNumberSummary();
 
     doc.y = 110;
 
@@ -2769,7 +2808,7 @@ async function generateCompactMonthlyReport({
                 options: { indexAxis: 'y', plugins: { legend: { display: false } }, scales: { x: { ticks: { callback: (v)=> `R$ ${v}` } } } }
             };
             const img = await chartJSNodeCanvas.renderToBuffer(cfg);
-            if (doc.y > 590) { doc.addPage(); doc.y = 40; }
+            if (doc.y > 590) { doc.addPage(); pageIndexSummary += 1; drawPageNumberSummary(); doc.y = 40; }
             doc.fontSize(11).fillColor('#111827').text('📊 Top Categorias (por conta)', 30, doc.y);
             doc.image(img, 30, doc.y+14, { width: 420, height: 240 });
             doc.y += 260;
@@ -2901,26 +2940,27 @@ async function createExecutiveDashboard(doc, data) {
 async function createBIAnalyticsPage(doc, data) {
     const { expenses, total, totalPessoal, totalEmpresarial, porPlano, porConta, year, month, planBudgets, planDisplay, byPlan } = data;
     
-    // Cabeçalho da página
-    doc.rect(0, 0, doc.page.width, 80).fill('#764ba2');
-    doc.fontSize(24).fillColor('#FFFFFF').text('📈 ANÁLISES BUSINESS INTELLIGENCE', 0, 25, { align: 'center', width: doc.page.width });
-    doc.fontSize(14).fillColor('#E5E7EB').text('Insights Avançados & Análises Preditivas', 0, 50, { align: 'center', width: doc.page.width });
+    // Cabeçalho da página (gradiente padronizado)
+    const grad = doc.linearGradient(0,0,0,80); grad.stop(0,'#0F172A').stop(1,'#0EA5E9');
+    doc.rect(0, 0, doc.page.width, 80).fill(grad);
+    doc.fontSize(24).fillColor('#FFFFFF').text('📈 ANÁLISES BUSINESS INTELLIGENCE', 0, 24, { align: 'center', width: doc.page.width });
+    doc.fontSize(14).fillColor('#E5E7EB').text('Insights Avançados & Análises Preditivas', 0, 48, { align: 'center', width: doc.page.width });
     
     doc.y = 100;
     
     // === ANÁLISE TEMPORAL ===
-    doc.fontSize(18).fillColor('#1F2937').text('📅 ANÁLISE TEMPORAL', { underline: true });
+    doc.fontSize(18).fillColor('#0F172A').text('📅 ANÁLISE TEMPORAL', { underline: true });
     doc.moveDown(1);
     
     const temporalAnalysis = analyzeTemporalPatterns(expenses, year, month);
     
     // Gráfico de distribuição semanal
-    doc.fontSize(14).fillColor('#4B5563').text('Distribuição por Semanas do Mês:');
+    doc.fontSize(14).fillColor('#374151').text('Distribuição por Semanas do Mês:');
     doc.moveDown(0.5);
     
     temporalAnalysis.weekly.forEach((week, index) => {
         const weekWidth = (doc.page.width - 120) * (week.total / total);
-        const barColor = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6'][index];
+    const barColor = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#06B6D4'][index];
         
         doc.roundedRect(60, doc.y, weekWidth, 25, 5).fill(barColor);
         doc.fillColor('#FFFFFF').fontSize(10).text(
@@ -2933,7 +2973,7 @@ async function createBIAnalyticsPage(doc, data) {
     doc.moveDown(1);
     
     // === ANÁLISE CATEGORÍAS TOP ===
-    doc.fontSize(18).fillColor('#1F2937').text('🏆 TOP CATEGORIAS', { underline: true });
+    doc.fontSize(18).fillColor('#0F172A').text('🏆 TOP CATEGORIAS', { underline: true });
     doc.moveDown(1);
     
     const topCategories = Object.entries(porConta)
@@ -2943,7 +2983,7 @@ async function createBIAnalyticsPage(doc, data) {
     topCategories.forEach(([categoria, valor], index) => {
         const percentage = (valor / total * 100).toFixed(1);
         const barWidth = (doc.page.width - 200) * (valor / topCategories[0][1]);
-        const colors = ['#1E40AF', '#059669', '#DC2626', '#7C3AED', '#EA580C', '#0891B2', '#65A30D', '#BE185D', '#4338CA', '#0F766E'];
+    const colors = ['#1E40AF', '#059669', '#DC2626', '#7C3AED', '#EA580C', '#0891B2', '#65A30D', '#BE185D', '#4338CA', '#0F766E'];
         
         doc.fontSize(11).fillColor('#374151').text(`${index + 1}. ${categoria}`, 40, doc.y);
         doc.roundedRect(200, doc.y - 2, barWidth, 18, 3).fill(colors[index]);
@@ -2954,7 +2994,7 @@ async function createBIAnalyticsPage(doc, data) {
     doc.moveDown(1);
     
     // === ANÁLISE COMPARATIVA ===
-    doc.fontSize(18).fillColor('#1F2937').text('⚖️ ANÁLISE COMPARATIVA', { underline: true });
+    doc.fontSize(18).fillColor('#0F172A').text('⚖️ ANÁLISE COMPARATIVA', { underline: true });
     doc.moveDown(1);
     
     const comparative = generateComparativeAnalysis(expenses, total, totalPessoal, totalEmpresarial);
@@ -2979,7 +3019,7 @@ async function createBIAnalyticsPage(doc, data) {
             doc.fillColor('#111827').fontSize(11).text(`${emoji} ${label}`, 50, doc.y + 8);
             const barW = 220; const used = Math.min(1, u.pct/100);
             doc.rect(doc.page.width-50-barW, doc.y+8, barW, 12).fill('#E5E7EB');
-            doc.rect(doc.page.width-50-barW, doc.y+8, Math.max(4,barW*used), 12).fill(u.pct>100?'#DC2626':u.pct>=90?'#D97706':'#10B981');
+            doc.rect(doc.page.width-50-barW, doc.y+8, Math.max(4,barW*used), 12).fill(u.pct>100?'#DC2626':u.pct>=90?'#F59E0B':'#16A34A');
             doc.fillColor('#111827').fontSize(10).text(`${u.pct.toFixed(1)}%`, doc.page.width-50-barW-40, doc.y+8, {width:40, align:'right'});
             doc.y += 34;
         });
@@ -3017,8 +3057,9 @@ async function createBIAnalyticsPage(doc, data) {
 async function createIntelligentDetailPage(doc, data) {
     const { expenses, porPlano, year, month, planBudgets, planDisplay } = data;
     
-    // Cabeçalho
-    doc.rect(0, 0, doc.page.width, 80).fill('#4F46E5');
+    // Cabeçalho (gradiente padronizado)
+    const grad = doc.linearGradient(0,0,0,80); grad.stop(0,'#0F172A').stop(1,'#0EA5E9');
+    doc.rect(0, 0, doc.page.width, 80).fill(grad);
     doc.fontSize(24).fillColor('#FFFFFF').text('📋 DETALHAMENTO INTELIGENTE', 0, 25, { align: 'center', width: doc.page.width });
     doc.fontSize(14).fillColor('#E5E7EB').text('Análise Detalhada por Planos de Conta', 0, 50, { align: 'center', width: doc.page.width });
     
@@ -3029,7 +3070,7 @@ async function createIntelligentDetailPage(doc, data) {
         .sort(([,a], [,b]) => b - a)
         .slice(0, 8); // Top 8 planos
     
-    doc.fontSize(16).fillColor('#1F2937').text('📊 ANÁLISE POR PLANO DE CONTA', { underline: true });
+    doc.fontSize(16).fillColor('#0F172A').text('📊 ANÁLISE POR PLANO DE CONTA', { underline: true });
     doc.moveDown(1);
     
     detailedAnalysis.forEach(([plano, total], index) => {
@@ -3061,7 +3102,8 @@ async function createIntelligentDetailPage(doc, data) {
 // 📜 PÁGINA 5: LISTA COMPLETA DE DESPESAS
 async function createFullExpenseListPage(doc, data){
     const { expenses, planDisplay } = data;
-    doc.rect(0, 0, doc.page.width, 80).fill('#111827');
+    const grad = doc.linearGradient(0,0,0,80); grad.stop(0,'#0F172A').stop(1,'#0EA5E9');
+    doc.rect(0, 0, doc.page.width, 80).fill(grad);
     doc.fontSize(24).fillColor('#FFFFFF').text('📜 LISTA COMPLETA DE DESPESAS', 0, 25, { align: 'center', width: doc.page.width });
     doc.y = 100;
 
@@ -3110,8 +3152,9 @@ async function createFullExpenseListPage(doc, data){
 async function createModernChartsPage(doc, data) {
     const { expenses, porPlano, porConta, planDisplay } = data;
     
-    // Cabeçalho
-    doc.rect(0, 0, doc.page.width, 80).fill('#059669');
+    // Cabeçalho (gradiente padronizado)
+    const grad = doc.linearGradient(0,0,0,80); grad.stop(0,'#0F172A').stop(1,'#0EA5E9');
+    doc.rect(0, 0, doc.page.width, 80).fill(grad);
     doc.fontSize(24).fillColor('#FFFFFF').text('📊 VISUALIZAÇÕES AVANÇADAS', 0, 25, { align: 'center', width: doc.page.width });
     doc.fontSize(14).fillColor('#E5E7EB').text('Gráficos Inteligentes & Dashboards Visuais', 0, 50, { align: 'center', width: doc.page.width });
     
