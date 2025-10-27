@@ -295,33 +295,62 @@ async function generateSimplePDF(expenses, total, startDate, endDate, contaNome,
                 const { ChartJSNodeCanvas } = require('chartjs-node-canvas');
                 const width=480, height=260; const chart = new ChartJSNodeCanvas({width,height,backgroundColour:'#FFFFFF'});
 
-                // Plugin genérico de rótulos de valor
+                // Plugin de rótulos de valor com melhor contraste e anti-sobreposição
                 const valueLabelPlugin = {
-                    id:'valueLabels',
+                    id: 'valueLabels',
                     afterDatasetsDraw(ch){
-                        const {ctx} = ch; ctx.save();
-                        ch.data.datasets.forEach((ds,di)=>{
+                        const { ctx } = ch; ctx.save();
+                        const placed = [];
+                        const minDist = 14; // pixels
+                        const isTooClose = (x,y) => placed.some(p => Math.hypot(p.x-x, p.y-y) < minDist);
+
+                        ch.data.datasets.forEach((ds, di) => {
                             const meta = ch.getDatasetMeta(di);
-                            meta.data.forEach((el,idx)=>{
-                                if(!el || !el.x || !el.y) return;
-                                let raw = ds.data[idx]; const val = typeof raw==='number'? raw : parseFloat(raw)||0;
+                            meta.data.forEach((el, idx) => {
+                                if (!el || !el.x || !el.y) return;
+                                const raw = ds.data[idx];
+                                const val = typeof raw === 'number' ? raw : (parseFloat(raw) || 0);
                                 let labelText;
-                                if(ch.config.type==='pie' || ch.config.type==='doughnut'){
-                                    const tot = ds.data.reduce((a,b)=> a + (typeof b==='number'?b: (parseFloat(b)||0)),0) || 1;
-                                    const pct = (val / tot *100).toFixed(1)+'%';
-                                    labelText = pct;
-                                    if(pct==='0.0%') return;
-                                } else if(ch.config.type==='bar') {
-                                    labelText = val>=1000? (val/1000).toFixed(1)+'k' : val.toFixed(0);
-                                } else if(ch.config.type==='line') {
-                                    if(idx !== ds.data.length-1) return; // só último ponto
+
+                                if (ch.config.type === 'pie' || ch.config.type === 'doughnut') {
+                                    const tot = ds.data.reduce((a,b)=> a + (typeof b==='number'?b:(parseFloat(b)||0)), 0) || 1;
+                                    const pctNum = (val / tot) * 100;
+                                    if (pctNum < 5) return; // esconde fatias pequenas
+                                    labelText = pctNum.toFixed(0) + '%';
+                                } else if (ch.config.type === 'bar') {
+                                    // Mostra rótulo apenas se a barra for razoável para evitar poluição visual
+                                    const size = el.getProps(['y','base'], true);
+                                    const height = Math.abs(size.base - size.y);
+                                    if (height < 18) return;
+                                    labelText = val >= 1000 ? (val/1000).toFixed(1)+'k' : val.toFixed(0);
+                                } else if (ch.config.type === 'line') {
+                                    if (idx !== ds.data.length - 1) return; // apenas último ponto
                                     labelText = val.toFixed(0);
                                 } else return;
+
                                 ctx.font = '11px sans-serif';
-                                ctx.fillStyle = '#111827';
-                                ctx.textAlign='center'; ctx.textBaseline='middle';
+                                ctx.textAlign = 'center';
+                                ctx.textBaseline = 'middle';
                                 const p = el.tooltipPosition();
-                                ctx.fillText(labelText, p.x, p.y - (ch.config.type==='bar'?10:0));
+                                const tx = p.x;
+                                const ty = p.y - (ch.config.type === 'bar' ? 10 : 0);
+                                if (isTooClose(tx, ty)) return; // evita sobrepor com rótulo anterior
+
+                                // Caixa de fundo translúcida para contraste
+                                const metrics = ctx.measureText(labelText);
+                                const tw = Math.max(12, metrics.width);
+                                const th = 12;
+                                const pad = 2;
+                                ctx.fillStyle = 'rgba(255,255,255,0.9)';
+                                ctx.beginPath();
+                                ctx.rect(tx - tw/2 - pad, ty - th/2 - pad, tw + pad*2, th + pad*2);
+                                ctx.fill();
+
+                                // Texto escuro sobre a caixa clara
+                                ctx.fillStyle = '#111827';
+                                ctx.fillText(labelText, tx, ty);
+
+                                placed.push({ x: tx, y: ty });
                             });
                         });
                         ctx.restore();
