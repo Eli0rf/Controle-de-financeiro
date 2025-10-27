@@ -804,6 +804,7 @@ document.addEventListener('DOMContentLoaded', function() {
         // Event listeners para seção de análise por categoria
         const refreshCategoryBtn = document.getElementById('refresh-category-btn');
         const exportCategoryBtn = document.getElementById('export-category-btn');
+    const planToggleBtn = document.getElementById('btn-plan-toggle');
         
         if (refreshCategoryBtn) {
             refreshCategoryBtn.addEventListener('click', function() {
@@ -816,6 +817,23 @@ document.addEventListener('DOMContentLoaded', function() {
             exportCategoryBtn.addEventListener('click', function() {
                 console.log('📤 Exportando dados de categoria...');
                 exportCategoryAnalysis();
+            });
+        }
+
+        // Alternar exibição compacta/total do gráfico de planos
+        if (planToggleBtn && !planToggleBtn.dataset.bound) {
+            planToggleBtn.dataset.bound = '1';
+            const updateToggleLabel = () => {
+                planToggleBtn.textContent = PLAN_CHART_SHOW_ALL ? 'Ver Top 15' : 'Ver Todos';
+            };
+            updateToggleLabel();
+            planToggleBtn.addEventListener('click', async () => {
+                PLAN_CHART_SHOW_ALL = !PLAN_CHART_SHOW_ALL;
+                updateToggleLabel();
+                // Recarregar dados do gráfico respeitando período atual
+                try {
+                    await fetchAndRenderPlanChart();
+                } catch (e) { console.warn('Falha ao alternar exibição do gráfico de planos:', e); }
             });
         }
         
@@ -1440,6 +1458,8 @@ document.addEventListener('DOMContentLoaded', function() {
             // Só adicionar gráficos se Chart.js estiver disponível
             if (chartJsLoaded) {
                 promises.push(fetchAndRenderGoalsChart());
+                // Também carregar a Distribuição por Plano de Conta automaticamente
+                promises.push(fetchAndRenderPlanChart());
             }
 
             await Promise.all(promises);
@@ -3381,6 +3401,8 @@ document.addEventListener('DOMContentLoaded', function() {
     // Estado global simples para filtros de tipo
     let PLAN_CHART_TYPE_FILTER = 'all'; // all | personal | business
     let GOALS_CHART_TYPE_FILTER = 'all'; // all | personal | business
+    // Estado para alternar exibição compacta x completa
+    let PLAN_CHART_SHOW_ALL = false; // false = top 15 (compacto); true = todos
 
     function renderPlanChart(data = []) {
         console.log('🎯 DEBUG renderPlanChart - início:', { 
@@ -3473,6 +3495,22 @@ document.addEventListener('DOMContentLoaded', function() {
                     if (!code || code === 'Sem Categoria' || isNaN(idNum)) return PLAN_CHART_TYPE_FILTER === 'all';
                     return PLAN_CHART_TYPE_FILTER === 'business' ? (type === 'business') : (type === 'personal');
                 });
+            }
+
+            // Filtrar por tipo, se disponível
+            if (PLAN_CHART_TYPE_FILTER !== 'all' && window.PLAN_TYPES) {
+                processedData = processedData.filter(d => {
+                    const code = d.account_plan_code;
+                    const idNum = Number(code);
+                    const type = window.PLAN_TYPES[idNum];
+                    if (!code || code === 'Sem Categoria' || isNaN(idNum)) return PLAN_CHART_TYPE_FILTER === 'all';
+                    return PLAN_CHART_TYPE_FILTER === 'business' ? (type === 'business') : (type === 'personal');
+                });
+            }
+
+            // Aplicar modo compacto (top 15) quando não estiver mostrando todos
+            if (!PLAN_CHART_SHOW_ALL) {
+                processedData = processedData.slice(0, 15);
             }
 
             // Atualizar estatísticas antes de renderizar o gráfico

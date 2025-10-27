@@ -94,6 +94,7 @@ const { pool, testConnection } = require('./config/database');
 const { createDatabase } = require('./migrations/migrate');
 // Chart of accounts config
 const accountsConfig = require('./config/accounts');
+const kpiThresholds = require('./config/kpiThresholds');
 
 // Definição dos períodos de faturamento por conta
 const billingPeriods = {
@@ -176,6 +177,70 @@ async function generateSimplePDF(expenses, total, startDate, endDate, contaNome,
         doc.fontSize(9).fillColor('#334155');
         checklist.forEach(item=>{ if(doc.y>doc.page.height-70){ doc.addPage(); } doc.text(item,50,doc.y,{width:doc.page.width-100}); doc.moveDown(0.3); });
 
+        // Divisão por Plano de Conta — Pessoal e Empresarial (antes dos gráficos)
+        const byPlanPersonal = {}; const byPlanBusiness = {};
+        safeExpenses.forEach(e=>{
+            const p=(e.account_plan_code!=null && e.account_plan_code!=='')? String(e.account_plan_code) : 'Sem Plano';
+            const val = parseFloat(e.amount||0);
+            if(e.is_business_expense) byPlanBusiness[p]=(byPlanBusiness[p]||0)+val; else byPlanPersonal[p]=(byPlanPersonal[p]||0)+val;
+        });
+
+        // Seção Pessoal
+        doc.addPage();
+        doc.fontSize(16).fillColor('#1F2937').text('🏠 Análise por Plano de Conta — Pessoal',40,50);
+        let tyP = 80; doc.fontSize(9).fillColor('#374151');
+        const totalPersonalType = Object.values(byPlanPersonal).reduce((a,b)=>a+b,0);
+        // Cabeçalho
+        doc.text('Plano',40,tyP); doc.text('Valor (R$)',200,tyP,{align:'right',width:120}); doc.text('%',330,tyP,{align:'right',width:40}); doc.text('Teto',380,tyP,{align:'right',width:80}); doc.text('Uso',470,tyP,{align:'left',width:60});
+        doc.moveTo(40,tyP+12).lineTo(doc.page.width-40,tyP+12).stroke('#E5E7EB'); tyP+=18;
+        let rowP = 0;
+        Object.entries(byPlanPersonal).sort((a,b)=>b[1]-a[1]).forEach(([p,v])=>{
+            if(tyP>doc.page.height-70){ doc.addPage(); tyP=60; doc.fontSize(14).fillColor('#1F2937').text('🏠 Análise por Plano de Conta — Pessoal (cont.)',40,tyP); tyP+=20; doc.fontSize(9).fillColor('#374151'); }
+            const pct = totalPersonalType>0? (v/totalPersonalType*100) : 0;
+            const code = p==='Sem Plano'? null : Number(p);
+            const teto = code? (planBudgets[code]||0) : 0;
+            const usedPct = teto>0? (v/teto*100) : 0;
+            const bg = (rowP++ % 2===0)? '#F8FAFC':'#FFFFFF';
+            doc.rect(40,tyP-4, doc.page.width-80,20).fill(bg);
+            doc.fillColor('#1F2937').fontSize(9).text(planDisplay(p),45,tyP);
+            doc.text(v.toLocaleString('pt-BR',{minimumFractionDigits:2}),200,tyP,{width:120,align:'right'});
+            doc.text(pct.toFixed(1)+'%',330,tyP,{width:40,align:'right'});
+            doc.text(teto>0? teto.toLocaleString('pt-BR',{minimumFractionDigits:2}) : '—',380,tyP,{width:80,align:'right'});
+            // Barra de uso
+            const barW = doc.page.width - 520; const used = Math.min(1, usedPct/100);
+            doc.rect(470,tyP+10,barW,6).fill('#E5E7EB');
+            doc.rect(470,tyP+10,Math.max(4,barW*used),6).fill(usedPct>100?'#DC2626':usedPct>=90?'#D97706':usedPct>=70?'#2563EB':'#10B981');
+            tyP+=20;
+        });
+
+        // Seção Empresarial
+        doc.addPage();
+        doc.fontSize(16).fillColor('#1F2937').text('💼 Análise por Plano de Conta — Empresarial',40,50);
+        let tyB = 80; doc.fontSize(9).fillColor('#374151');
+        const totalBusinessType = Object.values(byPlanBusiness).reduce((a,b)=>a+b,0);
+        // Cabeçalho
+        doc.text('Plano',40,tyB); doc.text('Valor (R$)',200,tyB,{align:'right',width:120}); doc.text('%',330,tyB,{align:'right',width:40}); doc.text('Teto',380,tyB,{align:'right',width:80}); doc.text('Uso',470,tyB,{align:'left',width:60});
+        doc.moveTo(40,tyB+12).lineTo(doc.page.width-40,tyB+12).stroke('#E5E7EB'); tyB+=18;
+        let rowB = 0;
+        Object.entries(byPlanBusiness).sort((a,b)=>b[1]-a[1]).forEach(([p,v])=>{
+            if(tyB>doc.page.height-70){ doc.addPage(); tyB=60; doc.fontSize(14).fillColor('#1F2937').text('💼 Análise por Plano de Conta — Empresarial (cont.)',40,tyB); tyB+=20; doc.fontSize(9).fillColor('#374151'); }
+            const pct = totalBusinessType>0? (v/totalBusinessType*100) : 0;
+            const code = p==='Sem Plano'? null : Number(p);
+            const teto = code? (planBudgets[code]||0) : 0;
+            const usedPct = teto>0? (v/teto*100) : 0;
+            const bg = (rowB++ % 2===0)? '#F8FAFC':'#FFFFFF';
+            doc.rect(40,tyB-4, doc.page.width-80,20).fill(bg);
+            doc.fillColor('#1F2937').fontSize(9).text(planDisplay(p),45,tyB);
+            doc.text(v.toLocaleString('pt-BR',{minimumFractionDigits:2}),200,tyB,{width:120,align:'right'});
+            doc.text(pct.toFixed(1)+'%',330,tyB,{width:40,align:'right'});
+            doc.text(teto>0? teto.toLocaleString('pt-BR',{minimumFractionDigits:2}) : '—',380,tyB,{width:80,align:'right'});
+            // Barra de uso
+            const barWB = doc.page.width - 520; const usedB = Math.min(1, usedPct/100);
+            doc.rect(470,tyB+10,barWB,6).fill('#E5E7EB');
+            doc.rect(470,tyB+10,Math.max(4,barWB*usedB),6).fill(usedPct>100?'#DC2626':usedPct>=90?'#D97706':usedPct>=70?'#2563EB':'#10B981');
+            tyB+=20;
+        });
+
         // Página de Gráficos
     const byPlan = {}; safeExpenses.forEach(e=>{ const p=(e.account_plan_code!=null && e.account_plan_code!=='')? String(e.account_plan_code) : 'Sem Plano'; byPlan[p]=(byPlan[p]||0)+parseFloat(e.amount||0); });
         const byAccount={}; safeExpenses.forEach(e=>{const c=e.account||'Sem Conta'; byAccount[c]=(byAccount[c]||0)+parseFloat(e.amount||0);});
@@ -220,21 +285,23 @@ async function generateSimplePDF(expenses, total, startDate, endDate, contaNome,
                     }
                 };
 
-                // Pie Plano
+                // Pie Plano (sem "top", todos os planos)
                 const sortedPlans = Object.entries(byPlan).sort((a,b)=>b[1]-a[1]);
-                const topPlans = sortedPlans.slice(0,7).map(([code,val])=>[planDisplay(code), val]);
-                const outros = sortedPlans.slice(7).reduce((s,[,v])=>s+v,0); if(outros>0) topPlans.push(['Outros',outros]);
+                const pieLabels = sortedPlans.map(([code])=> planDisplay(code));
+                const pieValues = sortedPlans.map(([,val])=> val);
+                const manyPlansForPie = pieLabels.length > (opts.maxLegendItems || 12);
+                const showLegendPie = !(opts.legendSummary && manyPlansForPie);
                 const pieCfg={
                     type:'pie',
-                    data:{labels:topPlans.map(x=>x[0]),datasets:[{data:topPlans.map(x=>x[1]),backgroundColor:['#2563EB','#10B981','#F59E0B','#6366F1','#EF4444','#0D9488','#D946EF','#94A3B8']} ]},
-                    options:{plugins:{legend:{display:true,position:'bottom',labels:{boxWidth:12,font:{size:9}}},tooltip:{enabled:true}}},
+                    data:{labels:pieLabels,datasets:[{data:pieValues,backgroundColor:['#2563EB','#10B981','#F59E0B','#6366F1','#EF4444','#0D9488','#D946EF','#94A3B8']} ]},
+                    options:{plugins:{legend:{display:showLegendPie,position:'bottom',labels:{boxWidth:12,font:{size:9}}},tooltip:{enabled:true}}},
                     plugins:[valueLabelPlugin]
                 };
                 const pieImg = await chart.renderToBuffer(pieCfg);
                 doc.image(pieImg,40,80,{width:230}); doc.fontSize(10).fillColor('#334155').text('🥧 Distribuição por Plano',40,80+height+4,{width:230,align:'center'});
 
-                // Bar Conta
-                const sortedAcc = Object.entries(byAccount).sort((a,b)=>b[1]-a[1]).slice(0,8);
+                // Bar Conta (sem "top", todas as contas)
+                const sortedAcc = Object.entries(byAccount).sort((a,b)=>b[1]-a[1]);
                 const barCfg={
                     type:'bar',
                     data:{labels:sortedAcc.map(x=>x[0]),datasets:[{label:'Gasto (R$)',data:sortedAcc.map(x=>x[1]),backgroundColor:'#2563EB'}]},
@@ -271,7 +338,7 @@ async function generateSimplePDF(expenses, total, startDate, endDate, contaNome,
         doc.moveDown(0.5); doc.fontSize(9).fillColor('#374151');
         let ty = doc.y; doc.text('Plano',40,ty); doc.text('Valor (R$)',240,ty,{align:'right',width:120}); doc.text('%',380,ty,{align:'right',width:50});
         doc.moveTo(40,ty+12).lineTo(doc.page.width-40,ty+12).stroke('#E5E7EB'); ty+=18;
-        sortedPlans2.slice(0,20).forEach(([p,v],i)=>{ const pct = total>0?(v/total*100).toFixed(1):'0.0'; if(ty>doc.page.height-80){ doc.addPage(); ty=60; }
+        sortedPlans2.forEach(([p,v],i)=>{ const pct = total>0?(v/total*100).toFixed(1):'0.0'; if(ty>doc.page.height-80){ doc.addPage(); ty=60; }
             const bg = i%2===0?'#F8FAFC':'#FFFFFF'; doc.rect(40,ty-4, doc.page.width-80,16).fill(bg);
             doc.fillColor('#1F2937').fontSize(9).text(planDisplay(p),45,ty); doc.text(v.toLocaleString('pt-BR',{minimumFractionDigits:2}),240,ty,{width:120,align:'right'}); doc.text(pct+'%',380,ty,{width:50,align:'right'}); ty+=18; });
         doc.y = ty + 10;
@@ -280,23 +347,23 @@ async function generateSimplePDF(expenses, total, startDate, endDate, contaNome,
         if (planBudgets && Object.keys(planBudgets).length) {
             doc.addPage();
             doc.fontSize(14).fillColor('#0F172A').text('🎯 Análise de Limites vs Gastos / Comparativo Tetos',40,50); doc.moveDown(0.5);
-            const perPlan = sortedPlans2.slice(0,25);
+            const perPlan = sortedPlans2; // todos os planos
             let ly = doc.y;
             perPlan.forEach(([p,v])=>{ const code = p==='Sem Plano'? null : Number(p); const teto = code ? (planBudgets[code]||0) : 0; const pct = teto>0?(v/teto*100):0; if(ly>doc.page.height-70){ doc.addPage(); ly=60; }
                 const label = planDisplay(p);
                 doc.fontSize(9).fillColor('#111827').text(`${label}: R$ ${v.toLocaleString('pt-BR',{minimumFractionDigits:2})} / Teto R$ ${teto.toLocaleString('pt-BR',{minimumFractionDigits:2})} (${pct.toFixed(1)}%)`,40,ly,{width:doc.page.width-80});
                 const barW = doc.page.width-160; const used = Math.min(1,pct/100); doc.rect(40,ly+12,barW,6).fill('#E5E7EB'); doc.rect(40,ly+12,Math.max(4,barW*used),6).fill(pct>100?'#DC2626':pct>=90?'#D97706':pct>=70?'#2563EB':'#10B981'); ly+=24; });
             doc.y = ly + 5;
-            // Prévia dos Limites Monitorados
+            // Limites Monitorados (detalhado, sem "top")
             doc.addPage();
-            doc.fontSize(14).fillColor('#0F172A').text('🎯 Prévia dos Limites Monitorados:',40,50);
+            doc.fontSize(14).fillColor('#0F172A').text('🎯 Limites Monitorados (detalhado):',40,50);
             const usage = Object.entries(planBudgets).map(([p,t])=>{ const spent=byPlan[p]||0; const pct=t>0?spent/t*100:0; return {p,spent,t,pct}; }).filter(o=>o.t>0).sort((a,b)=> b.pct - a.pct);
-            const preview = usage.slice(0,8);
-            let uy=80; preview.forEach(u=>{ if(uy>doc.page.height-70){ doc.addPage(); uy=60; }
+            let uy=80; usage.forEach((u, idx)=>{ if(uy>doc.page.height-70){ doc.addPage(); doc.fontSize(14).fillColor('#0F172A').text('🎯 Limites Monitorados (detalhado) (cont.)',40,50); uy=80; }
                 const emoji = u.pct>100?'🔴':(u.pct>=90?'🟡':'🟢');
                 const label = planDisplay(u.p);
-                doc.fontSize(11).fillColor('#1F2937').text(`${label}:`,40,uy); doc.fontSize(11).fillColor('#1F2937').text(`${emoji} ${u.pct.toFixed(1)}%`,240,uy); uy+=20; });
-            const remaining = usage.length - preview.length; if(remaining>0){ doc.fontSize(11).fillColor('#475569').text(`... e mais ${remaining} planos no relatório completo`,40,uy+5); }
+                doc.fontSize(11).fillColor('#1F2937').text(`${idx+1}. ${label}: R$ ${u.spent.toLocaleString('pt-BR',{minimumFractionDigits:2})} / Teto R$ ${u.t.toLocaleString('pt-BR',{minimumFractionDigits:2})}`,40,uy,{width:doc.page.width-80});
+                doc.fontSize(11).fillColor('#1F2937').text(`${emoji} ${u.pct.toFixed(1)}%`,40,uy+16);
+                uy+=28; });
         }
 
         // Alertas & Recomendações
@@ -319,6 +386,8 @@ async function generateSimplePDF(expenses, total, startDate, endDate, contaNome,
         doc.fontSize(14).fillColor('#0F172A').text('🏦 Gastos por Conta',40,50); doc.moveDown(0.5);
         Object.entries(byAccount).sort((a,b)=>b[1]-a[1]).forEach(([c,v])=>{ if(doc.y>doc.page.height-60){ doc.addPage(); doc.fontSize(14).fillColor('#0F172A').text('🏦 Gastos por Conta (cont.)',40,50); doc.y+=10; }
             doc.fontSize(10).fillColor('#111827').text(`• ${c}: R$ ${v.toLocaleString('pt-BR',{minimumFractionDigits:2})}`,40,doc.y); doc.y+=14; });
+
+        
 
         // Detalhamento Empresarial
         doc.addPage();
@@ -2013,27 +2082,14 @@ async function generateChartsForPDF(porPlano, porConta, expenses, chartJSNodeCan
         if (planLabels.length > 0) {
             const total = planValues.reduce((sum, val) => sum + val, 0);
             
-            // Ordenar e agrupar planos menores
+            // Ordenar e manter todos os planos (sem agrupar em "Outros")
             const planData = planLabels.map((label, index) => ({
                 label: label.length > 15 ? label.substring(0, 12) + '...' : label,
                 value: planValues[index],
                 percentage: ((planValues[index] / total) * 100).toFixed(1)
             })).sort((a, b) => b.value - a.value);
 
-            // Agrupar planos pequenos (< 3% do total)
-            const threshold = total * 0.03;
-            const mainPlans = planData.filter(item => item.value >= threshold);
-            const otherPlans = planData.filter(item => item.value < threshold);
-            
-            let finalData = [...mainPlans];
-            if (otherPlans.length > 0) {
-                const otherTotal = otherPlans.reduce((sum, item) => sum + item.value, 0);
-                finalData.push({
-                    label: 'Outros',
-                    value: otherTotal,
-                    percentage: ((otherTotal / total) * 100).toFixed(1)
-                });
-            }
+            const finalData = planData;
 
             const planConfig = {
                 type: 'doughnut',
@@ -2526,6 +2582,166 @@ async function generateIntelligentBIReport(data) {
     doc.addPage();
     await createModernChartsPage(doc, data);
     
+    // === 📜 PÁGINA 5: LISTA COMPLETA DE DESPESAS ===
+    doc.addPage();
+    await createFullExpenseListPage(doc, data);
+    
+    return doc;
+}
+
+// 📄 RELATÓRIO COMPACTO (1–2 páginas): RESUMO EXECUTIVO
+async function generateCompactMonthlyReport({
+    pool, userId, year, month, account, expenses: rawExpenses,
+    total, totalPessoal, totalEmpresarial, porPlano, porConta,
+    startDate, endDate, contaNome
+}){
+    const expenses = Array.isArray(rawExpenses) ? rawExpenses : [];
+    const doc = new pdfkit({ margin: 30, size: 'A4' });
+    try { const f=ensurePrimaryFont(); if(f){ doc.registerFont('NotoSans', f); doc.font('NotoSans'); } } catch{}
+
+    // Header compacto
+    const grad = doc.linearGradient(0,0,doc.page.width,90); grad.stop(0,'#1d4ed8').stop(1,'#3b82f6');
+    doc.rect(0,0,doc.page.width,90).fill(grad);
+    doc.fillColor('#FFFFFF').fontSize(20).text('RESUMO EXECUTIVO MENSAL', 30, 26);
+    doc.fontSize(11).fillColor('#E5E7EB').text(`Conta: ${contaNome || (account||'Todas')} • Período: ${startDate.toLocaleDateString('pt-BR')} a ${endDate.toLocaleDateString('pt-BR')}`, 30, 55);
+
+    doc.y = 110;
+
+    // KPIs rápidos (Total, Pessoal, Empresarial)
+    const kY = doc.y; const kW=160; const kH=85; const s=18;
+    const mediaTx = expenses.length? total/expenses.length : 0;
+    const pctPes = total>0? (totalPessoal/total*100):0;
+    const pctEmp = total>0? (totalEmpresarial/total*100):0;
+
+    // Total
+    doc.roundedRect(30, kY, kW, kH, 12).fill('#3B82F6');
+    doc.fillColor('#FFFFFF').fontSize(11).text('💰 Total', 40, kY+12);
+    doc.fontSize(14).text(`R$ ${total.toLocaleString('pt-BR',{minimumFractionDigits:2})}`, 40, kY+34);
+    doc.fontSize(9).text(`Média: R$ ${mediaTx.toFixed(2)}`, 40, kY+56);
+
+    // Pessoal
+    const k2x = 30 + kW + s;
+    doc.roundedRect(k2x, kY, kW, kH, 12).fill('#10B981');
+    doc.fillColor('#FFFFFF').fontSize(11).text('🏠 Pessoal', k2x+10, kY+12);
+    doc.fontSize(14).text(`R$ ${totalPessoal.toLocaleString('pt-BR',{minimumFractionDigits:2})}`, k2x+10, kY+34);
+    doc.fontSize(9).text(`${pctPes.toFixed(1)}% do total`, k2x+10, kY+56);
+
+    // Empresarial
+    const k3x = k2x + kW + s;
+    doc.roundedRect(k3x, kY, kW, kH, 12).fill('#F59E0B');
+    doc.fillColor('#FFFFFF').fontSize(11).text('💼 Empresarial', k3x+10, kY+12);
+    doc.fontSize(14).text(`R$ ${totalEmpresarial.toLocaleString('pt-BR',{minimumFractionDigits:2})}`, k3x+10, kY+34);
+    doc.fontSize(9).text(`${pctEmp.toFixed(1)}% do total`, k3x+10, kY+56);
+
+    doc.y = kY + kH + 20;
+
+    // Variação vs mês anterior (MoM)
+    let momPct = 0; let prevTotal = 0;
+    try{
+        const prevMonth = month===1? 12 : month-1; const prevYear = month===1? year-1 : year;
+        const prevStart = new Date(prevYear, prevMonth-1, 1); const prevEnd = new Date(prevYear, prevMonth, 0);
+        const [prevExpenses] = await pool.query(
+            `SELECT amount FROM expenses WHERE user_id=? AND transaction_date>=? AND transaction_date<=?`,
+            [userId, prevStart.toISOString().slice(0,10), prevEnd.toISOString().slice(0,10)]
+        );
+        prevTotal = (prevExpenses||[]).reduce((s,e)=> s + parseFloat(e.amount||0), 0);
+        momPct = prevTotal>0? ((total-prevTotal)/prevTotal*100) : 0;
+    } catch{}
+
+    doc.roundedRect(30, doc.y, doc.page.width-60, 50, 10).fill('#F8FAFC');
+    doc.fillColor('#0F172A').fontSize(12).text('📈 Destaques Rápidos', 42, doc.y+12);
+    doc.fontSize(10).fillColor('#334155').text(
+        `Variação M/M: ${momPct>=0?'↑':'↓'} ${Math.abs(momPct).toFixed(1)}%  •  Transações: ${expenses.length}  •  Média diária: R$ ${(total/Math.max(1, endDate.getDate())).toFixed(2)}`,
+        42, doc.y+30, { width: doc.page.width-90 }
+    );
+    doc.y += 65;
+
+    // Top categorias (por conta) – Top 5
+    const topAccounts = Object.entries(porConta||{}).sort(([,a],[,b])=>b-a).slice(0,5);
+    doc.fontSize(12).fillColor('#111827').text('🏆 Top Categorias', 30, doc.y);
+    doc.fontSize(10).fillColor('#374151');
+    topAccounts.forEach(([acc,val],i)=>{
+        const pct = total>0? (val/total*100):0;
+        doc.text(`${i+1}. ${acc}: R$ ${val.toFixed(2)} (${pct.toFixed(1)}%)`, 42, doc.y+16+(i*14));
+    });
+    doc.y += 16 + (topAccounts.length*14) + 10;
+
+    // Tetos monitorados – Top 3 por uso (cores parametrizadas)
+    try{
+        const planMaps = (accountsConfig && accountsConfig.asMaps)? accountsConfig.asMaps():{budgets:{},names:{}};
+        const budgets = planMaps.budgets || {};
+        const byPlan = {};
+        expenses.forEach(e=>{ const p = (e.account_plan_code!=null && e.account_plan_code!=='')? String(e.account_plan_code): 'Sem Plano'; byPlan[p]=(byPlan[p]||0)+parseFloat(e.amount||0); });
+        const usage = Object.entries(budgets).map(([p,t])=>{ const spent = byPlan[p]||0; const pct = t>0? (spent/t*100):0; return {p,spent,t,pct}; })
+            .filter(o=>o.t>0).sort((a,b)=> b.pct - a.pct).slice(0,3);
+        if (usage.length){
+            doc.fontSize(12).fillColor('#111827').text('🎯 Tetos Monitorados (Top 3)', 30, doc.y);
+            usage.forEach((u,idx)=>{
+                const yellow = kpiThresholds.budgetHighUsageYellow ?? 80;
+                const red = kpiThresholds.budgetHighUsageRed ?? 100;
+                const color = u.pct>red?'#DC2626':(u.pct>=yellow?'#D97706':'#10B981');
+                const label = (planMaps.names && planMaps.names[Number(u.p)])? planMaps.names[Number(u.p)] : `Plano ${u.p}`;
+                const y = doc.y + 16 + idx*18; const w = 180; const used = Math.min(1, u.pct/100);
+                doc.fillColor('#374151').fontSize(10).text(`${label}`, 42, y-2, { width: 230 });
+                doc.rect(280, y, w, 10).fill('#E5E7EB');
+                doc.rect(280, y, Math.max(4, w*used), 10).fill(color);
+                doc.fillColor('#111827').fontSize(9).text(`${u.pct.toFixed(1)}%`, 470, y-2);
+            });
+            doc.y += 16 + usage.length*18 + 6;
+        }
+    } catch{}
+
+    // Insights e Alertas (limitados) — preferir KPIs unificados
+    let insights = [];
+    let alerts = [];
+    try {
+        const kpis = await computeMonthlyKPIs({ pool, userId, year, month, account: account || 'ALL' });
+        const bi = kpis?.businessIntelligence || {};
+        // Mapear insights BI em mensagens curtas
+        if (Array.isArray(bi.recommendations)) {
+            insights = bi.recommendations.slice(0,2).map(r=>({ icon: '🧠', title: r.type || 'Insight', description: r.message || '' }));
+        }
+        // Alerts baseados em riscos do BI e projeção
+        const risk = bi.insights?.riskFactors || {};
+        if (risk.highConcentration) alerts.push({ level: 'atencao', icon: '⚠️', message: 'Alta concentração de gastos', recommendation: 'Diversificar categorias para reduzir risco.' });
+        if (kpis?.projecao?.crescimentoProj > (kpiThresholds.alerts?.projectionHighGrowth ?? 20)) alerts.push({ level: 'critico', icon: '📈', message: 'Crescimento projetado elevado', recommendation: 'Implementar controles para conter avanço dos gastos.' });
+        alerts = alerts.slice(0,2);
+    } catch {
+        // Fallback para heurísticas locais
+        insights = generateIntelligentInsights(expenses, total, totalPessoal, totalEmpresarial, year, month).slice(0,2);
+        alerts = generateSmartAlerts(expenses, total, totalPessoal, totalEmpresarial, year, month).slice(0,2);
+    }
+    if (insights.length || alerts.length){
+        doc.fontSize(12).fillColor('#111827').text('🧠 Insights & Alertas', 30, doc.y);
+        doc.y += 6;
+        insights.forEach(ins=>{ doc.fontSize(10).fillColor('#0C4A6E').text(`${ins.icon} ${ins.title} — ${ins.description}`, 42, doc.y); doc.y += 14; });
+        alerts.forEach(al=>{ const ic = al.icon||'⚠️'; doc.fontSize(10).fillColor('#7C2D12').text(`${ic} ${al.message} — ${al.recommendation}`, 42, doc.y); doc.y += 14; });
+    }
+
+    // Único gráfico pequeno (opcional) — Top Categorias (barras horizontais)
+    if (ChartJSNodeCanvas) {
+        try {
+            const chartJSNodeCanvas = new ChartJSNodeCanvas({ width: 420, height: 240, backgroundColour: 'white' });
+            const topAcc = Object.entries(porConta||{}).sort(([,a],[,b])=>b-a).slice(0,6);
+            const labels = topAcc.map(([name])=> name);
+            const dataVals = topAcc.map(([,val])=> val);
+            const cfg = {
+                type: 'bar',
+                data: { labels, datasets: [{ label: 'Top Categorias', data: dataVals, backgroundColor: '#3B82F6' }] },
+                options: { indexAxis: 'y', plugins: { legend: { display: false } }, scales: { x: { ticks: { callback: (v)=> `R$ ${v}` } } } }
+            };
+            const img = await chartJSNodeCanvas.renderToBuffer(cfg);
+            if (doc.y > 590) { doc.addPage(); doc.y = 40; }
+            doc.fontSize(11).fillColor('#111827').text('📊 Top Categorias (por conta)', 30, doc.y);
+            doc.image(img, 30, doc.y+14, { width: 420, height: 240 });
+            doc.y += 260;
+        } catch{}
+    }
+
+    // Rodapé
+    const now = new Date();
+    doc.fontSize(9).fillColor('#6B7280').text(`Gerado em ${now.toLocaleDateString('pt-BR')} ${now.toLocaleTimeString('pt-BR')}`, 30, doc.page.height-40, { width: doc.page.width-60, align: 'right' });
+
     return doc;
 }
 
@@ -2729,6 +2945,33 @@ async function createBIAnalyticsPage(doc, data) {
             doc.fillColor('#111827').fontSize(10).text(`${u.pct.toFixed(1)}%`, doc.page.width-50-barW-40, doc.y+8, {width:40, align:'right'});
             doc.y += 34;
         });
+
+        // Alertas de planos que ultrapassaram limites
+        const exceeded = usage.filter(u=> u.pct>100);
+        if (exceeded.length){
+            doc.moveDown(0.5);
+            doc.fontSize(12).fillColor('#B91C1C').text('⚠️ Alertas: Planos que ultrapassaram o limite', 40, doc.y);
+            exceeded.forEach(u=>{
+                const label = planDisplay(u.p);
+                doc.fontSize(10).fillColor('#7C2D12').text(`• ${label}: ${u.pct.toFixed(1)}% do teto (R$ ${u.spent.toFixed(2)} / R$ ${u.t.toFixed(2)})`, 50, doc.y+14);
+                doc.y += 20;
+            });
+        }
+
+        // Recomendações baseadas na utilização
+        const nearLimit = usage.filter(u=> u.pct>= (kpiThresholds.budgetHighUsageYellow ?? 80));
+        if (nearLimit.length){
+            doc.moveDown(0.3);
+            doc.fontSize(12).fillColor('#0C4A6E').text('🧭 Recomendações', 40, doc.y);
+            nearLimit.forEach(u=>{
+                const label = planDisplay(u.p);
+                const rec = u.pct> (kpiThresholds.budgetHighUsageRed ?? 100)
+                    ? 'Rever gastos e realocar orçamento imediatamente.'
+                    : 'Monitorar de perto e considerar ajuste de orçamento.';
+                doc.fontSize(10).fillColor('#164E63').text(`• ${label}: ${rec}`, 50, doc.y+14);
+                doc.y += 20;
+            });
+        }
     }
 }
 
@@ -2776,6 +3019,55 @@ async function createIntelligentDetailPage(doc, data) {
         doc.y += 95;
     });
 }
+
+// 📜 PÁGINA 5: LISTA COMPLETA DE DESPESAS
+async function createFullExpenseListPage(doc, data){
+    const { expenses, planDisplay } = data;
+    doc.rect(0, 0, doc.page.width, 80).fill('#111827');
+    doc.fontSize(24).fillColor('#FFFFFF').text('📜 LISTA COMPLETA DE DESPESAS', 0, 25, { align: 'center', width: doc.page.width });
+    doc.y = 100;
+
+    // Cabeçalho da tabela
+    const cols = [
+        { title: 'Data', width: 70 },
+        { title: 'Conta', width: 110 },
+        { title: 'Plano', width: 150 },
+        { title: 'Tipo', width: 80 },
+        { title: 'Descrição', width: 210 },
+        { title: 'Valor (R$)', width: 80, align: 'right' }
+    ];
+
+    const startX = 40; let y = doc.y;
+    doc.fontSize(11).fillColor('#1F2937');
+    let x = startX;
+    cols.forEach(c=>{ doc.text(c.title, x, y, { width: c.width, align: c.align||'left' }); x += c.width + 6; });
+    y += 18; doc.moveTo(startX, y).lineTo(doc.page.width-40, y).stroke('#E5E7EB'); y += 6;
+
+    doc.fontSize(10).fillColor('#374151');
+    const rowHeight = 16; const bottom = doc.page.height - 60;
+    for (const e of (expenses||[])){
+        const date = new Date(e.transaction_date).toLocaleDateString('pt-BR');
+        const conta = e.account || '-';
+        const plano = planDisplay ? planDisplay(e.account_plan_code) : String(e.account_plan_code||'Sem Plano');
+        const tipo = e.is_business_expense ? 'Empresarial' : 'Pessoal';
+        const desc = String(e.description||'').slice(0, 60);
+        const val = (parseFloat(e.amount||0) || 0).toFixed(2);
+
+        x = startX;
+        doc.text(date, x, y, { width: cols[0].width }); x += cols[0].width + 6;
+        doc.text(conta, x, y, { width: cols[1].width }); x += cols[1].width + 6;
+        doc.text(plano, x, y, { width: cols[2].width }); x += cols[2].width + 6;
+        doc.text(tipo, x, y, { width: cols[3].width }); x += cols[3].width + 6;
+        doc.text(desc, x, y, { width: cols[4].width }); x += cols[4].width + 6;
+        doc.text(val, x, y, { width: cols[5].width, align: 'right' });
+        y += rowHeight;
+
+        if (y > bottom){
+            doc.addPage();
+            doc.y = 50; y = doc.y;
+        }
+    }
+}
 // 📊 PÁGINA 4: GRÁFICOS MODERNOS
 async function createModernChartsPage(doc, data) {
     const { expenses, porPlano, porConta, planDisplay } = data;
@@ -2815,6 +3107,24 @@ async function createModernChartsPage(doc, data) {
                 doc.image(charts.accountChart, 50, doc.y + 20, { width: 500, height: 300 });
                 doc.y += 340;
             }
+
+            if (doc.y > 600) { doc.addPage(); doc.y = 50; }
+
+            // Donut Pessoal vs Empresarial
+            if (charts.comparisonChart) {
+                doc.fontSize(14).fillColor('#1F2937').text('🍩 Pessoal vs Empresarial', { underline: true });
+                doc.image(charts.comparisonChart, 50, doc.y + 20, { width: 300, height: 300 });
+                doc.y += 340;
+            }
+
+            if (doc.y > 600) { doc.addPage(); doc.y = 50; }
+
+            // Linha: Evolução diária dos gastos
+            if (charts.evolutionChart) {
+                doc.fontSize(14).fillColor('#1F2937').text('📈 Evolução Diária dos Gastos', { underline: true });
+                doc.image(charts.evolutionChart, 50, doc.y + 20, { width: 500, height: 300 });
+                doc.y += 340;
+            }
             
         } catch (chartError) {
             console.error('Erro ao inserir gráficos no PDF:', chartError);
@@ -2830,8 +3140,8 @@ function generateIntelligentInsights(expenses, total, totalPessoal, totalEmpresa
     const insights = [];
     
     // Insight 1: Análise de proporção
-    const proporcaoPessoal = totalPessoal / total * 100;
-    if (proporcaoPessoal > 70) {
+    const proporcaoPessoal = total > 0 ? (totalPessoal / total * 100) : 0;
+    if (proporcaoPessoal > (kpiThresholds.alerts?.personalProportionHigh ?? 75)) {
         insights.push({
             icon: '🏠',
             title: 'Foco nos Gastos Pessoais',
@@ -2846,14 +3156,14 @@ function generateIntelligentInsights(expenses, total, totalPessoal, totalEmpresa
     }
     
     // Insight 2: Análise de transações
-    const mediaTransacao = total / expenses.length;
-    if (mediaTransacao > 500) {
+    const mediaTransacao = expenses.length ? (total / expenses.length) : 0;
+    if (mediaTransacao > (kpiThresholds.insights?.avgTransactionHigh ?? 400)) {
         insights.push({
             icon: '💰',
             title: 'Transações de Alto Valor',
             description: `Média de R$ ${mediaTransacao.toFixed(2)} por transação. Transações de grande valor dominam o período.`
         });
-    } else if (mediaTransacao < 50) {
+    } else if (mediaTransacao < (kpiThresholds.insights?.avgTransactionLow ?? 70)) {
         insights.push({
             icon: '🪙',
             title: 'Micro Transações Frequentes',
@@ -2866,13 +3176,13 @@ function generateIntelligentInsights(expenses, total, totalPessoal, totalEmpresa
     const diasNoMes = new Date(year, month, 0).getDate();
     const frequenciaGastos = diasComGastos / diasNoMes * 100;
     
-    if (frequenciaGastos > 80) {
+    if (frequenciaGastos >= (kpiThresholds.insights?.distributedMinPct ?? 75)) {
         insights.push({
             icon: '📅',
             title: 'Gastos Distribuídos',
             description: `Gastos em ${diasComGastos} de ${diasNoMes} dias (${frequenciaGastos.toFixed(1)}%). Boa distribuição temporal.`
         });
-    } else if (frequenciaGastos < 40) {
+    } else if (frequenciaGastos <= (kpiThresholds.insights?.concentratedMaxPct ?? 35)) {
         insights.push({
             icon: '⚡',
             title: 'Gastos Concentrados',
@@ -2888,8 +3198,8 @@ function generateSmartAlerts(expenses, total, totalPessoal, totalEmpresarial, ye
     const alerts = [];
     
     // Alerta 1: Concentração de gastos
-    const maiorGasto = Math.max(...expenses.map(e => parseFloat(e.amount)));
-    if (maiorGasto / total > 0.3) {
+    const maiorGasto = expenses.length ? Math.max(...expenses.map(e => parseFloat(e.amount||0))) : 0;
+    if (total > 0 && (maiorGasto / total) > (kpiThresholds.alerts?.largeTransactionShare ?? 0.25)) {
         alerts.push({
             level: 'atencao',
             icon: '⚠️',
@@ -2899,8 +3209,8 @@ function generateSmartAlerts(expenses, total, totalPessoal, totalEmpresarial, ye
     }
     
     // Alerta 2: Desequilíbrio pessoal vs empresarial
-    const proporcaoPessoal = totalPessoal / total * 100;
-    if (proporcaoPessoal > 85) {
+    const proporcaoPessoal2 = total > 0 ? (totalPessoal / total * 100) : 0;
+    if (proporcaoPessoal2 > (kpiThresholds.alerts?.personalProportionHigh ?? 75)) {
         alerts.push({
             level: 'atencao',
             icon: '🏠',
@@ -2912,7 +3222,7 @@ function generateSmartAlerts(expenses, total, totalPessoal, totalEmpresarial, ye
     // Alerta 3: Volume de transações
     const diasNoMes = new Date(year, month, 0).getDate();
     const transacoesPorDia = expenses.length / diasNoMes;
-    if (transacoesPorDia > 10) {
+    if (transacoesPorDia > (kpiThresholds.alerts?.highTransactionsPerDay ?? 12)) {
         alerts.push({
             level: 'info',
             icon: '📊',
@@ -3296,42 +3606,45 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
 
         console.log(`📋 [STEP 10.1] Despesas agrupadas em ${sortedPlanGroups.length} planos de contas`);
 
-        console.log(`🧠 [STEP 11] Iniciando geração do relatório BI inteligente...`);
+        console.log(`🧠 [STEP 11] Iniciando geração do relatório (formato solicitado)...`);
         
         try {
-            // Gerar relatório BI completo usando a nova função
-            const biReport = await generateIntelligentBIReport({
-                expenses,
-                total,
-                totalEmpresarial,
-                totalPessoal,
-                empresariais,
-                pessoaisFiltrados,
-                expensesByPlan,
-                startDate,
-                endDate,
-                contaNome,
-                year,
-                month,
-                porPlano,
-                porConta,
-                userId
-            });
-            
-            console.log(`✅ [STEP 11] Relatório BI inteligente gerado com sucesso!`);
-            
-            // Configurar headers de resposta
-            res.setHeader('Content-Type', 'application/pdf');
-            res.setHeader('Content-Disposition', `attachment; filename=relatorio-bi-inteligente-${year}-${month}${account ? '-' + account : ''}.pdf`);
-            
-            // Enviar o documento BI
-            biReport.pipe(res);
-            
-            console.log(`🎉 [SUCESSO] Relatório BI inteligente enviado com sucesso! 
-            📊 Dados processados: ${expenses.length} despesas totalizando R$ ${total.toFixed(2)}
-            🧠 Sistema BI: Análise inteligente com insights automatizados
-            📄 Dashboard: 4 páginas executivas com visualizações avançadas
-            ⏱️ Processamento concluído`);
+            const format = (req.body && req.body.format) || (req.query && req.query.format) || 'full';
+            if (String(format).toLowerCase() === 'summary') {
+                // Relatório compacto (1–2 páginas)
+                const compactDoc = await generateCompactMonthlyReport({
+                    pool, userId, year, month, account,
+                    expenses, total, totalPessoal, totalEmpresarial,
+                    porPlano, porConta, startDate, endDate, contaNome
+                });
+                res.setHeader('Content-Type', 'application/pdf');
+                res.setHeader('Content-Disposition', `attachment; filename=relatorio-resumo-${year}-${month}${account ? '-' + account : ''}.pdf`);
+                compactDoc.pipe(res);
+                console.log(`✅ [STEP 11] Relatório compacto gerado e enviado.`);
+            } else {
+                // Relatório BI completo (4 páginas)
+                const biReport = await generateIntelligentBIReport({
+                    expenses,
+                    total,
+                    totalEmpresarial,
+                    totalPessoal,
+                    empresariais,
+                    pessoaisFiltrados,
+                    expensesByPlan,
+                    startDate,
+                    endDate,
+                    contaNome,
+                    year,
+                    month,
+                    porPlano,
+                    porConta,
+                    userId
+                });
+                res.setHeader('Content-Type', 'application/pdf');
+                res.setHeader('Content-Disposition', `attachment; filename=relatorio-bi-inteligente-${year}-${month}${account ? '-' + account : ''}.pdf`);
+                biReport.pipe(res);
+                console.log(`✅ [STEP 11] Relatório BI completo gerado e enviado.`);
+            }
 
         } catch (biError) {
             console.error(`❌ [ERRO] Falha na geração do relatório BI:`, biError);

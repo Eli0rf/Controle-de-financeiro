@@ -1,3 +1,4 @@
+const kpiThresholds = require('../config/kpiThresholds');
 const computeMonthlyKPIs = async ({ pool, userId, year, month, account }) => {
   const startDate = new Date(year, month - 1, 1);
   const endDate = new Date(year, month, 0);
@@ -84,22 +85,23 @@ const computeMonthlyKPIs = async ({ pool, userId, year, month, account }) => {
   };
 
   // Insights de BI automatizados
+  const t = kpiThresholds.kpis || {};
   const biInsights = {
-    concentrationLevel: hhi > 0.25 ? 'ALTA' : hhi > 0.15 ? 'MÉDIA' : 'BAIXA',
-    diversificationNeed: pareto80Count <= 3 ? 'ALTA' : pareto80Count <= 5 ? 'MÉDIA' : 'BAIXA',
-    spendingPattern: diasComGasto < businessDaysInMonth * 0.7 ? 'CONCENTRADO' : 'DISTRIBUÍDO',
+    concentrationLevel: hhi > (t.hhiHigh ?? 0.25) ? 'ALTA' : hhi > (t.hhiMedium ?? 0.15) ? 'MÉDIA' : 'BAIXA',
+    diversificationNeed: pareto80Count <= (t.pareto80HighMax ?? 3) ? 'ALTA' : pareto80Count <= (t.pareto80MediumMax ?? 5) ? 'MÉDIA' : 'BAIXA',
+    spendingPattern: (businessDaysInMonth > 0 && (diasComGasto / businessDaysInMonth) < (t.spendingPatternDistributed ?? 0.70)) ? 'CONCENTRADO' : 'DISTRIBUÍDO',
     efficiencyTrend: custoMedioDiaUtil > 0 ? 'CALCULADO' : 'INSUFICIENTE',
     riskFactors: {
-      highConcentration: hhi > 0.25,
-      fewActiveCategories: pareto80Count <= 3,
-      irregularSpending: diasComGasto < businessDaysInMonth * 0.5,
-      highDailyCost: custoMedioDiaUtil > totalEmpresarial * 0.1 // 10% do total em um dia
+      highConcentration: hhi > (t.hhiHigh ?? 0.25),
+      fewActiveCategories: pareto80Count <= (t.pareto80HighMax ?? 3),
+      irregularSpending: (businessDaysInMonth > 0) ? ((diasComGasto / businessDaysInMonth) < (t.spendingPatternIrregular ?? 0.50)) : false,
+      highDailyCost: custoMedioDiaUtil > totalEmpresarial * 0.1
     }
   };
 
   // Recomendações automáticas
   const recommendations = [];
-  if (hhi > 0.25) {
+  if (hhi > (t.hhiHigh ?? 0.25)) {
     recommendations.push({
       type: 'DIVERSIFICATION',
       priority: 'HIGH',
@@ -108,7 +110,7 @@ const computeMonthlyKPIs = async ({ pool, userId, year, month, account }) => {
     });
   }
   
-  if (pareto80Count <= 3) {
+  if (pareto80Count <= (t.pareto80HighMax ?? 3)) {
     recommendations.push({
       type: 'BUDGET_PLANNING',
       priority: 'MEDIUM',
@@ -117,7 +119,7 @@ const computeMonthlyKPIs = async ({ pool, userId, year, month, account }) => {
     });
   }
 
-  if (crescimentoProj > 20) {
+  if (crescimentoProj > ((kpiThresholds.alerts && kpiThresholds.alerts.projectionHighGrowth) ?? 20)) {
     recommendations.push({
       type: 'COST_CONTROL',
       priority: 'HIGH',
@@ -150,8 +152,8 @@ const computeMonthlyKPIs = async ({ pool, userId, year, month, account }) => {
       summary: {
         totalCategories: planAnalysis.length,
         activeSpendingDays: diasComGasto,
-        concentrationRisk: hhi > 0.25,
-        projectionRisk: crescimentoProj > 15,
+        concentrationRisk: hhi > (t.hhiHigh ?? 0.25),
+        projectionRisk: crescimentoProj > ((kpiThresholds.alerts && kpiThresholds.alerts.projectionHighGrowth) ?? 20),
         outlierCount: outliers.top.length
       }
     },
@@ -417,7 +419,7 @@ const generateAlerts = (currentKpis, previousKpis) => {
   if (previousTotal > 0) {
     const change = ((currentTotal - previousTotal) / previousTotal) * 100;
     
-    if (change > 25) {
+    if (change > ((kpiThresholds.alerts && kpiThresholds.alerts.monthlyChangeHigh) ?? 25)) {
       alerts.push({
         type: 'HIGH_INCREASE',
         severity: 'HIGH',
@@ -426,7 +428,7 @@ const generateAlerts = (currentKpis, previousKpis) => {
       });
     }
     
-    if (change < -25) {
+    if (change < -((kpiThresholds.alerts && kpiThresholds.alerts.monthlyChangeHigh) ?? 25)) {
       alerts.push({
         type: 'SIGNIFICANT_DECREASE',
         severity: 'MEDIUM',
@@ -437,7 +439,7 @@ const generateAlerts = (currentKpis, previousKpis) => {
   }
   
   const hhi = currentKpis.concentracao?.hhi || 0;
-  if (hhi > 0.3) {
+  if (hhi > ((kpiThresholds.alerts && kpiThresholds.alerts.hhiVeryHigh) ?? 0.3)) {
     alerts.push({
       type: 'HIGH_CONCENTRATION',
       severity: 'MEDIUM',
@@ -447,7 +449,7 @@ const generateAlerts = (currentKpis, previousKpis) => {
   }
   
   const projectionGrowth = currentKpis.projecao?.crescimentoProj || 0;
-  if (projectionGrowth > 20) {
+  if (projectionGrowth > ((kpiThresholds.alerts && kpiThresholds.alerts.projectionHighGrowth) ?? 20)) {
     alerts.push({
       type: 'PROJECTION_RISK',
       severity: 'HIGH',
