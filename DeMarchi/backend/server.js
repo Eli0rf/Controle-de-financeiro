@@ -400,6 +400,49 @@ async function generateSimplePDF(expenses, total, startDate, endDate, contaNome,
                     plugins:[valueLabelPlugin]
                 };
                 const lineImg = await chart.renderToBuffer(lineCfg); doc.image(lineImg,300,400,{width:230}); doc.fontSize(10).fillColor('#334155').text('📈 Evolução Diária',300,400+height+4,{width:230,align:'center'});
+
+                // Nova página: Pessoal x Empresarial por Plano de Conta
+                newPageWithTitle('📊 Gastos por Plano de Conta — Pessoal/Empresarial');
+
+                // Pessoal por Plano (Pizza)
+                const sortedPersPlans = Object.entries(byPlanPersonal).sort((a,b)=>b[1]-a[1]);
+                if (sortedPersPlans.length > 0) {
+                    const persLabels = sortedPersPlans.map(([code])=> planDisplay(code));
+                    const persValues = sortedPersPlans.map(([,val])=> val);
+                    const manyPers = persLabels.length > (opts.maxLegendItems || 12);
+                    const showLegendPers = !(opts.legendSummary && manyPers);
+                    const piePersCfg = {
+                        type: 'pie',
+                        data: { labels: persLabels, datasets: [{ data: persValues, backgroundColor: ['#56B4E9','#E69F00','#009E73','#F0E442','#0072B2','#D55E00','#CC79A7','#999999'] }] },
+                        options: { plugins: { legend: { display: showLegendPers, position: 'bottom', labels: { boxWidth: 12, font: { size: 9 } } }, tooltip: { enabled: true } } },
+                        plugins: [valueLabelPlugin]
+                    };
+                    const piePersImg = await chart.renderToBuffer(piePersCfg);
+                    doc.image(piePersImg,40,80,{width:230});
+                    doc.fontSize(10).fillColor('#334155').text('🏠 Pessoal — Distribuição por Plano',40,80+height+4,{width:230,align:'center'});
+                } else {
+                    doc.fontSize(11).fillColor('#334155').text('Sem dados pessoais para exibir.', 40, 90, { width: 230, align: 'center' });
+                }
+
+                // Empresarial por Plano (Pizza)
+                const sortedBizPlans = Object.entries(byPlanBusiness).sort((a,b)=>b[1]-a[1]);
+                if (sortedBizPlans.length > 0) {
+                    const bizLabels = sortedBizPlans.map(([code])=> planDisplay(code));
+                    const bizValues = sortedBizPlans.map(([,val])=> val);
+                    const manyBiz = bizLabels.length > (opts.maxLegendItems || 12);
+                    const showLegendBiz = !(opts.legendSummary && manyBiz);
+                    const pieBizCfg = {
+                        type: 'pie',
+                        data: { labels: bizLabels, datasets: [{ data: bizValues, backgroundColor: ['#009E73','#E69F00','#56B4E9','#F0E442','#0072B2','#D55E00','#CC79A7','#999999'] }] },
+                        options: { plugins: { legend: { display: showLegendBiz, position: 'bottom', labels: { boxWidth: 12, font: { size: 9 } } }, tooltip: { enabled: true } } },
+                        plugins: [valueLabelPlugin]
+                    };
+                    const pieBizImg = await chart.renderToBuffer(pieBizCfg);
+                    doc.image(pieBizImg,300,80,{width:230});
+                    doc.fontSize(10).fillColor('#334155').text('💼 Empresarial — Distribuição por Plano',300,80+height+4,{width:230,align:'center'});
+                } else {
+                    doc.fontSize(11).fillColor('#334155').text('Sem dados empresariais para exibir.', 300, 90, { width: 230, align: 'center' });
+                }
             } catch(chartErr){ doc.fontSize(10).fillColor('#DC2626').text('Falha ao gerar gráficos (fallback textual).',40,80); }
         }
 

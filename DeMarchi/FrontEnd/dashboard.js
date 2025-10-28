@@ -3500,6 +3500,11 @@ document.addEventListener('DOMContentLoaded', function() {
             
             if (processedData.length === 0) {
                 updateCategoryStats([]); // Limpar estatísticas
+                // Zerar label de total do mês
+                try {
+                    const totalLabelEl = document.getElementById('plan-total-label');
+                    if (totalLabelEl) totalLabelEl.textContent = formatCurrency(0);
+                } catch {}
                 displayChartFallback(canvasId, 'Sem dados para este período');
                 return;
             }
@@ -3515,16 +3520,14 @@ document.addEventListener('DOMContentLoaded', function() {
                 });
             }
 
-            // Filtrar por tipo, se disponível
-            if (PLAN_CHART_TYPE_FILTER !== 'all' && window.PLAN_TYPES) {
-                processedData = processedData.filter(d => {
-                    const code = d.account_plan_code;
-                    const idNum = Number(code);
-                    const type = window.PLAN_TYPES[idNum];
-                    if (!code || code === 'Sem Categoria' || isNaN(idNum)) return PLAN_CHART_TYPE_FILTER === 'all';
-                    return PLAN_CHART_TYPE_FILTER === 'business' ? (type === 'business') : (type === 'personal');
-                });
-            }
+            // Atualizar label de total do mês ANTES de cortar para Top 15
+            try {
+                const totalLabelEl = document.getElementById('plan-total-label');
+                if (totalLabelEl) {
+                    const fullTotal = processedData.reduce((sum, d) => sum + (Number(d.total) || 0), 0);
+                    totalLabelEl.textContent = formatCurrency(fullTotal);
+                }
+            } catch (e) { console.warn('Falha ao atualizar label de total mensal:', e); }
 
             // Aplicar modo compacto (top 15) quando não estiver mostrando todos
             if (!PLAN_CHART_SHOW_ALL) {

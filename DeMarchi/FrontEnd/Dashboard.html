@@ -734,16 +734,7 @@
                 </p>
             </div>
 
-                        <div class="bg-white p-6 rounded-lg shadow-md mb-8">
-                                <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
-                                    <h3 class="text-xl font-semibold text-gray-700">📊 Gastos por Plano de Conta</h3>
-                                    <div class="flex flex-wrap gap-2 text-xs sm:text-sm">
-                                        <button id="btn-plan-toggle" class="px-3 py-1 rounded border text-gray-600 hover:bg-gray-100" data-state="compact">Ver Todos</button>
-                                        <button data-download="plan-chart" class="px-3 py-1 rounded border text-blue-600 hover:bg-blue-50">⬇ PNG</button>
-                                    </div>
-                                </div>
-                                <canvas id="plan-chart"></canvas>
-                        </div>
+                        
             </div>
 
             <!-- Aba PIX/Boleto Recorrentes BI -->
@@ -1942,13 +1933,22 @@
                             </div>
                         </div>
                         
-                        <!-- Filtro por tipo para Análise por Categoria -->
-                        <div class="flex items-center justify-end gap-2 mb-2 text-sm">
-                            <span class="text-gray-600">Tipo:</span>
-                            <div class="inline-flex rounded-md shadow-sm border overflow-hidden" role="group">
-                                <button type="button" id="plan-type-all" class="px-3 py-1 text-gray-700 bg-white hover:bg-gray-50 border-r">Todos</button>
-                                <button type="button" id="plan-type-personal" class="px-3 py-1 text-gray-700 bg-white hover:bg-gray-50 border-r">Somente Pessoal</button>
-                                <button type="button" id="plan-type-business" class="px-3 py-1 text-gray-700 bg-white hover:bg-gray-50">Somente Empresarial</button>
+                        <!-- Filtro por tipo para Análise por Categoria + total do mês e toggle Top/All -->
+                        <div class="flex items-center justify-between gap-3 mb-2 text-sm">
+                            <div class="flex items-center gap-2">
+                                <span class="text-gray-600">Tipo:</span>
+                                <div class="inline-flex rounded-md shadow-sm border overflow-hidden" role="group">
+                                    <button type="button" id="plan-type-all" class="px-3 py-1 text-gray-700 bg-white hover:bg-gray-50 border-r">Todos</button>
+                                    <button type="button" id="plan-type-personal" class="px-3 py-1 text-gray-700 bg-white hover:bg-gray-50 border-r">Somente Pessoal</button>
+                                    <button type="button" id="plan-type-business" class="px-3 py-1 text-gray-700 bg-white hover:bg-gray-50">Somente Empresarial</button>
+                                </div>
+                            </div>
+                            <div class="flex items-center gap-3">
+                                <div class="flex items-center gap-1">
+                                    <span class="text-gray-600 hidden sm:inline">Total no mês:</span>
+                                    <span id="plan-total-label" class="font-bold text-gray-800">R$ 0,00</span>
+                                </div>
+                                <button id="btn-plan-toggle" class="px-3 py-1 rounded border text-gray-600 hover:bg-gray-50" data-state="compact" title="Alternar entre Top 15 e Todos">Ver Todos</button>
                             </div>
                         </div>
 
