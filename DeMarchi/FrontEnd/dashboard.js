@@ -313,6 +313,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 ]
             },
             options: mergeChartOptions({
+                maintainAspectRatio: false,
                 plugins: {
                     title: { display: true, text: `🔮 Projeção de Lançamentos - Plano ${result.planId}` },
                     subtitle: { display: true, text: `Média base: ${(result.average||0).toFixed(1)} por mês • Próximos 3 meses estimados`, font: { size: 11 } },
@@ -2983,6 +2984,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     }]
                 },
                 options: mergeChartOptions({
+                    maintainAspectRatio: false,
                     plugins: {
                         title: {
                             display: true,
@@ -3050,6 +3052,13 @@ document.addEventListener('DOMContentLoaded', function() {
         }
 
         try {
+            // Ajustar altura do canvas para não estourar o layout
+            const canvas = document.getElementById(canvasId);
+            if (canvas) {
+                const parent = canvas.parentElement;
+                if (parent) parent.style.maxHeight = '320px';
+                canvas.style.maxHeight = '320px';
+            }
             const total = data.reduce((sum, d) => sum + (parseFloat(d.total) || 0), 0);
             
             if (total === 0) {
@@ -3089,6 +3098,7 @@ document.addEventListener('DOMContentLoaded', function() {
             };
 
             const options = mergeChartOptions({
+                maintainAspectRatio: false,
                 plugins: {
                     title: {
                         display: true,
@@ -3444,6 +3454,13 @@ document.addEventListener('DOMContentLoaded', function() {
             return;
         }
 
+        // Ajustar altura para evitar gráficos muito grandes
+        try {
+            const parent = canvas.parentElement;
+            if (parent) parent.style.maxHeight = '360px';
+            canvas.style.maxHeight = '360px';
+        } catch {}
+
         // Debug: verificar se o canvas está visível
         const canvasRect = canvas.getBoundingClientRect();
         console.log(`📊 Canvas ${canvasId} - visibilidade:`, {
@@ -3465,18 +3482,32 @@ document.addEventListener('DOMContentLoaded', function() {
                 // Se data já é um array processado (vem do dashboard)
                 if (data[0] && typeof data[0] === 'object' && 'account_plan_code' in data[0]) {
                     // Converter para estrutura padronizada { account_plan_code, total, count?, name? }
-                    processedData = data.map(d => ({
-                        account_plan_code: d.account_plan_code,
-                        total: Number(d.total || d.Total || 0),
-                        count: Number(d.count || d.Count || 0),
-                        name: d.name || (window.PLAN_NAMES && window.PLAN_NAMES[Number(d.account_plan_code)]) || null
-                    }));
+                    processedData = data.map(d => {
+                        const rawCode = (
+                            d.account_plan_code ?? d.PlanoContasID ?? d.plan_conta ?? d.plan_code ?? null
+                        );
+                        const code = (rawCode === null || rawCode === undefined || rawCode === '') ? 'Sem Categoria' : rawCode;
+                        const codeNum = Number(code);
+                        const nameFromMap = (!isNaN(codeNum) && window.PLAN_NAMES) ? window.PLAN_NAMES[codeNum] : null;
+                        return {
+                            account_plan_code: code,
+                            total: Number(d.total || d.Total || 0),
+                            count: Number(d.count || d.Count || 0),
+                            name: d.name || nameFromMap || null
+                        };
+                    });
                 } else {
                     // Processar gastos brutos agrupando por plano de conta
                     const planTotals = {};
                     
                     data.forEach(expense => {
-                        const planCode = expense.account_plan_code || 'Sem Categoria';
+                        const planCode = (
+                            expense.account_plan_code ??
+                            expense.plan_conta ??
+                            expense.PlanoContasID ??
+                            expense.plan_code ??
+                            'Sem Categoria'
+                        );
                         const amount = parseFloat(expense.amount) || 0;
                         
                         if (!planTotals[planCode]) {
@@ -3579,6 +3610,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     }]
                 },
                 options: mergeChartOptions({
+                    maintainAspectRatio: false,
                     indexAxis: 'y',
                     plugins: {
                         title: {
@@ -7477,7 +7509,14 @@ document.addEventListener('DOMContentLoaded', function() {
         const planCounts = {};
 
         expenses.forEach(expense => {
-            let planCode = expense.account_plan_code;
+            // Aceitar variações de nome do campo vindas do backend ou de outras telas
+            let planCode = (
+                expense.account_plan_code ??
+                expense.plan_conta ??
+                expense.PlanoContasID ??
+                expense.plan_code ??
+                null
+            );
             
             // Tratar gastos sem categoria
             if (!planCode || planCode === '' || planCode === null) {
