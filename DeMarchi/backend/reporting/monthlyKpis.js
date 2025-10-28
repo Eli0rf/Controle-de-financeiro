@@ -38,7 +38,12 @@ const computeMonthlyKPIs = async ({ pool, userId, year, month, account }) => {
   const mediaEmp = empValores.length? empValores.reduce((a,b)=>a+b,0)/empValores.length : 0;
   const stdEmp = empValores.length? Math.sqrt(empValores.reduce((s,v)=> s + Math.pow(v-mediaEmp,2),0)/empValores.length) : 0;
   const limiteOutlier = mediaEmp + stdEmp;
-  const outliers = empresariais.filter(e=> parseFloat(e.amount)>limiteOutlier).sort((a,b)=> parseFloat(b.amount)-parseFloat(a.amount)).slice(0,3).map(o=>({ id:o.id, date:o.transaction_date, amount:parseFloat(o.amount), plan:o.account_plan_code, account:o.account }));
+  // Lista de outliers (top 3) — manter como array e usar consistentemente
+  const outlierTop = empresariais
+    .filter(e => parseFloat(e.amount) > limiteOutlier)
+    .sort((a, b) => parseFloat(b.amount) - parseFloat(a.amount))
+    .slice(0, 3)
+    .map(o => ({ id: o.id, date: o.transaction_date, amount: parseFloat(o.amount), plan: o.account_plan_code, account: o.account }));
 
   // Projeção
   const diasComGasto = Object.keys(porDia).length;
@@ -128,11 +133,11 @@ const computeMonthlyKPIs = async ({ pool, userId, year, month, account }) => {
     });
   }
 
-  if (outliers.top.length > 0) {
+  if (outlierTop.length > 0) {
     recommendations.push({
       type: 'OUTLIER_REVIEW',
       priority: 'MEDIUM',
-      message: `${outliers.top.length} transação(ões) atípica(s) detectada(s)`,
+      message: `${outlierTop.length} transação(ões) atípica(s) detectada(s)`,
       action: 'Revisar gastos excepcionais'
     });
   }
@@ -143,7 +148,7 @@ const computeMonthlyKPIs = async ({ pool, userId, year, month, account }) => {
     distrib: { porPlano, porConta, porDia },
     comparativo,
     eficiencia: efficiencyMetrics,
-    outliers: { mediaEmp, stdEmp, limiteOutlier, top: outliers },
+  outliers: { mediaEmp, stdEmp, limiteOutlier, top: outlierTop },
     projecao: { isMesAtual, mediaDiariaGeral, projecao, crescimentoProj },
     concentracao: { hhi, hhiScaled: Math.round(hhi*10000), sharesTop, paretoAnalysis, pareto80Count },
     businessIntelligence: {
@@ -154,7 +159,7 @@ const computeMonthlyKPIs = async ({ pool, userId, year, month, account }) => {
         activeSpendingDays: diasComGasto,
         concentrationRisk: hhi > (t.hhiHigh ?? 0.25),
         projectionRisk: crescimentoProj > ((kpiThresholds.alerts && kpiThresholds.alerts.projectionHighGrowth) ?? 20),
-        outlierCount: outliers.top.length
+        outlierCount: outlierTop.length
       }
     },
     meta: { comentario: 'KPIs with integrated Business Intelligence analysis' }

@@ -659,6 +659,25 @@
 
             <!-- Aba Dashboard Principal -->
             <div id="dashboard-tab" class="tab-content">
+                <!-- Filtro Global de Datas -->
+                <div class="bg-white p-3 sm:p-4 md:p-6 rounded-lg shadow-md mb-4 sm:mb-6 md:mb-8">
+                    <h3 class="text-lg sm:text-xl font-semibold text-gray-700 mb-3 sm:mb-4">🗓️ Período Global</h3>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 items-end">
+                        <div>
+                            <label for="global-start-date" class="block text-xs sm:text-sm font-medium mb-1">Data Inicial</label>
+                            <input type="date" id="global-start-date" class="w-full p-2 border rounded-lg form-control-touch" />
+                        </div>
+                        <div>
+                            <label for="global-end-date" class="block text-xs sm:text-sm font-medium mb-1">Data Final</label>
+                            <input type="date" id="global-end-date" class="w-full p-2 border rounded-lg form-control-touch" />
+                        </div>
+                        <div class="flex gap-2 md:col-span-2">
+                            <button id="apply-global-range" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg btn-touch">Aplicar</button>
+                            <button id="clear-global-range" class="bg-gray-100 hover:bg-gray-200 text-gray-800 px-4 py-2 rounded-lg btn-touch">Limpar</button>
+                        </div>
+                    </div>
+                    <p class="text-xs text-gray-500 mt-2">Quando um período for aplicado, ele será usado em todos os gráficos e listas deste dashboard.</p>
+                </div>
                 <!-- Cards com Destaques -->
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
                 <div class="bg-gradient-to-br from-blue-500 to-blue-300 p-6 rounded-2xl shadow-lg transform transition duration-500 hover:scale-105 animate-fade-in" data-aos="fade-up" data-aos-delay="100">
@@ -732,6 +751,9 @@
                 <p class="text-gray-600 text-sm mb-4">
                     Gastos que se repetem mensalmente (PIX e Boleto). Use o botão "Gastos Recorrentes" no topo para gerenciar.
                 </p>
+                <div id="recurring-mini-chart-container" class="mt-4" style="height: 220px;">
+                    <canvas id="recurring-monthly-line"></canvas>
+                </div>
             </div>
 
                         
@@ -748,21 +770,21 @@
                         </div>
                         <div class="flex gap-2">
                             <button id="refresh-recurring-pix-boleto" 
-                                    class="bg-white bg-opacity-20 hover:bg-opacity-30 text-white px-4 py-2 rounded-lg transition-all flex items-center">
+                                    class="bg-white text-blue-700 hover:bg-gray-100 px-4 py-2 rounded-lg transition-all flex items-center shadow">
                                 <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
                                 </svg>
                                 Atualizar BI
                             </button>
                             <button id="force-refresh-recurring" 
-                                    class="bg-white bg-opacity-20 hover:bg-opacity-30 text-white px-4 py-2 rounded-lg transition-all flex items-center" title="Ignora cache e refaz todas as consultas">
+                                    class="bg-white text-indigo-700 hover:bg-gray-100 px-4 py-2 rounded-lg transition-all flex items-center shadow" title="Ignora cache e refaz todas as consultas">
                                 <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                                 </svg>
                                 Forçar Atualização
                             </button>
                             <button id="export-recurring-report" 
-                                    class="bg-white bg-opacity-20 hover:bg-opacity-30 text-white px-4 py-2 rounded-lg transition-all flex items-center">
+                                    class="bg-white text-purple-700 hover:bg-gray-100 px-4 py-2 rounded-lg transition-all flex items-center shadow">
                                 <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
                                 </svg>

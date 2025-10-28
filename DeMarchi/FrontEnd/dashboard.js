@@ -50,6 +50,16 @@ document.addEventListener('DOMContentLoaded', function() {
     const reportGenerateText = document.getElementById('report-generate-text');
     const reportLoadingText = document.getElementById('report-loading-text');
 
+    // Filtro global de datas
+    const globalStartDate = document.getElementById('global-start-date');
+    const globalEndDate = document.getElementById('global-end-date');
+    const applyGlobalRangeBtn = document.getElementById('apply-global-range');
+    const clearGlobalRangeBtn = document.getElementById('clear-global-range');
+
+    function isGlobalRangeActive() {
+        return Boolean(globalStartDate && globalEndDate && globalStartDate.value && globalEndDate.value);
+    }
+
     // ========== RELATÓRIO INTERATIVO ==========
     const interactiveReportBtn = document.getElementById('interactive-report-btn');
     const interactiveReportModal = document.getElementById('interactive-report-modal');
@@ -102,11 +112,17 @@ document.addEventListener('DOMContentLoaded', function() {
     const budgetSummary = document.getElementById('budget-summary');
     
     const chartUsageInsights = document.getElementById('chart-usage-insights');
+    // Canvas do gráfico de análise de uso (evita ReferenceError)
+    const chartUsageChart = document.getElementById('chart-usage-chart');
     const chartDetailsTbody = document.getElementById('chart-details-tbody');
     // Controles de análise de gráficos (IDs existem no HTML)
     const analyzeChartUsageBtn = document.getElementById('analyze-chart-usage');
     const chartAnalysisPeriod = document.getElementById('chart-analysis-period');
     const chartAnalysisType = document.getElementById('chart-analysis-type');
+
+    // Controles do gráfico de evolução (linha): densidade/original e download PNG
+    const btnLineDensity = document.getElementById('btn-line-density');
+    const btnLineReset = document.getElementById('btn-line-reset');
     
     // Charts para análise de plano de contas
     let chartAnalysisChart = null;
@@ -181,6 +197,8 @@ document.addEventListener('DOMContentLoaded', function() {
         recurringCategoryChart: null,
     recurringActivePlansSumChart: null,
     pixBoletoPlanSumChart: null,
+        // Mini gráfico de linha dos recorrentes no dashboard principal
+        recurringMonthlyMiniChart: null,
         
         // Gráficos de IR
         irChart1: null,
@@ -191,6 +209,8 @@ document.addEventListener('DOMContentLoaded', function() {
     chartRegistry.planProjectionChart = null;
     // Evolução detalhada do gasto recorrente analisado
     chartRegistry.detailedEvolutionChart = null;
+    // Mini linha recorrentes
+    chartRegistry.recurringMonthlyMiniChart = null;
     
     // ========== PROJEÇÃO DE GASTOS POR PLANO (QUANTIDADE) ==========
     /**
@@ -540,7 +560,7 @@ document.addEventListener('DOMContentLoaded', function() {
                                 callbacks:{
                                     label: (ctx)=> {
                                         const val = ctx.parsed.y || 0;
-                                        const fmt = new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL',notation:'compact',maximumFractionDigits:1});
+                                        const fmt = new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL',notation:'compact',maximumFractionDigits:0});
                                         return fmt.format(val);
                                     }
                                 }
@@ -551,7 +571,7 @@ document.addEventListener('DOMContentLoaded', function() {
                             y:{ 
                                 beginAtZero:true,
                                 ticks: {
-                                    callback: (value)=> new Intl.NumberFormat('pt-BR',{notation:'compact',maximumFractionDigits:1}).format(value)
+                                    callback: (value)=> new Intl.NumberFormat('pt-BR',{notation:'compact',maximumFractionDigits:0}).format(value)
                                 }
                             }
                         }
@@ -785,6 +805,73 @@ document.addEventListener('DOMContentLoaded', function() {
     // Quando o mês ou tipo de análise mudar, recalcular automaticamente
     if (chartAnalysisPeriod) chartAnalysisPeriod.addEventListener('change', analyzeChartUsage);
     if (chartAnalysisType) chartAnalysisType.addEventListener('change', analyzeChartUsage);
+
+        // Controles do gráfico de evolução: Densidade e Original (reset)
+        if (btnLineDensity) {
+            btnLineDensity.addEventListener('click', function() {
+                try {
+                    const chart = chartRegistry.expensesLineChart;
+                    if (!chart) {
+                        showNotification('Gráfico de evolução não está carregado', 'warning');
+                        return;
+                    }
+                    const ds = chart.data?.datasets?.[0];
+                    if (!ds) return;
+                    // Salvar série original na primeira ativação
+                    if (!chart.__originalData) {
+                        chart.__originalData = Array.isArray(ds.data) ? ds.data.slice() : [];
+                    }
+                    ds.data = movingAverage(chart.__originalData, 5);
+                    // Aumentar suavização visual
+                    if (!chart.options.elements) chart.options.elements = {};
+                    if (!chart.options.elements.line) chart.options.elements.line = {};
+                    chart.options.elements.line.tension = 0.5;
+                    chart.update();
+                } catch (e) {
+                    console.error('Erro ao aplicar Densidade:', e);
+                }
+            });
+        }
+        if (btnLineReset) {
+            btnLineReset.addEventListener('click', function() {
+                try {
+                    const chart = chartRegistry.expensesLineChart;
+                    if (!chart) return;
+                    const ds = chart.data?.datasets?.[0];
+                    if (!ds) return;
+                    if (chart.__originalData) ds.data = chart.__originalData.slice();
+                    // Retornar suavização padrão
+                    if (!chart.options.elements) chart.options.elements = {};
+                    if (!chart.options.elements.line) chart.options.elements.line = {};
+                    chart.options.elements.line.tension = 0.3;
+                    chart.update();
+                } catch (e) {
+                    console.error('Erro ao restaurar série original:', e);
+                }
+            });
+        }
+
+        // Download PNG para qualquer canvas referenciado por atributo data-download
+        document.querySelectorAll('[data-download]')
+            .forEach(btn => btn.addEventListener('click', function() {
+                const canvasId = this.getAttribute('data-download');
+                const canvas = document.getElementById(canvasId);
+                if (!canvas) {
+                    showNotification('Canvas não encontrado para download', 'error');
+                    return;
+                }
+                try {
+                    const link = document.createElement('a');
+                    link.href = canvas.toDataURL('image/png');
+                    link.download = `${canvasId}.png`;
+                    document.body.appendChild(link);
+                    link.click();
+                    link.remove();
+                } catch (e) {
+                    console.error('Falha ao gerar PNG do gráfico', e);
+                    showNotification('Falha ao gerar a imagem do gráfico', 'error');
+                }
+            }));
         
         // Inicializar campos de ano e mês
         initializeBudgetFilters();
@@ -1482,6 +1569,8 @@ document.addEventListener('DOMContentLoaded', function() {
             }
 
             await Promise.all(promises);
+            // Atualizar mini linha de recorrentes (usa BI atual se disponível ou busca leve)
+            try { await renderRecurringMonthlyMiniLine(); } catch (e) { console.warn('Mini recorrentes não pôde ser renderizado:', e.message); }
             
             console.log('✅ fetchAllData concluído com sucesso');
         } catch (error) {
@@ -2491,10 +2580,15 @@ document.addEventListener('DOMContentLoaded', function() {
             if (!checkAuthentication()) return;
 
             const params = new URLSearchParams({
-                year: filterYear.value,
-                month: filterMonth.value,
                 account: document.getElementById('filter-account')?.value || ''
             });
+            if (isGlobalRangeActive()) {
+                params.set('start_date', globalStartDate.value);
+                params.set('end_date', globalEndDate.value);
+            } else {
+                params.set('year', filterYear.value);
+                params.set('month', filterMonth.value);
+            }
 
             const response = await authenticatedFetch(`${API_BASE_URL}/api/expenses?${params.toString()}`);
 
@@ -2596,6 +2690,33 @@ document.addEventListener('DOMContentLoaded', function() {
         
         // Mostrar estatísticas dos resultados
         showFilterStats(filtered);
+    }
+
+    // Ações para o filtro global de datas
+    if (applyGlobalRangeBtn) {
+        applyGlobalRangeBtn.addEventListener('click', () => {
+            if (!globalStartDate.value || !globalEndDate.value) {
+                showNotification('Preencha Data Inicial e Final para aplicar o período.', 'warning');
+                return;
+            }
+            fetchAndRenderDashboardMetrics();
+            fetchAndRenderExpenses();
+            // Sincroniza análises empresariais e por categoria
+            if (typeof loadBusinessExpensesList === 'function') loadBusinessExpensesList();
+            if (typeof loadBusinessSecondaryCharts === 'function') loadBusinessSecondaryCharts();
+            if (typeof analyzeChartUsage === 'function') analyzeChartUsage();
+        });
+    }
+    if (clearGlobalRangeBtn) {
+        clearGlobalRangeBtn.addEventListener('click', () => {
+            if (globalStartDate) globalStartDate.value = '';
+            if (globalEndDate) globalEndDate.value = '';
+            fetchAndRenderDashboardMetrics();
+            fetchAndRenderExpenses();
+            if (typeof loadBusinessExpensesList === 'function') loadBusinessExpensesList();
+            if (typeof loadBusinessSecondaryCharts === 'function') loadBusinessSecondaryCharts();
+            if (typeof analyzeChartUsage === 'function') analyzeChartUsage();
+        });
     }
 
     // Função para exibir indicadores visuais dos filtros ativos
@@ -2700,7 +2821,14 @@ document.addEventListener('DOMContentLoaded', function() {
         try {
             if (!checkAuthentication()) return;
 
-            const params = new URLSearchParams({ year: filterYear.value, month: filterMonth.value });
+            const params = new URLSearchParams();
+            if (isGlobalRangeActive()) {
+                params.set('start_date', globalStartDate.value);
+                params.set('end_date', globalEndDate.value);
+            } else {
+                params.set('year', filterYear.value);
+                params.set('month', filterMonth.value);
+            }
             
             const response = await authenticatedFetch(`${API_BASE_URL}/api/dashboard?${params}`);
             
@@ -2730,6 +2858,33 @@ document.addEventListener('DOMContentLoaded', function() {
             console.error('Erro ao buscar métricas do dashboard:', error);
             showNotification('Erro ao carregar métricas', 'error');
         }
+    }
+
+    // Recarregar métricas globais quando o filtro de período mudar
+    if (filterYear) {
+        filterYear.addEventListener('change', () => {
+            // Sincronizar seletor mensal da análise de categorias
+            if (chartAnalysisPeriod && filterMonth && filterMonth.value) {
+                chartAnalysisPeriod.value = String(parseInt(filterMonth.value, 10));
+            }
+            // Limpa intervalo global para priorizar year/month
+            if (globalStartDate) globalStartDate.value = '';
+            if (globalEndDate) globalEndDate.value = '';
+            fetchAndRenderDashboardMetrics();
+            // Atualizar análise por plano de contas para refletir novo período
+            if (typeof analyzeChartUsage === 'function') analyzeChartUsage();
+        });
+    }
+    if (filterMonth) {
+        filterMonth.addEventListener('change', () => {
+            if (chartAnalysisPeriod && filterMonth && filterMonth.value) {
+                chartAnalysisPeriod.value = String(parseInt(filterMonth.value, 10));
+            }
+            if (globalStartDate) globalStartDate.value = '';
+            if (globalEndDate) globalEndDate.value = '';
+            fetchAndRenderDashboardMetrics();
+            if (typeof analyzeChartUsage === 'function') analyzeChartUsage();
+        });
     }
 
     function renderExpensesTable(expenses = []) {
@@ -2916,6 +3071,20 @@ document.addEventListener('DOMContentLoaded', function() {
         return 0;
     }
 
+    // Suavização simples (média móvel) para modo Densidade
+    function movingAverage(arr = [], windowSize = 5) {
+        const out = [];
+        const n = Math.max(1, parseInt(windowSize, 10) || 1);
+        for (let i = 0; i < arr.length; i++) {
+            let start = Math.max(0, i - Math.floor(n / 2));
+            let end = Math.min(arr.length - 1, i + Math.floor(n / 2));
+            let sum = 0; let count = 0;
+            for (let j = start; j <= end; j++) { sum += Number(arr[j] || 0); count++; }
+            out.push(count ? (sum / count) : Number(arr[i] || 0));
+        }
+        return out;
+    }
+
     /**
      * Renderiza gráfico de linha da evolução diária dos gastos
      */
@@ -2929,25 +3098,54 @@ document.addEventListener('DOMContentLoaded', function() {
             return;
         }
 
-        const year = parseInt(filterYear.value, 10);
-        const month = parseInt(filterMonth.value, 10);
-        const daysInMonth = new Date(year, month, 0).getDate();
-        const labels = Array.from({ length: daysInMonth }, (_, i) => `${i + 1}`);
-        const chartData = new Array(daysInMonth).fill(0);
-        
+        let labels = [];
+        let chartData = [];
+        let titleText = '';
+        let subtitleText = '';
+
         if (!data || data.length === 0) {
             displayChartFallback(canvasId, 'Sem dados para este período');
             return;
         }
-        
-        // Processar dados diários
-        data.forEach(d => { 
-            if (d.day && d.day <= daysInMonth) {
-                chartData[d.day - 1] = d.total || 0; 
+
+        if (isGlobalRangeActive()) {
+            // Monta labels por data no intervalo
+            const start = new Date(globalStartDate.value);
+            const end = new Date(globalEndDate.value);
+            const map = new Map();
+            data.forEach(d => {
+                const key = (d.date || '').slice(0,10);
+                if (key) map.set(key, parseFloat(d.total) || 0);
+            });
+            const cursor = new Date(start);
+            while (cursor <= end) {
+                const iso = cursor.toISOString().slice(0,10);
+                labels.push(cursor.toLocaleDateString('pt-BR'));
+                chartData.push(map.get(iso) || 0);
+                cursor.setDate(cursor.getDate() + 1);
             }
-        });
-        
-        if (chartData.every(v => v === 0)) {
+            titleText = `Evolução dos Gastos Diários`;
+            subtitleText = `${labels[0]} ➜ ${labels[labels.length - 1]}`;
+        } else {
+            const year = parseInt(filterYear.value, 10);
+            const month = parseInt(filterMonth.value, 10);
+            const daysInMonth = new Date(year, month, 0).getDate();
+            labels = Array.from({ length: daysInMonth }, (_, i) => `${i + 1}`);
+            chartData = new Array(daysInMonth).fill(0);
+            // Processar dados diários no mês
+            data.forEach(d => { 
+                if (d.day && d.day <= daysInMonth) {
+                    chartData[d.day - 1] = d.total || 0; 
+                }
+            });
+            const monthName = filterMonth.options[filterMonth.selectedIndex].text;
+            titleText = `Evolução dos Gastos Diários - ${monthName}/${year}`;
+            const max = Math.max(...chartData);
+            const min = Math.min(...chartData.filter(v => v > 0));
+            subtitleText = `📈 Maior: R$ ${max.toFixed(2)} | 📉 Menor: R$ ${min ? min.toFixed(2) : '0,00'}`;
+        }
+
+        if (!chartData.length || chartData.every(v => v === 0)) {
             displayChartFallback(canvasId, 'Sem gastos registrados neste período');
             return;
         }
@@ -2955,14 +3153,13 @@ document.addEventListener('DOMContentLoaded', function() {
         try {
             const max = Math.max(...chartData);
             const min = Math.min(...chartData.filter(v => v > 0));
-            const monthName = filterMonth.options[filterMonth.selectedIndex].text;
 
             const config = {
                 type: 'line',
                 data: {
                     labels: labels,
                     datasets: [{
-                        label: `Gastos Diários - ${monthName}/${year}`,
+                        label: `Gastos Diários`,
                         data: chartData,
                         borderColor: 'rgba(59, 130, 246, 1)',
                         backgroundColor: 'rgba(59, 130, 246, 0.1)',
@@ -2988,11 +3185,11 @@ document.addEventListener('DOMContentLoaded', function() {
                     plugins: {
                         title: {
                             display: true,
-                            text: `Evolução dos Gastos Diários - ${monthName}/${year}`
+                            text: titleText
                         },
                         subtitle: {
                             display: true,
-                            text: `📈 Maior: R$ ${max.toFixed(2)} | 📉 Menor: R$ ${min ? min.toFixed(2) : '0,00'}`
+                            text: isGlobalRangeActive() ? `📈 Maior: R$ ${max.toFixed(2)} | 📉 Menor: R$ ${min ? min.toFixed(2) : '0,00'} | ${subtitleText}` : subtitleText
                         },
                         legend: {
                             display: false
@@ -3000,7 +3197,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         tooltip: {
                             callbacks: {
                                 title: function(context) {
-                                    return `Dia ${context[0].label} de ${monthName}`;
+                                    return context[0].label;
                                 },
                                 label: function(context) {
                                     return `Gastos: R$ ${context.parsed.y.toFixed(2)}`;
@@ -3012,7 +3209,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         x: {
                             title: {
                                 display: true,
-                                text: 'Dia do Mês'
+                                text: isGlobalRangeActive() ? 'Data' : 'Dia do Mês'
                             }
                         },
                         y: {
@@ -6470,8 +6667,13 @@ document.addEventListener('DOMContentLoaded', function() {
             const params = new URLSearchParams();
             const hasYear = typeof year === 'number' && !Number.isNaN(year);
             const hasMonth = typeof month === 'number' && !Number.isNaN(month);
-            if (hasYear) params.append('year', String(year));
-            if (hasMonth) params.append('month', String(month));
+            if (isGlobalRangeActive()) {
+                params.set('start_date', globalStartDate.value);
+                params.set('end_date', globalEndDate.value);
+            } else {
+                if (hasYear) params.append('year', String(year));
+                if (hasMonth) params.append('month', String(month));
+            }
 
             const url = `${API_BASE_URL}/api/business/summary?${params.toString()}`;
             console.debug('[BusinessDetails] fetchBusinessData -> GET', url);
@@ -9237,6 +9439,106 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
+    // Renderizar mini gráfico de linha dos recorrentes no dashboard principal
+    async function renderRecurringMonthlyMiniLine(providedMonthlyHistory) {
+        const canvas = document.getElementById('recurring-monthly-line');
+        if (!canvas) return;
+
+        const ctx = canvas.getContext('2d');
+        // Destruir anterior se existir
+        if (chartRegistry.recurringMonthlyMiniChart) {
+            try { chartRegistry.recurringMonthlyMiniChart.destroy(); } catch {}
+            chartRegistry.recurringMonthlyMiniChart = null;
+        }
+
+        try {
+            // Usar dados já carregados se presentes, senão buscar rapidamente do endpoint
+            let monthlyHistory = Array.isArray(providedMonthlyHistory) && providedMonthlyHistory.length
+                ? providedMonthlyHistory
+                : (Array.isArray(currentRecurringBIData?.monthlyHistory) ? currentRecurringBIData.monthlyHistory : null);
+
+            if (!monthlyHistory || monthlyHistory.length === 0) {
+                // Buscar do endpoint de BI recorrente respeitando filtros globais
+                const params = new URLSearchParams();
+                const y = document.getElementById('filter-year')?.value || '';
+                const m = document.getElementById('filter-month')?.value || '';
+                if (y) params.append('year', y);
+                if (m) params.append('month', m);
+                const resp = await authenticatedFetch(`${API_BASE_URL}/api/recurring-pix-boleto${params.toString() ? '?' + params.toString() : ''}`);
+                if (resp.ok) {
+                    const raw = await resp.json();
+                    const norm = normalizeRecurringPixBoletoBI(raw);
+                    monthlyHistory = Array.isArray(norm?.monthlyHistory) ? norm.monthlyHistory : [];
+                } else {
+                    // Fallback simples se rota não disponível
+                    const fb = await buildRecurringPixBoletoFallback(y && m ? { year: Number(y), month: Number(m) } : undefined);
+                    monthlyHistory = Array.isArray(fb?.monthlyHistory) ? fb.monthlyHistory : [];
+                }
+            }
+
+            if (!monthlyHistory || monthlyHistory.length === 0) {
+                displayChartFallback('recurring-monthly-line', 'Sem dados de recorrentes para exibir');
+                return;
+            }
+
+            // Preparar séries: usar totalActual e destacar o mês selecionado
+            const labels = monthlyHistory.map(m => m.monthLabel);
+            const actualData = monthlyHistory.map(m => round2(m.totalActual));
+
+            // Índice do mês selecionado (global)
+            const selYear = Number(document.getElementById('filter-year')?.value || 0);
+            const selMonth = Number(document.getElementById('filter-month')?.value || 0);
+            let highlightIndex = monthlyHistory.length - 1;
+            if (selYear && selMonth) {
+                const idx = monthlyHistory.findIndex(m => Number(m.year) === selYear && Number(m.month) === selMonth);
+                if (idx >= 0) highlightIndex = idx;
+            }
+
+            chartRegistry.recurringMonthlyMiniChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels,
+                    datasets: [{
+                        label: 'Recorrentes (Realizado)',
+                        data: actualData,
+                        borderColor: 'rgba(6, 182, 212, 1)',
+                        backgroundColor: 'rgba(6, 182, 212, 0.15)',
+                        fill: true,
+                        borderWidth: 2,
+                        tension: 0.35,
+                        pointRadius: (ctx) => ctx.dataIndex === highlightIndex ? 6 : 2,
+                        pointHoverRadius: (ctx) => ctx.dataIndex === highlightIndex ? 7 : 3,
+                        pointBackgroundColor: (ctx) => ctx.dataIndex === highlightIndex ? 'rgba(234,179,8,1)' : 'rgba(6, 182, 212, 1)'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            mode: 'index',
+                            intersect: false,
+                            callbacks: {
+                                label: (context) => `Realizado: ${formatCurrency(context.parsed.y)}`
+                            }
+                        },
+                        title: { display: true, text: 'Evolução de Recorrentes (12m)', font: { size: 14, weight: 'bold' } }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: { callback: (v) => formatCurrency(v) }
+                        }
+                    }
+                }
+            });
+        } catch (e) {
+            console.error('Falha ao renderizar mini linha de recorrentes:', e);
+            displayChartFallback('recurring-monthly-line', 'Erro ao carregar mini gráfico');
+        }
+    }
+
     // Renderizar gráfico: Soma de Gastos PIX/Boleto (respeita filtros de ano/mês)
     async function renderRecurringActivePlansSumChart(_biData) {
         const canvas = document.getElementById('recurring-active-plans-sum-chart');
@@ -10181,6 +10483,8 @@ document.addEventListener('DOMContentLoaded', function() {
             // Sem await para não bloquear
             updateNonRecurringComparison(data);
             updateNonRecurringMonthlyPanel(data);
+            // Atualizar mini gráfico no dashboard principal
+            renderRecurringMonthlyMiniLine(data.monthlyHistory);
         } catch (e) {
             console.error('Erro ao aplicar dados BI recorrentes na UI:', e);
         }
@@ -11863,8 +12167,13 @@ document.addEventListener('DOMContentLoaded', function() {
             const monthToUse = analysisMonth || fallbackMonth;
 
             const params = new URLSearchParams();
-            if (typeof yearToUse === 'number' && !Number.isNaN(yearToUse)) params.append('year', String(yearToUse));
-            if (typeof monthToUse === 'number' && !Number.isNaN(monthToUse)) params.append('month', String(monthToUse));
+            if (isGlobalRangeActive()) {
+                params.set('start_date', globalStartDate.value);
+                params.set('end_date', globalEndDate.value);
+            } else {
+                if (typeof yearToUse === 'number' && !Number.isNaN(yearToUse)) params.append('year', String(yearToUse));
+                if (typeof monthToUse === 'number' && !Number.isNaN(monthToUse)) params.append('month', String(monthToUse));
+            }
 
             let response = await authenticatedFetch(`${API_BASE_URL}/api/expenses?${params.toString()}`);
             
@@ -11877,7 +12186,7 @@ document.addEventListener('DOMContentLoaded', function() {
             let businessExpenses = expenses.filter(exp => exp.is_business_expense);
 
             // Se mês selecionado estiver vazio, tentar ano inteiro
-            if (businessExpenses.length === 0 && params.has('month')) {
+            if (!isGlobalRangeActive() && businessExpenses.length === 0 && params.has('month')) {
                 const yearOnly = new URLSearchParams();
                 yearOnly.append('year', String(yearToUse));
                 const retryResp = await authenticatedFetch(`${API_BASE_URL}/api/expenses?${yearOnly.toString()}`);
@@ -13405,13 +13714,27 @@ document.addEventListener('DOMContentLoaded', function() {
         try {
             showNotification('🔍 Analisando plano de contas...', 'info');
             
-            // Buscar dados do mês selecionado no ano selecionado
-            const baseYear = (filterYear && filterYear.value) ? parseInt(filterYear.value, 10) : new Date().getFullYear();
-            const baseMonthIdx = Math.max(1, Math.min(12, selectedMonth)) - 1; // 0-11
-            const startDateObj = new Date(baseYear, baseMonthIdx, 1);
-            const endDateObj = new Date(baseYear, baseMonthIdx + 1, 0);
-            const startDate = startDateObj.toISOString().split('T')[0];
-            const endDate = endDateObj.toISOString().split('T')[0];
+            let startDate, endDate, baseYearForStatus, monthForStatus;
+            if (isGlobalRangeActive()) {
+                // Respeitar o filtro global de datas quando ativo
+                startDate = globalStartDate.value;
+                endDate = globalEndDate.value;
+                // Derivar ano/mês do fim do período para status financeiro
+                const end = new Date(endDate);
+                baseYearForStatus = end.getFullYear();
+                monthForStatus = end.getMonth() + 1;
+            } else {
+                // Buscar dados do mês selecionado no ano selecionado
+                const baseYear = (filterYear && filterYear.value) ? parseInt(filterYear.value, 10) : new Date().getFullYear();
+                const baseMonthIdx = Math.max(1, Math.min(12, selectedMonth)) - 1; // 0-11
+                const startDateObj = new Date(baseYear, baseMonthIdx, 1);
+                const endDateObj = new Date(baseYear, baseMonthIdx + 1, 0);
+                startDate = startDateObj.toISOString().split('T')[0];
+                endDate = endDateObj.toISOString().split('T')[0];
+                baseYearForStatus = baseYear;
+                monthForStatus = selectedMonth;
+            }
+
             const expenses = await fetchExpensesForAnalysis(startDate, endDate);
             
             // Processar dados baseado no tipo de análise
@@ -13423,7 +13746,7 @@ document.addEventListener('DOMContentLoaded', function() {
             updateChartDetailsTable(analysisData);
 
             // Sincronizar 📈 Status Financeiro e ⚠️ Riscos com o mesmo filtro de análise
-            await updateFinancialStatus(baseYear, selectedMonth);
+            await updateFinancialStatus(baseYearForStatus, monthForStatus);
             
             showNotification('✅ Análise concluída com sucesso!', 'success');
             
@@ -13607,6 +13930,14 @@ document.addEventListener('DOMContentLoaded', function() {
                             title: {
                                 display: true,
                                 text: 'Frequência de Uso por Categoria'
+                            },
+                            datalabels: {
+                                display: true,
+                                color: '#1f2937',
+                                anchor: 'end',
+                                align: 'top',
+                                font: { weight: 'bold', size: 10 },
+                                formatter: (v) => v
                             }
                         }
                     }
@@ -13636,6 +13967,16 @@ document.addEventListener('DOMContentLoaded', function() {
                             },
                             legend: {
                                 position: 'bottom'
+                            },
+                            datalabels: {
+                                display: true,
+                                color: '#ffffff',
+                                font: { weight: 'bold', size: 10 },
+                                formatter: (v, ctx) => {
+                                    const total = ctx.dataset.data.reduce((a,b)=>a+b,0) || 1;
+                                    const perc = (v/total)*100;
+                                    return perc >= 5 ? perc.toFixed(1) + '%' : '';
+                                }
                             }
                         }
                     }
@@ -13663,6 +14004,14 @@ document.addEventListener('DOMContentLoaded', function() {
                             title: {
                                 display: true,
                                 text: 'Análise de Tendências por Categoria'
+                            },
+                            datalabels: {
+                                display: true,
+                                color: '#1f2937',
+                                anchor: 'end',
+                                align: 'top',
+                                font: { weight: 'bold', size: 10 },
+                                formatter: (v) => `${v.toFixed(1)}%`
                             }
                         },
                         scales: {

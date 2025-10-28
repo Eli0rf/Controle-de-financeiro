@@ -526,6 +526,45 @@ async function generateSimplePDF(expenses, total, startDate, endDate, contaNome,
 app.use(express.json());
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
+// Audit logger: logs all mutating requests (POST/PUT/PATCH/DELETE) for testing/traceability
+app.use((req, res, next) => {
+    try {
+        const isMutating = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method);
+        const isAuthRoute = req.path && (/^\/api\/login/.test(req.path) || /^\/api\/register/.test(req.path));
+        if (!isMutating || isAuthRoute) return next();
+
+        const start = Date.now();
+        // Build a safe snapshot of the body (avoid logging secrets/large content)
+        const body = req.body || {};
+        const maskedKeys = new Set(['password', 'senha']);
+        const safeBody = {};
+        try {
+            Object.keys(body).slice(0, 20).forEach(k => {
+                const v = body[k];
+                if (maskedKeys.has(String(k).toLowerCase())) {
+                    safeBody[k] = '***';
+                } else if (typeof v === 'string') {
+                    safeBody[k] = v.length > 200 ? (v.slice(0, 200) + '…') : v;
+                } else {
+                    safeBody[k] = v;
+                }
+            });
+        } catch {}
+
+        const userId = (req.user && req.user.id) ? req.user.id : 'anon';
+        console.log(`🧾 [AUDIT][BEGIN] ${new Date().toISOString()} ${req.method} ${req.path} user=${userId} bodyKeys=${Object.keys(body || {}).length}`, safeBody);
+
+        res.on('finish', () => {
+            const duration = Date.now() - start;
+            console.log(`🧾 [AUDIT][END]   ${new Date().toISOString()} ${req.method} ${req.path} user=${userId} status=${res.statusCode} duration=${duration}ms`);
+        });
+    } catch (e) {
+        // Never block requests due to logging issues
+    } finally {
+        next();
+    }
+});
+
 // 3. Crie o endpoint de Health Check Inteligente
 app.get('/health', async (req, res) => {
     try {
@@ -1368,11 +1407,12 @@ app.post('/api/expenses', authenticateToken, upload.single('invoice'), async (re
         }
 
         const calculatedTotalAmount = installmentAmount * numberOfInstallments;
+        const insertedIds = [];
         for (let i = 0; i < numberOfInstallments; i++) {
             const installmentDate = new Date(transaction_date);
             installmentDate.setMonth(installmentDate.getMonth() + i);
             const installmentDescription = numberOfInstallments > 1 ? `${description} (Parcela ${i + 1}/${numberOfInstallments})` : description;
-            await pool.query(
+            const [insertResult] = await pool.query(
                 `INSERT INTO expenses (user_id, transaction_date, amount, description, account, is_business_expense, account_plan_code, has_invoice, invoice_path, total_purchase_amount, installment_number, total_installments)
                  VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
                 [
@@ -1390,9 +1430,13 @@ app.post('/api/expenses', authenticateToken, upload.single('invoice'), async (re
                     numberOfInstallments
                 ]
             );
+            if (insertResult && insertResult.insertId) {
+                insertedIds.push(insertResult.insertId);
+                console.log(`➕ [CREATE] Despesa inserida id=${insertResult.insertId} user=${userId} parcela=${i+1}/${numberOfInstallments}`);
+            }
         }
 
-        console.log('📝 Despesa criada', { userId, parcelas: numberOfInstallments, finalIsBusiness, finalAccountPlanCode });
+        console.log('📝 Despesa(s) criada(s)', { userId, parcelas: numberOfInstallments, finalIsBusiness, finalAccountPlanCode, insertedIds });
         res.status(201).json({ message: numberOfInstallments > 1 ? 'Gastos parcelados adicionados com sucesso!' : 'Gasto adicionado com sucesso!' });
     } catch (error) {
         console.error('ERRO AO ADICIONAR GASTO:', error);
@@ -1640,6 +1684,18 @@ app.put('/api/expenses/:id', authenticateToken, upload.single('invoice'), async 
 
         const existingExpense = existingRows[0];
 
+        // Audit: snapshot before update (compact)
+        const beforeSnapshot = {
+            id: existingExpense.id,
+            transaction_date: existingExpense.transaction_date,
+            amount: Number(existingExpense.amount),
+            description: existingExpense.description,
+            account: existingExpense.account,
+            account_plan_code: existingExpense.account_plan_code,
+            is_business_expense: existingExpense.is_business_expense,
+            has_invoice: existingExpense.has_invoice
+        };
+
         // Se uma nova fatura foi enviada, remover a antiga
         if (invoicePath && existingExpense.invoice_path) {
             fs.unlink(existingExpense.invoice_path, (err) => {
@@ -1661,6 +1717,20 @@ app.put('/api/expenses/:id', authenticateToken, upload.single('invoice'), async 
             userId
         ];
 
+        // Audit: snapshot after update (expected new values)
+        const afterSnapshot = {
+            id: Number(id),
+            transaction_date,
+            amount: parseFloat(amount),
+            description,
+            account: normalizedAccount,
+            account_plan_code: finalAccountPlanCode,
+            is_business_expense: finalIsBusiness,
+            has_invoice,
+            invoice_path: invoicePath || existingExpense.invoice_path
+        };
+        console.log(`🛠️ [UPDATE] Preparando atualização de despesa id=${id} user=${userId}`, { before: beforeSnapshot, after: afterSnapshot });
+
         // Atualizar no banco de dados
         const updateQuery = `
             UPDATE expenses SET 
@@ -1680,7 +1750,7 @@ app.put('/api/expenses/:id', authenticateToken, upload.single('invoice'), async 
         if (result.affectedRows === 0) {
             return res.status(404).json({ message: 'Despesa não encontrada.' });
         }
-
+        console.log(`✅ [UPDATE] Despesa atualizada com sucesso id=${id} user=${userId}`);
         res.json({ message: 'Despesa atualizada com sucesso!' });
     } catch (error) {
         console.error('Erro ao atualizar despesa:', error);
@@ -1775,11 +1845,13 @@ app.get('/api/invoice/:id', authenticateToken, async (req, res) => {
     const userId = req.user.id;
     
     try {
+        console.log(`🗑️ [DELETE] Solicitada remoção da despesa id=${id} user=${userId}`);
         console.log(`🔍 Tentativa de download de fatura - Usuário: ${userId}, Despesa ID: ${id}`);
         
         // Verificar se o usuário tem acesso a esta fatura
         const [rows] = await pool.query('SELECT invoice_path FROM expenses WHERE id = ? AND user_id = ?', [id, userId]);
         
+        console.log(`✅ [DELETE] Despesa removida id=${id} user=${userId}`);
         if (rows.length === 0) {
             console.log(`❌ Fatura não encontrada - ID: ${id}, Usuário: ${userId}`);
             return res.status(404).json({ message: 'Fatura não encontrada.' });
@@ -1820,13 +1892,27 @@ app.get('/api/invoice/:id', authenticateToken, async (req, res) => {
 
 app.get('/api/dashboard', authenticateToken, async (req, res) => {
     const userId = req.user.id;
-    const { year, month } = req.query;
+    const { year, month, start_date, end_date } = req.query;
 
-    if (!year || !month) {
-        return res.status(400).json({ message: 'Ano e mês são obrigatórios.' });
+    // Aceita (year, month) OU (start_date, end_date)
+    const hasRange = Boolean(start_date && end_date);
+    if (!hasRange && (!year || !month)) {
+        return res.status(400).json({ message: 'Ano e mês são obrigatórios quando não houver intervalo de datas.' });
     }
 
     try {
+        // Projeção: com base no mês seguinte ao fim do período, se intervalo informado
+        let projYear = parseInt(year, 10);
+        let projMonth = parseInt(month, 10);
+        if (hasRange) {
+            const end = new Date(end_date);
+            projYear = end.getFullYear();
+            projMonth = end.getMonth() + 1;
+        }
+        let nextMonth = projMonth + 1;
+        let nextYear = projYear;
+        if (nextMonth > 12) { nextMonth = 1; nextYear += 1; }
+
         const [
             projectionData,
             lineChartData,
@@ -1837,36 +1923,74 @@ app.get('/api/dashboard', authenticateToken, async (req, res) => {
             // Projeção para o próximo mês
             pool.query(
                 `SELECT SUM(amount) AS total FROM expenses WHERE user_id = ? AND YEAR(transaction_date) = ? AND MONTH(transaction_date) = ?`,
-                [userId, parseInt(month, 10) === 12 ? parseInt(year, 10) + 1 : year, parseInt(month, 10) === 12 ? 1 : parseInt(month, 10) + 1]
+                [userId, nextYear, nextMonth]
             ),
-            // Evolução dos Gastos (Diário para o mês selecionado)
-            pool.query(
-                `SELECT DAY(transaction_date) as day, SUM(amount) as total FROM expenses WHERE user_id = ? AND YEAR(transaction_date) = ? AND MONTH(transaction_date) = ? GROUP BY DAY(transaction_date) ORDER BY DAY(transaction_date)`,
-                [userId, year, month]
-            ),
+            // Evolução dos Gastos (Diário)
+            hasRange
+                ? pool.query(
+                    `SELECT DATE(transaction_date) as date, SUM(amount) as total 
+                     FROM expenses 
+                     WHERE user_id = ? AND transaction_date BETWEEN ? AND ? 
+                     GROUP BY DATE(transaction_date) 
+                     ORDER BY DATE(transaction_date)`,
+                    [userId, start_date, end_date]
+                  )
+                : pool.query(
+                    `SELECT DAY(transaction_date) as day, SUM(amount) as total 
+                     FROM expenses WHERE user_id = ? AND YEAR(transaction_date) = ? AND MONTH(transaction_date) = ? 
+                     GROUP BY DAY(transaction_date) ORDER BY DAY(transaction_date)`,
+                    [userId, year, month]
+                  ),
             // Distribuição por Conta (Pie Chart)
-            pool.query(
-                `SELECT account, SUM(amount) as total FROM expenses WHERE user_id = ? AND YEAR(transaction_date) = ? AND MONTH(transaction_date) = ? GROUP BY account`,
-                [userId, year, month]
-            ),
+            hasRange
+                ? pool.query(
+                    `SELECT account, SUM(amount) as total 
+                     FROM expenses WHERE user_id = ? AND transaction_date BETWEEN ? AND ? 
+                     GROUP BY account`,
+                    [userId, start_date, end_date]
+                  )
+                : pool.query(
+                    `SELECT account, SUM(amount) as total 
+                     FROM expenses WHERE user_id = ? AND YEAR(transaction_date) = ? AND MONTH(transaction_date) = ? 
+                     GROUP BY account`,
+                    [userId, year, month]
+                  ),
             // Comparação Pessoal vs. Empresarial (Mixed Chart)
-            pool.query(
-                `SELECT account,
-                        SUM(CASE WHEN is_business_expense = 0 THEN amount ELSE 0 END) as personal_total,
-                        SUM(CASE WHEN is_business_expense = 1 THEN amount ELSE 0 END) as business_total
-                 FROM expenses
-                 WHERE user_id = ? AND YEAR(transaction_date) = ? AND MONTH(transaction_date) = ?
-                 GROUP BY account`,
-                [userId, year, month]
-            ),
+            hasRange
+                ? pool.query(
+                    `SELECT account,
+                            SUM(CASE WHEN is_business_expense = 0 THEN amount ELSE 0 END) as personal_total,
+                            SUM(CASE WHEN is_business_expense = 1 THEN amount ELSE 0 END) as business_total
+                     FROM expenses
+                     WHERE user_id = ? AND transaction_date BETWEEN ? AND ?
+                     GROUP BY account`,
+                    [userId, start_date, end_date]
+                  )
+                : pool.query(
+                    `SELECT account,
+                            SUM(CASE WHEN is_business_expense = 0 THEN amount ELSE 0 END) as personal_total,
+                            SUM(CASE WHEN is_business_expense = 1 THEN amount ELSE 0 END) as business_total
+                     FROM expenses
+                     WHERE user_id = ? AND YEAR(transaction_date) = ? AND MONTH(transaction_date) = ?
+                     GROUP BY account`,
+                    [userId, year, month]
+                  ),
             // Gastos por Plano de Conta (Bar Chart) - inclui pessoais e empresariais
-            pool.query(
-                `SELECT account_plan_code, SUM(amount) as total
-                 FROM expenses
-                 WHERE user_id = ? AND account_plan_code IS NOT NULL AND YEAR(transaction_date) = ? AND MONTH(transaction_date) = ?
-                 GROUP BY account_plan_code`,
-                [userId, year, month]
-            )
+            hasRange
+                ? pool.query(
+                    `SELECT account_plan_code, SUM(amount) as total
+                     FROM expenses
+                     WHERE user_id = ? AND account_plan_code IS NOT NULL AND transaction_date BETWEEN ? AND ?
+                     GROUP BY account_plan_code`,
+                    [userId, start_date, end_date]
+                  )
+                : pool.query(
+                    `SELECT account_plan_code, SUM(amount) as total
+                     FROM expenses
+                     WHERE user_id = ? AND account_plan_code IS NOT NULL AND YEAR(transaction_date) = ? AND MONTH(transaction_date) = ?
+                     GROUP BY account_plan_code`,
+                    [userId, year, month]
+                  )
         ]);
 
         const nextMonthProjection = parseFloat(projectionData[0][0]?.total || 0);
@@ -4605,7 +4729,8 @@ app.post('/api/reports/trend-analysis', authenticateToken, async (req, res) => {
 app.get('/api/business/summary', authenticateToken, async (req, res) => {
     try {
         const userId = req.user.id;
-        const { year, month } = req.query;
+        const { year, month, start_date, end_date } = req.query;
+        const hasRange = Boolean(start_date && end_date);
         
         // Query principal para resumo
         let summaryQuery = `
@@ -4622,14 +4747,18 @@ app.get('/api/business/summary', authenticateToken, async (req, res) => {
         `;
         
         const queryParams = [userId];
-        
-        if (year) {
-            summaryQuery += ' AND YEAR(transaction_date) = ?';
-            queryParams.push(year);
-        }
-        if (month) {
-            summaryQuery += ' AND MONTH(transaction_date) = ?';
-            queryParams.push(month);
+        if (hasRange) {
+            summaryQuery += ' AND transaction_date BETWEEN ? AND ?';
+            queryParams.push(start_date, end_date);
+        } else {
+            if (year) {
+                summaryQuery += ' AND YEAR(transaction_date) = ?';
+                queryParams.push(year);
+            }
+            if (month) {
+                summaryQuery += ' AND MONTH(transaction_date) = ?';
+                queryParams.push(month);
+            }
         }
         
         const [summary] = await pool.query(summaryQuery, queryParams);
@@ -4642,13 +4771,18 @@ app.get('/api/business/summary', authenticateToken, async (req, res) => {
         `;
         
         const accountParams = [userId];
-        if (year) {
-            accountQuery += ' AND YEAR(transaction_date) = ?';
-            accountParams.push(year);
-        }
-        if (month) {
-            accountQuery += ' AND MONTH(transaction_date) = ?';
-            accountParams.push(month);
+        if (hasRange) {
+            accountQuery += ' AND transaction_date BETWEEN ? AND ?';
+            accountParams.push(start_date, end_date);
+        } else {
+            if (year) {
+                accountQuery += ' AND YEAR(transaction_date) = ?';
+                accountParams.push(year);
+            }
+            if (month) {
+                accountQuery += ' AND MONTH(transaction_date) = ?';
+                accountParams.push(month);
+            }
         }
         
         accountQuery += ' GROUP BY account ORDER BY total DESC';
@@ -4661,13 +4795,18 @@ app.get('/api/business/summary', authenticateToken, async (req, res) => {
             WHERE user_id = ? AND is_business_expense = 1
         `;
         const categoryParams = [userId];
-        if (year) {
-            categoryQuery += ' AND YEAR(transaction_date) = ?';
-            categoryParams.push(year);
-        }
-        if (month) {
-            categoryQuery += ' AND MONTH(transaction_date) = ?';
-            categoryParams.push(month);
+        if (hasRange) {
+            categoryQuery += ' AND transaction_date BETWEEN ? AND ?';
+            categoryParams.push(start_date, end_date);
+        } else {
+            if (year) {
+                categoryQuery += ' AND YEAR(transaction_date) = ?';
+                categoryParams.push(year);
+            }
+            if (month) {
+                categoryQuery += ' AND MONTH(transaction_date) = ?';
+                categoryParams.push(month);
+            }
         }
         categoryQuery += ' GROUP BY description ORDER BY total DESC LIMIT 10';
         const [categoryData] = await pool.query(categoryQuery, categoryParams);
@@ -4679,13 +4818,18 @@ app.get('/api/business/summary', authenticateToken, async (req, res) => {
             WHERE user_id = ? AND is_business_expense = 1
         `;
         const planParams = [userId];
-        if (year) {
-            planQuery += ' AND YEAR(transaction_date) = ?';
-            planParams.push(year);
-        }
-        if (month) {
-            planQuery += ' AND MONTH(transaction_date) = ?';
-            planParams.push(month);
+        if (hasRange) {
+            planQuery += ' AND transaction_date BETWEEN ? AND ?';
+            planParams.push(start_date, end_date);
+        } else {
+            if (year) {
+                planQuery += ' AND YEAR(transaction_date) = ?';
+                planParams.push(year);
+            }
+            if (month) {
+                planQuery += ' AND MONTH(transaction_date) = ?';
+                planParams.push(month);
+            }
         }
         planQuery += ' GROUP BY account_plan_code ORDER BY total DESC LIMIT 15';
         const [planData] = await pool.query(planQuery, planParams);
