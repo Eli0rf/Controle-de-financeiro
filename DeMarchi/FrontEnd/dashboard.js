@@ -7363,26 +7363,31 @@ document.addEventListener('DOMContentLoaded', function() {
         };
 
         if (btnAll && btnPersonal && btnBusiness) {
-            btnAll.addEventListener('click', async () => {
-                PLAN_CHART_TYPE_FILTER = 'all';
-                setActive([btnAll, btnPersonal, btnBusiness], btnAll);
+            // Helper para (re)criar o gráfico com filtro explícito por is_business_expense
+            const recreatePlanChart = async (mode) => {
                 const expenses = await fetchExpenses();
-                const categoryData = processCategoryData(expenses);
+                let filtered = expenses || [];
+                if (mode === 'personal') filtered = filtered.filter(e => !e.is_business_expense);
+                if (mode === 'business') filtered = filtered.filter(e => !!e.is_business_expense);
+                const categoryData = processCategoryData(filtered);
+                // Evita dupla filtragem por PLAN_TYPES dentro do render
+                PLAN_CHART_TYPE_FILTER = 'all';
+                // Destruir explicitamente antes (renderPlanChart também destrói, mas garantimos aqui)
+                try { destroyChart('planChart'); } catch {}
                 renderPlanChart(categoryData);
+            };
+
+            btnAll.addEventListener('click', async () => {
+                setActive([btnAll, btnPersonal, btnBusiness], btnAll);
+                await recreatePlanChart('all');
             });
             btnPersonal.addEventListener('click', async () => {
-                PLAN_CHART_TYPE_FILTER = 'personal';
                 setActive([btnAll, btnPersonal, btnBusiness], btnPersonal);
-                const expenses = await fetchExpenses();
-                const categoryData = processCategoryData(expenses);
-                renderPlanChart(categoryData);
+                await recreatePlanChart('personal');
             });
             btnBusiness.addEventListener('click', async () => {
-                PLAN_CHART_TYPE_FILTER = 'business';
                 setActive([btnAll, btnPersonal, btnBusiness], btnBusiness);
-                const expenses = await fetchExpenses();
-                const categoryData = processCategoryData(expenses);
-                renderPlanChart(categoryData);
+                await recreatePlanChart('business');
             });
         }
 
