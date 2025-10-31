@@ -4686,7 +4686,7 @@ app.get('/api/business/summary', authenticateToken, async (req, res) => {
         if (month) {
             planQuery += ' AND MONTH(transaction_date) = ?';
             planParams.push(month);
-        }
+      }
         planQuery += ' GROUP BY account_plan_code ORDER BY total DESC LIMIT 15';
         const [planData] = await pool.query(planQuery, planParams);
         
