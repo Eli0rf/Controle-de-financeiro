@@ -161,10 +161,11 @@ async function generateSimplePDF(expenses, total, startDate, endDate, contaNome,
     const totalEmp = safeExpenses.filter(e=>e.is_business_expense).reduce((s,e)=>s+parseFloat(e.amount||0),0);
     const monthNames = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
     // Mapas centrais de planos
-    const planMaps = (accountsConfig && accountsConfig.asMaps) ? accountsConfig.asMaps() : { names:{}, budgets:{}, types:{} };
-    const planNames = planMaps.names || {};
-    const planBudgets = opts.budgets || planMaps.budgets || {}; // fallback automático
+    const planMaps = (accountsConfig && accountsConfig.asMaps) ? accountsConfig.asMaps() : { names:{}, budgets:{}, types:{}, descriptions:{} };
+    const planNames = (opts.names) || planMaps.names || {};
+    const planBudgets = (opts.budgets) || planMaps.budgets || {}; // fallback automático
     const planTypes = planMaps.types || {};
+    const planDescriptions = (opts.descriptions) || planMaps.descriptions || {};
     const planDisplay = (code)=>{
         if (code==null || code==='') return 'Sem Plano';
         const id = Number(code);
@@ -2673,18 +2674,19 @@ async function generateIntelligentBIReport(data) {
             doc.page.width - 90, 20, { width: 80, align: 'right' });
     };
     
-    // Mapeamentos centrais de planos
-    const planMaps = (accountsConfig && accountsConfig.asMaps) ? accountsConfig.asMaps() : { names:{}, budgets:{}, types:{} };
-    const planNames = planMaps.names || {};
-    const planBudgets = planMaps.budgets || {};
-    const planTypes = planMaps.types || {};
+    // Mapeamentos centrais de planos (preferir valores providos pelo chamador)
+    const planMaps = data.planMaps || ((accountsConfig && accountsConfig.asMaps) ? accountsConfig.asMaps() : { names:{}, budgets:{}, types:{}, descriptions:{} });
+    const planNames = data.planNames || planMaps.names || {};
+    const planBudgets = data.planBudgets || planMaps.budgets || {};
+    const planTypes = data.planTypes || planMaps.types || {};
+    const planDescriptions = data.planDescriptions || planMaps.descriptions || {};
     const planDisplay = (code)=>{
         if (code==null || code==='') return 'Sem Plano'; const id = Number(code); return planNames[id] || `Plano ${id}`;
     };
     const byPlan = {}; (Array.isArray(expenses)?expenses:[]).forEach(e=>{ const p=(e.account_plan_code!=null && e.account_plan_code!=='')? String(e.account_plan_code) : 'Sem Plano'; byPlan[p]=(byPlan[p]||0)+parseFloat(e.amount||0); });
 
     // Anexar para páginas seguintes
-    data.planNames = planNames; data.planBudgets = planBudgets; data.planTypes = planTypes; data.planDisplay = planDisplay; data.byPlan = byPlan;
+    data.planNames = planNames; data.planBudgets = planBudgets; data.planTypes = planTypes; data.planDescriptions = planDescriptions; data.planDisplay = planDisplay; data.byPlan = byPlan;
 
     // Configurar fonte com fallback para Railway
     try {
@@ -2734,7 +2736,9 @@ async function generateIntelligentBIReport(data) {
 async function generateCompactMonthlyReport({
     pool, userId, year, month, account, expenses: rawExpenses,
     total, totalPessoal, totalEmpresarial, porPlano, porConta,
-    startDate, endDate, contaNome
+    startDate, endDate, contaNome,
+    // mapas opcionais vindos do chamador (preferenciais)
+    planNames, planBudgets, planDescriptions
 }){
     const expenses = Array.isArray(rawExpenses) ? rawExpenses : [];
     const doc = new pdfkit({ margin: 30, size: 'A4' });
@@ -2817,8 +2821,10 @@ async function generateCompactMonthlyReport({
 
     // Tetos monitorados – Top 3 por uso (cores parametrizadas)
     try{
-        const planMaps = (accountsConfig && accountsConfig.asMaps)? accountsConfig.asMaps():{budgets:{},names:{}};
-        const budgets = planMaps.budgets || {};
+        // preferir mapas fornecidos pelo chamador; fallback para arquivo
+        const fallbackMaps = (accountsConfig && accountsConfig.asMaps)? accountsConfig.asMaps():{budgets:{},names:{}};
+        const budgets = planBudgets || fallbackMaps.budgets || {};
+        const names = planNames || fallbackMaps.names || {};
         const byPlan = {};
         expenses.forEach(e=>{ const p = (e.account_plan_code!=null && e.account_plan_code!=='')? String(e.account_plan_code): 'Sem Plano'; byPlan[p]=(byPlan[p]||0)+parseFloat(e.amount||0); });
         const usage = Object.entries(budgets).map(([p,t])=>{ const spent = byPlan[p]||0; const pct = t>0? (spent/t*100):0; return {p,spent,t,pct}; })
@@ -2829,7 +2835,7 @@ async function generateCompactMonthlyReport({
                 const yellow = kpiThresholds.budgetHighUsageYellow ?? 80;
                 const red = kpiThresholds.budgetHighUsageRed ?? 100;
                 const color = u.pct>red?'#DC2626':(u.pct>=yellow?'#D97706':'#10B981');
-                const label = (planMaps.names && planMaps.names[Number(u.p)])? planMaps.names[Number(u.p)] : `Plano ${u.p}`;
+                const label = names[Number(u.p)] || `Plano ${u.p}`;
                 const y = doc.y + 16 + idx*18; const w = 180; const used = Math.min(1, u.pct/100);
                 doc.fillColor('#374151').fontSize(10).text(`${label}`, 42, y-2, { width: 230 });
                 doc.rect(280, y, w, 10).fill('#E5E7EB');
@@ -3010,7 +3016,7 @@ async function createExecutiveDashboard(doc, data) {
 
 // 📈 PÁGINA 2: ANÁLISES BI E INSIGHTS
 async function createBIAnalyticsPage(doc, data) {
-    const { expenses, total, totalPessoal, totalEmpresarial, porPlano, porConta, year, month, planBudgets, planDisplay, byPlan } = data;
+    const { expenses, total, totalPessoal, totalEmpresarial, porPlano, porConta, year, month, planBudgets, planDisplay, byPlan, planDescriptions } = data;
     
     // Cabeçalho da página (gradiente padronizado)
     const grad = doc.linearGradient(0,0,0,80); grad.stop(0,'#0F172A').stop(1,'#0EA5E9');
@@ -3089,6 +3095,10 @@ async function createBIAnalyticsPage(doc, data) {
             const label = planDisplay(u.p);
             doc.roundedRect(40, doc.y, doc.page.width - 80, 28, 6).fill('#F8FAFC');
             doc.fillColor('#111827').fontSize(11).text(`${emoji} ${label}`, 50, doc.y + 8);
+            // Descritivo do plano (quando disponível)
+            if (planDescriptions && planDescriptions[Number(u.p)]) {
+                doc.fillColor('#64748B').fontSize(9).text(`${String(planDescriptions[Number(u.p)]).slice(0,80)}`, 200, doc.y + 8, { width: 260 });
+            }
             const barW = 220; const used = Math.min(1, u.pct/100);
             doc.rect(doc.page.width-50-barW, doc.y+8, barW, 12).fill('#E5E7EB');
             doc.rect(doc.page.width-50-barW, doc.y+8, Math.max(4,barW*used), 12).fill(u.pct>100?'#DC2626':u.pct>=90?'#F59E0B':'#16A34A');
@@ -3127,7 +3137,7 @@ async function createBIAnalyticsPage(doc, data) {
 
 // 📋 PÁGINA 3: DETALHAMENTO INTELIGENTE
 async function createIntelligentDetailPage(doc, data) {
-    const { expenses, porPlano, year, month, planBudgets, planDisplay } = data;
+    const { expenses, porPlano, year, month, planBudgets, planDisplay, planDescriptions } = data;
     
     // Cabeçalho (gradiente padronizado)
     const grad = doc.linearGradient(0,0,0,80); grad.stop(0,'#0F172A').stop(1,'#0EA5E9');
@@ -3155,19 +3165,23 @@ async function createIntelligentDetailPage(doc, data) {
         
         // Header do plano
         doc.roundedRect(50, doc.y + 10, doc.page.width - 100, 25, 5).fill(colors[index]);
-        doc.fillColor('#FFFFFF').fontSize(12).text(`${planDisplay(plano)}`, 60, doc.y + 18, { width: 260 });
+        const displayName = planDisplay(plano);
+        doc.fillColor('#FFFFFF').fontSize(12).text(`${displayName}`, 60, doc.y + 18, { width: 260 });
         doc.text(`R$ ${total.toFixed(2)}`, 0, doc.y + 18, { width: doc.page.width - 110, align: 'right' });
+        // Descritivo do plano (linha abaixo do cabeçalho colorido)
+        if (planDescriptions && planDescriptions[Number(plano)]) {
+            doc.fillColor('#374151').fontSize(9).text(`${String(planDescriptions[Number(plano)]).slice(0, 100)}`, 60, doc.y + 40, { width: doc.page.width - 120 });
+        }
         
         // Detalhes
         const teto = planBudgets && planBudgets[Number(plano)] ? planBudgets[Number(plano)] : 0;
         const pct = teto>0 ? (total/teto*100) : 0;
         doc.fillColor('#374151').fontSize(10)
-           .text(`• ${planoExpenses.length} transações`, 60, doc.y + 45)
-           .text(`• Média por transação: R$ ${avgTransaction.toFixed(2)}`, 60, doc.y + 60)
-           .text(`• Percentual do total: ${(total / expenses.reduce((sum, e) => sum + parseFloat(e.amount||0), 0) * 100 || 0).toFixed(1)}%`, 280, doc.y + 45)
-           .text(`• Teto: R$ ${teto.toLocaleString('pt-BR',{minimumFractionDigits:2})} (${pct.toFixed(1)}%)`, 280, doc.y + 60);
-        
-        doc.y += 95;
+              .text(`• ${planoExpenses.length} transações`, 60, doc.y + 55)
+              .text(`• Média por transação: R$ ${avgTransaction.toFixed(2)}`, 60, doc.y + 70)
+              .text(`• Percentual do total: ${(total / expenses.reduce((sum, e) => sum + parseFloat(e.amount||0), 0) * 100 || 0).toFixed(1)}%`, 280, doc.y + 55)
+              .text(`• Teto: R$ ${teto.toLocaleString('pt-BR',{minimumFractionDigits:2})} (${pct.toFixed(1)}%)`, 280, doc.y + 70);
+          doc.y += 105;
     });
 }
 
@@ -3763,12 +3777,24 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
         
         try {
             const format = (req.body && req.body.format) || (req.query && req.query.format) || 'full';
+            // Carregar planos de contas atualizados do ADM (DB)
+            let planMapsForReport = {};
+            try {
+                const coa = await loadChartOfAccountsFromDb();
+                planMapsForReport = (coa && coa.maps) ? coa.maps : {};
+            } catch (e) {
+                console.warn('⚠️ Falha ao carregar planos do DB para o relatório, usando fallback do arquivo:', e.message);
+            }
+
             if (String(format).toLowerCase() === 'summary') {
                 // Relatório compacto (1–2 páginas)
                 const compactDoc = await generateCompactMonthlyReport({
                     pool, userId, year, month, account,
                     expenses, total, totalPessoal, totalEmpresarial,
-                    porPlano, porConta, startDate, endDate, contaNome
+                    porPlano, porConta, startDate, endDate, contaNome,
+                    planNames: planMapsForReport.names,
+                    planBudgets: planMapsForReport.budgets,
+                    planDescriptions: planMapsForReport.descriptions
                 });
                 res.setHeader('Content-Type', 'application/pdf');
                 res.setHeader('Content-Disposition', `attachment; filename=relatorio-resumo-${year}-${month}${account ? '-' + account : ''}.pdf`);
@@ -3794,7 +3820,12 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
                     month,
                     porPlano,
                     porConta,
-                    userId
+                    userId,
+                    planMaps: planMapsForReport,
+                    planNames: planMapsForReport.names,
+                    planBudgets: planMapsForReport.budgets,
+                    planTypes: planMapsForReport.types,
+                    planDescriptions: planMapsForReport.descriptions
                 });
                 res.setHeader('Content-Type', 'application/pdf');
                 res.setHeader('Content-Disposition', `attachment; filename=relatorio-bi-inteligente-${year}-${month}${account ? '-' + account : ''}.pdf`);
@@ -3831,8 +3862,21 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
             if (expenses && Array.isArray(expenses) && expenses.length > 0 && total !== undefined && startDate && endDate) {
                 console.log('📊 [FALLBACK] Dados suficientes disponíveis, gerando PDF simplificado...');
                 
-                const budgetsMapForPdf = (accountsConfig.asMaps()?.budgets) || {};
-                const simpleDoc = await generateSimplePDF(expenses, total, startDate, endDate, contaNome, year, month, { budgets: budgetsMapForPdf });
+                let namesMapForPdf = {};
+                let budgetsMapForPdf = {};
+                let descMapForPdf = {};
+                try {
+                    const coa = await loadChartOfAccountsFromDb();
+                    namesMapForPdf = coa?.maps?.names || {};
+                    budgetsMapForPdf = coa?.maps?.budgets || {};
+                    descMapForPdf = coa?.maps?.descriptions || {};
+                } catch {
+                    const fileMaps = accountsConfig.asMaps ? accountsConfig.asMaps() : {};
+                    namesMapForPdf = fileMaps.names || {};
+                    budgetsMapForPdf = fileMaps.budgets || {};
+                    descMapForPdf = fileMaps.descriptions || {};
+                }
+                const simpleDoc = await generateSimplePDF(expenses, total, startDate, endDate, contaNome, year, month, { budgets: budgetsMapForPdf, names: namesMapForPdf, descriptions: descMapForPdf });
                 res.setHeader('Content-Type', 'application/pdf');
                 res.setHeader('Content-Disposition', `attachment; filename=relatorio-simplificado-${year}-${month}${account ? '-' + account : ''}.pdf`);
                 simpleDoc.pipe(res);
