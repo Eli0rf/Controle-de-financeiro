@@ -2858,6 +2858,53 @@ async function generateCompactMonthlyReport({
     } catch{}
 
     // Insights e Alertas (limitados) — preferir KPIs unificados
+    // RESUMO POR PLANO (tabela compacta com Teto, Gasto e Uso %)
+    try {
+        const fallbackMaps = (accountsConfig && accountsConfig.asMaps)? accountsConfig.asMaps():{budgets:{},names:{}};
+        const budgets = planBudgets || fallbackMaps.budgets || {};
+        const names = planNames || fallbackMaps.names || {};
+        // Montar byPlan do período
+        const byPlan = {};
+        expenses.forEach(e=>{ const p=(e.account_plan_code!=null && e.account_plan_code!=='')? String(e.account_plan_code): 'Sem Plano'; byPlan[p]=(byPlan[p]||0)+parseFloat(e.amount||0); });
+        // Linhas com teto definido
+        const rows = Object.entries(budgets)
+            .map(([p,t])=>{ const spent = byPlan[p]||0; const pct = t>0? (spent/t*100):0; return { p, name: names[Number(p)]||`Plano ${p}` , teto: Number(t)||0, gasto: spent, pct}; })
+            .filter(r=> r.teto>0)
+            .sort((a,b)=> b.pct - a.pct)
+            .slice(0,10);
+        if (rows.length){
+            doc.moveDown(0.5);
+            doc.fontSize(12).fillColor('#111827').text('📋 Resumo por Plano (Top 10 por uso)', 30, doc.y);
+            doc.y += 6;
+            // Cabeçalho
+            const startX = 30; let y = doc.y;
+            const cols = [
+                { title: 'Plano', w: 210, align: 'left' },
+                { title: 'Teto',  w: 90,  align: 'right' },
+                { title: 'Gasto', w: 90,  align: 'right' },
+                { title: 'Uso %', w: 70,  align: 'right' }
+            ];
+            doc.fontSize(10).fillColor('#334155');
+            let x = startX;
+            cols.forEach(c=>{ doc.text(c.title, x, y, { width: c.w, align: c.align }); x += c.w + 8; });
+            y += 16; doc.moveTo(startX, y).lineTo(doc.page.width-30, y).stroke('#E5E7EB'); y += 6;
+            // Linhas
+            const bottom = doc.page.height - 60; doc.fontSize(10).fillColor('#374151');
+            for (const r of rows){
+                x = startX;
+                const status = r.pct>100 ? '🔴' : (r.pct>=90 ? '🟡' : '🟢');
+                const name = `${status} ${r.name}`;
+                doc.text(name, x, y, { width: cols[0].w, align: cols[0].align }); x += cols[0].w + 8;
+                doc.text(`R$ ${r.teto.toFixed(2)}`, x, y, { width: cols[1].w, align: cols[1].align }); x += cols[1].w + 8;
+                doc.text(`R$ ${r.gasto.toFixed(2)}`, x, y, { width: cols[2].w, align: cols[2].align }); x += cols[2].w + 8;
+                doc.text(`${r.pct.toFixed(1)}%`, x, y, { width: cols[3].w, align: cols[3].align });
+                y += 16;
+                if (y > bottom){ doc.addPage(); pageIndexSummary += 1; drawPageNumberSummary(); y = 50; }
+            }
+            doc.y = y + 6;
+        }
+    } catch (e) { console.warn('Falha ao renderizar resumo por plano no compacto:', e.message); }
+
     let insights = [];
     let alerts = [];
     try {
