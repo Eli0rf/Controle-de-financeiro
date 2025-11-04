@@ -3422,6 +3422,59 @@ document.addEventListener('DOMContentLoaded', function() {
     // Estado para alternar exibição compacta x completa
     let PLAN_CHART_SHOW_ALL = false; // false = top 15 (compacto); true = todos
 
+    // Resumo compacto de gastos por plano de conta (Top N + frase síntese)
+    function renderPlanSummary(data = []) {
+        try {
+            const canvas = document.getElementById('plan-chart');
+            if (!canvas) return;
+            const host = canvas.parentElement || document.body;
+
+            // Criar/obter container logo após o gráfico
+            let box = document.getElementById('plan-summary');
+            if (!box) {
+                box = document.createElement('div');
+                box.id = 'plan-summary';
+                box.className = 'mt-3 p-3 rounded-lg border bg-gray-50';
+                host.appendChild(box);
+            }
+
+            if (!Array.isArray(data) || data.length === 0) {
+                box.innerHTML = '';
+                return;
+            }
+
+            // Total e Top 5
+            const total = data.reduce((s, d) => s + (Number(d.total) || 0), 0);
+            const sorted = [...data].sort((a,b) => (b.total||0) - (a.total||0));
+            const top = sorted.slice(0, 5);
+
+            const items = top.map((d, i) => {
+                const code = d.account_plan_code;
+                const name = d.name || (window.PLAN_NAMES && window.PLAN_NAMES[Number(code)]) || (code === 'Sem Categoria' ? 'Sem Categoria' : `Plano ${code}`);
+                const perc = total > 0 ? ((Number(d.total||0) / total) * 100).toFixed(1) : '0.0';
+                return `<li class="flex justify-between text-sm"><span class="text-gray-700">${i+1}. ${name}</span><span class="font-semibold">${formatCurrency(Number(d.total||0))} (${perc}%)</span></li>`;
+            }).join('');
+
+            const top3 = top.slice(0,3).map(d => {
+                const code = d.account_plan_code;
+                const name = d.name || (window.PLAN_NAMES && window.PLAN_NAMES[Number(code)]) || (code === 'Sem Categoria' ? 'Sem Categoria' : `Plano ${code}`);
+                const perc = total > 0 ? ((Number(d.total||0) / total) * 100).toFixed(1) : '0.0';
+                return `${name} (${perc}%)`;
+            }).join(', ');
+
+            box.innerHTML = `
+                <div class="flex flex-col gap-2">
+                    <div class="text-sm text-gray-600">Resumo por Plano de Conta</div>
+                    <div class="text-xs text-gray-700">Total analisado: <span class="font-semibold">${formatCurrency(total)}</span> • Planos considerados: <span class="font-semibold">${data.length}</span></div>
+                    <ul class="mt-1 space-y-1">${items}</ul>
+                    <div class="text-xs text-gray-600 mt-2">Síntese: Top 3 — ${top3}.</div>
+                </div>
+            `;
+        } catch (e) {
+            console.warn('Falha ao renderizar resumo por plano:', e);
+        }
+    }
+
     function renderPlanChart(data = []) {
         console.log('🎯 DEBUG renderPlanChart - início:', { 
             dataRecebido: data, 
@@ -3534,8 +3587,9 @@ document.addEventListener('DOMContentLoaded', function() {
                 processedData = processedData.slice(0, 15);
             }
 
-            // Atualizar estatísticas antes de renderizar o gráfico
+            // Atualizar estatísticas e resumo antes de renderizar o gráfico
             updateCategoryStats(processedData);
+            renderPlanSummary(processedData);
             
             console.log('📊 Dados processados para plan-chart:', processedData);
             
