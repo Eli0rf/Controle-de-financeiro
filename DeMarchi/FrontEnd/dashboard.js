@@ -6967,6 +6967,24 @@ document.addEventListener('DOMContentLoaded', function() {
         };
     }
 
+    // Buscar dados agregados de limites por plano diretamente do backend
+    async function fetchGoalsData(period){
+        try{
+            const { year, month } = period || getCurrentPeriod();
+            const params = new URLSearchParams({ year, month });
+            const resp = await authenticatedFetch(`${API_BASE_URL}/api/expenses-goals?${params.toString()}`);
+            if(!resp.ok){
+                const err = await resp.json().catch(()=>({ message: `HTTP ${resp.status}` }));
+                throw new Error(err.message || `Falha ao buscar limites (${resp.status})`);
+            }
+            const data = await resp.json();
+            return Array.isArray(data) ? data : [];
+        }catch(e){
+            console.warn('⚠️ Não foi possível obter dados de limites:', e.message);
+            return [];
+        }
+    }
+
     // Função para buscar dados do dashboard (normalizado para o sistema de insights)
     async function fetchDashboardData(yearOverride, monthOverride) {
         try {
@@ -7333,10 +7351,13 @@ document.addEventListener('DOMContentLoaded', function() {
             const categoryData = processCategoryData(expenses);
             console.log('🎯 DEBUG: categoryData processado:', categoryData);
             
-            // Renderizar todos os gráficos com dados atualizados
+            // Buscar dados agregados de metas/limites por plano para os gráficos específicos
+            const goalsData = await fetchGoalsData(getCurrentPeriod());
+
+            // Renderizar todos os gráficos com dados corretos
             await Promise.allSettled([
-                renderGoalsChart(expenses),
-                renderGoalsPlanChart(expenses),
+                renderGoalsChart(goalsData),
+                renderGoalsPlanChart(goalsData),
                 renderPlanChart(categoryData) // Usar dados processados para categoria
             ]);
             
@@ -7760,8 +7781,8 @@ document.addEventListener('DOMContentLoaded', function() {
             if (refreshBudgetBtn) {
                 refreshBudgetBtn.addEventListener('click', async () => {
                     console.log('🔄 Atualizando gráfico de orçamento...');
-                    const expenses = await fetchExpenses();
-                    renderGoalsChart(expenses);
+                    const goalsData = await fetchGoalsData(getCurrentPeriod());
+                    renderGoalsChart(goalsData);
                 });
             }
             
@@ -7769,8 +7790,8 @@ document.addEventListener('DOMContentLoaded', function() {
             if (refreshDistributionBtn) {
                 refreshDistributionBtn.addEventListener('click', async () => {
                     console.log('🔄 Atualizando gráfico de distribuição...');
-                    const expenses = await fetchExpenses();
-                    renderGoalsPlanChart(expenses);
+                    const goalsData = await fetchGoalsData(getCurrentPeriod());
+                    renderGoalsPlanChart(goalsData);
                 });
             }
 

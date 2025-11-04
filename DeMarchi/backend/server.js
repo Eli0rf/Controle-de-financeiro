@@ -1928,7 +1928,18 @@ app.get('/api/expenses-goals', authenticateToken, async (req, res) => {
         sql += ' GROUP BY account_plan_code ORDER BY Total DESC';
 
         const [results] = await pool.query(sql, params);
-        const { budgets: centralBudgets, names: centralNames } = accountsConfig.asMaps();
+        // Preferir planos de contas do banco (ADM) para orçamentos e nomes
+        let centralBudgets = {}; let centralNames = {};
+        try {
+            const coaData = await loadChartOfAccountsFromDb();
+            centralBudgets = (coaData && coaData.maps && coaData.maps.budgets) || {};
+            centralNames = (coaData && coaData.maps && coaData.maps.names) || {};
+        } catch (e) {
+            // Fallback para arquivo local caso banco não esteja disponível
+            const maps = accountsConfig.asMaps();
+            centralBudgets = maps.budgets || {};
+            centralNames = maps.names || {};
+        }
 
         const dataWithLimits = results
             .map(item => {
