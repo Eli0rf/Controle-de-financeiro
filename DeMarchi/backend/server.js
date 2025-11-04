@@ -2722,19 +2722,25 @@ async function generateIntelligentBIReport(data) {
     await createBIAnalyticsPage(doc, data);
     drawPageNumberBI();
     
-    // === 📋 PÁGINA 3: DETALHAMENTO INTELIGENTE ===
+    // === 💰 PÁGINA 3: RESUMO DE ORÇAMENTO POR PLANO ===
+    doc.addPage();
+    pageIndexBI += 1;
+    await createBudgetSummaryPage(doc, data);
+    drawPageNumberBI();
+
+    // === 📋 PÁGINA 4: DETALHAMENTO INTELIGENTE ===
     doc.addPage();
     pageIndexBI += 1;
     await createIntelligentDetailPage(doc, data);
     drawPageNumberBI();
     
-    // === 📊 PÁGINA 4: GRÁFICOS MODERNOS ===
+    // === 📊 PÁGINA 5: GRÁFICOS MODERNOS ===
     doc.addPage();
     pageIndexBI += 1;
     await createModernChartsPage(doc, data);
     drawPageNumberBI();
     
-    // === 📜 PÁGINA 5: LISTA COMPLETA DE DESPESAS ===
+    // === 📜 PÁGINA 6: LISTA COMPLETA DE DESPESAS ===
     doc.addPage();
     pageIndexBI += 1;
     await createFullExpenseListPage(doc, data);
@@ -3189,6 +3195,107 @@ async function createBIAnalyticsPage(doc, data) {
                 doc.fontSize(10).fillColor('#164E63').text(`• ${label}: ${rec}`, 50, doc.y+14);
                 doc.y += 20;
             });
+        }
+    }
+}
+
+// 💰 PÁGINA 3: RESUMO DE ORÇAMENTO POR PLANO
+async function createBudgetSummaryPage(doc, data) {
+    const { planBudgets = {}, planDisplay, byPlan = {}, planDescriptions = {} } = data;
+
+    // Cabeçalho (gradiente padronizado)
+    const grad = doc.linearGradient(0,0,0,80); grad.stop(0,'#0F172A').stop(1,'#0EA5E9');
+    doc.rect(0, 0, doc.page.width, 80).fill(grad);
+    doc.fontSize(24).fillColor('#FFFFFF').text('💰 RESUMO DE ORÇAMENTO POR PLANO', 0, 25, { align: 'center', width: doc.page.width });
+    doc.fontSize(14).fillColor('#E5E7EB').text('Teto, gasto real e uso (%) — Top planos por utilização', 0, 50, { align: 'center', width: doc.page.width });
+
+    doc.y = 100;
+
+    // Montar linhas com tetos definidos
+    const rows = Object.entries(planBudgets)
+        .map(([p, t]) => {
+            const id = String(p);
+            const spent = byPlan[id] || 0;
+            const teto = Number(t) || 0;
+            const pct = teto > 0 ? (spent / teto * 100) : 0;
+            return { p: id, name: planDisplay ? planDisplay(id) : `Plano ${id}`, teto, gasto: spent, pct };
+        })
+        .filter(r => r.teto > 0)
+        .sort((a, b) => b.pct - a.pct)
+        .slice(0, 15);
+
+    if (!rows.length) {
+        doc.fontSize(12).fillColor('#111827').text('Nenhum teto configurado para exibir.', 40, doc.y);
+        return;
+    }
+
+    // Sumário rápido
+    const totalTeto = rows.reduce((s, r) => s + r.teto, 0);
+    const totalGasto = rows.reduce((s, r) => s + r.gasto, 0);
+    const usoGeral = totalTeto > 0 ? (totalGasto / totalTeto * 100) : 0;
+
+    doc.roundedRect(40, doc.y, doc.page.width - 80, 46, 8).fill('#F8FAFC');
+    doc.fontSize(12).fillColor('#0F172A').text('📌 Visão Geral dos Tetos', 50, doc.y + 10);
+    doc.fontSize(10).fillColor('#334155').text(
+        `Tetos Considerados: R$ ${totalTeto.toLocaleString('pt-BR',{minimumFractionDigits:2})}  •  Gasto Acumulado: R$ ${totalGasto.toLocaleString('pt-BR',{minimumFractionDigits:2})}  •  Uso Médio: ${usoGeral.toFixed(1)}%`,
+        50, doc.y + 26, { width: doc.page.width - 100 }
+    );
+    doc.y += 60;
+
+    // Tabela principal
+    const startX = 40; let y = doc.y;
+    const cols = [
+        { title: 'Plano', w: 250, align: 'left' },
+        { title: 'Teto',  w: 110, align: 'right' },
+        { title: 'Gasto', w: 110, align: 'right' },
+        { title: 'Uso %', w: 70,  align: 'right' }
+    ];
+
+    doc.fontSize(12).fillColor('#111827').text('📋 Top 15 por uso do orçamento', startX, y);
+    y += 6;
+
+    // Cabeçalho
+    doc.fontSize(10).fillColor('#334155');
+    let x = startX;
+    cols.forEach(c => { doc.text(c.title, x, y, { width: c.w, align: c.align }); x += c.w + 8; });
+    y += 16; doc.moveTo(startX, y).lineTo(doc.page.width - 40, y).stroke('#E5E7EB'); y += 6;
+
+    // Linhas
+    const bottom = doc.page.height - 60; doc.fontSize(10).fillColor('#374151');
+    for (const r of rows) {
+        x = startX;
+        const yellow = kpiThresholds.budgetHighUsageYellow ?? 90; // manter próximo ao BI padrão
+        const red = kpiThresholds.budgetHighUsageRed ?? 100;
+        const status = r.pct > red ? '🔴' : (r.pct >= yellow ? '🟡' : '🟢');
+        const name = `${status} ${r.name}`;
+
+        // Nome do plano
+        doc.text(name, x, y, { width: cols[0].w, align: cols[0].align });
+        // Descritivo, se houver (linha menor logo abaixo do nome)
+        if (planDescriptions && planDescriptions[Number(r.p)]) {
+            const desc = String(planDescriptions[Number(r.p)]).slice(0, 80);
+            doc.fillColor('#64748B').fontSize(9).text(desc, x + 14, y + 12, { width: cols[0].w - 14 });
+            doc.fillColor('#374151').fontSize(10);
+        }
+        x += cols[0].w + 8;
+
+        // Valores
+        doc.text(`R$ ${r.teto.toFixed(2)}`, x, y, { width: cols[1].w, align: cols[1].align }); x += cols[1].w + 8;
+        doc.text(`R$ ${r.gasto.toFixed(2)}`, x, y, { width: cols[2].w, align: cols[2].align }); x += cols[2].w + 8;
+        doc.text(`${r.pct.toFixed(1)}%`, x, y, { width: cols[3].w, align: cols[3].align });
+
+        // Próxima linha (considerando espaço do descritivo)
+        y += planDescriptions && planDescriptions[Number(r.p)] ? 26 : 16;
+
+        // Quebra de página
+        if (y > bottom) {
+            doc.addPage();
+            // Redesenhar cabeçalho da tabela na nova página
+            y = 50; x = startX;
+            doc.fontSize(10).fillColor('#334155');
+            cols.forEach(c => { doc.text(c.title, x, y, { width: c.w, align: c.align }); x += c.w + 8; });
+            y += 16; doc.moveTo(startX, y).lineTo(doc.page.width - 40, y).stroke('#E5E7EB'); y += 6;
+            doc.fontSize(10).fillColor('#374151');
         }
     }
 }
