@@ -3972,8 +3972,9 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
 
         // Busca despesas do período - incluindo PIX e Boleto
         console.log(`🔍 [STEP 3] Consultando banco de dados...`);
-        let sql = `SELECT * FROM expenses WHERE user_id = ? AND transaction_date >= ? AND transaction_date <= ?`;
-        let params = [userId, startDate.toISOString().slice(0,10), endDate.toISOString().slice(0,10)];
+    // Importante: se transaction_date for DATETIME, usar janela half-open [start, end+1d)
+    let sql = `SELECT * FROM expenses WHERE user_id = ? AND transaction_date >= ? AND transaction_date < DATE_ADD(?, INTERVAL 1 DAY)`;
+    let params = [userId, startDate.toISOString().slice(0,10), endDate.toISOString().slice(0,10)];
         
         // Se conta específica foi solicitada, filtrar por ela
         if (account && account !== 'ALL') {
@@ -4105,7 +4106,7 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
             const prevYear = month === 1 ? year - 1 : year;
             const prevStart = new Date(prevYear, prevMonth - 1, 1);
             const prevEnd = new Date(prevYear, prevMonth, 0);
-            let prevSql = `SELECT id, amount, account_plan_code, is_business_expense, transaction_date FROM expenses WHERE user_id = ? AND transaction_date >= ? AND transaction_date <= ?`;
+            let prevSql = `SELECT id, amount, account_plan_code, is_business_expense, transaction_date FROM expenses WHERE user_id = ? AND transaction_date >= ? AND transaction_date < DATE_ADD(?, INTERVAL 1 DAY)`;
             
             console.log(`📊 [STEP 7.1] Consultando dados do mês anterior...`);
             const [prevExpenses] = await pool.query(prevSql, [userId, prevStart.toISOString().slice(0,10), prevEnd.toISOString().slice(0,10)]);
@@ -4897,11 +4898,12 @@ app.get('/api/reports/monthly', authenticateToken, async (req, res) => {
 app.get('/api/reports/weekly', authenticateToken, async (req, res) => {
     try {
         const userId = req.user.id;
-        const { startDate, endDate } = req.query;
+    const { startDate, endDate } = req.query;
         
+        // Weekly também com janela half-open para incluir o último dia inteiro
         const [rows] = await pool.query(`
             SELECT * FROM expenses 
-            WHERE user_id = ? AND transaction_date BETWEEN ? AND ?
+            WHERE user_id = ? AND transaction_date >= ? AND transaction_date < DATE_ADD(?, INTERVAL 1 DAY)
             ORDER BY transaction_date DESC
         `, [userId, startDate, endDate]);
         

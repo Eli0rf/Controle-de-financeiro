@@ -2,7 +2,8 @@ const kpiThresholds = require('../config/kpiThresholds');
 const computeMonthlyKPIs = async ({ pool, userId, year, month, account }) => {
   const startDate = new Date(year, month - 1, 1);
   const endDate = new Date(year, month, 0);
-  let sql = `SELECT id, amount, account_plan_code, account, is_business_expense, transaction_date, description FROM expenses WHERE user_id = ? AND transaction_date >= ? AND transaction_date <= ?`;
+  // Janela half-open para cobrir o dia inteiro do endDate quando DATETIME
+  let sql = `SELECT id, amount, account_plan_code, account, is_business_expense, transaction_date, description FROM expenses WHERE user_id = ? AND transaction_date >= ? AND transaction_date < DATE_ADD(?, INTERVAL 1 DAY)`;
   const params = [userId, startDate.toISOString().slice(0,10), endDate.toISOString().slice(0,10)];
   if (account && account !== 'ALL') { sql += ' AND account = ?'; params.push(account); }
   sql += ' ORDER BY transaction_date';
@@ -21,7 +22,7 @@ const computeMonthlyKPIs = async ({ pool, userId, year, month, account }) => {
   // Mês anterior
   const prevMonth = month === 1 ? 12 : month - 1; const prevYear = month === 1 ? year - 1 : year;
   const prevStart = new Date(prevYear, prevMonth - 1, 1); const prevEnd = new Date(prevYear, prevMonth, 0);
-  const [prevExpenses] = await pool.query(`SELECT amount, account_plan_code FROM expenses WHERE user_id=? AND transaction_date>=? AND transaction_date<=?`, [userId, prevStart.toISOString().slice(0,10), prevEnd.toISOString().slice(0,10)]);
+  const [prevExpenses] = await pool.query(`SELECT amount, account_plan_code FROM expenses WHERE user_id=? AND transaction_date>=? AND transaction_date<DATE_ADD(?, INTERVAL 1 DAY)`, [userId, prevStart.toISOString().slice(0,10), prevEnd.toISOString().slice(0,10)]);
   const prevByPlan = {}; prevExpenses.forEach(e=> { const p=e.account_plan_code || 'Sem Plano'; prevByPlan[p]=(prevByPlan[p]||0)+parseFloat(e.amount); });
 
   const totalAtual = total || 1; const currByPlan = { ...porPlano };
