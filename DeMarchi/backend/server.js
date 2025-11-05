@@ -2746,6 +2746,12 @@ async function generateIntelligentBIReport(data) {
     await createFullExpenseListPage(doc, data);
     drawPageNumberBI();
     
+    // === 📚 PÁGINA 7: APÊNDICE NUMÉRICO COMPLETO ===
+    doc.addPage();
+    pageIndexBI += 1;
+    await createNumericAppendixPage(doc, data);
+    drawPageNumberBI();
+    
     return doc;
 }
 
@@ -3167,6 +3173,8 @@ async function createBIAnalyticsPage(doc, data) {
             doc.rect(doc.page.width-50-barW, doc.y+8, barW, 12).fill('#E5E7EB');
             doc.rect(doc.page.width-50-barW, doc.y+8, Math.max(4,barW*used), 12).fill(u.pct>100?'#DC2626':u.pct>=90?'#F59E0B':'#16A34A');
             doc.fillColor('#111827').fontSize(10).text(`${u.pct.toFixed(1)}%`, doc.page.width-50-barW-40, doc.y+8, {width:40, align:'right'});
+            // Valores absolutos além da porcentagem: "R$ gasto / R$ teto"
+            doc.fillColor('#374151').fontSize(9).text(`R$ ${u.spent.toFixed(2)} / R$ ${u.t.toFixed(2)}`, doc.page.width-50-barW, doc.y+22, { width: barW, align: 'right' });
             doc.y += 34;
         });
 
@@ -3465,6 +3473,100 @@ async function createModernChartsPage(doc, data) {
     } else {
         doc.fontSize(12).fillColor('#6B7280').text('📊 Gráficos não disponíveis (ChartJS não carregado)', 50, doc.y);
     }
+}
+
+// 📚 PÁGINA FINAL: APÊNDICE NUMÉRICO COMPLETO
+async function createNumericAppendixPage(doc, data) {
+    const { expenses = [], total = 0, totalPessoal = 0, totalEmpresarial = 0, porPlano = {}, porConta = {}, planBudgets = {}, planDisplay, byPlan = {} } = data;
+
+    // Cabeçalho (gradiente padronizado)
+    const grad = doc.linearGradient(0,0,0,80); grad.stop(0,'#0F172A').stop(1,'#0EA5E9');
+    doc.rect(0, 0, doc.page.width, 80).fill(grad);
+    doc.fontSize(24).fillColor('#FFFFFF').text('📚 APÊNDICE NUMÉRICO', 0, 25, { align: 'center', width: doc.page.width });
+    doc.fontSize(14).fillColor('#E5E7EB').text('Totais e valores consolidados do relatório', 0, 50, { align: 'center', width: doc.page.width });
+
+    doc.y = 100;
+
+    // A) Totais Gerais
+    doc.fontSize(16).fillColor('#0F172A').text('A) Totais Gerais', 40, doc.y, { underline: true });
+    doc.y += 10;
+    doc.fontSize(11).fillColor('#374151')
+       .text(`• Total Geral: R$ ${Number(total||0).toLocaleString('pt-BR',{minimumFractionDigits:2})}`, 50, doc.y)
+       .text(`• Total Pessoal: R$ ${Number(totalPessoal||0).toLocaleString('pt-BR',{minimumFractionDigits:2})}`, 50, doc.y+16)
+       .text(`• Total Empresarial: R$ ${Number(totalEmpresarial||0).toLocaleString('pt-BR',{minimumFractionDigits:2})}`, 50, doc.y+32);
+    doc.y += 56;
+
+    // B) Por Plano de Conta (todos que têm teto ou gasto)
+    doc.fontSize(16).fillColor('#0F172A').text('B) Por Plano de Conta', 40, doc.y, { underline: true });
+    doc.y += 8;
+    const planIds = Array.from(new Set([ ...Object.keys(planBudgets||{}), ...Object.keys(byPlan||{}) ]));
+    const planRows = planIds.map(id => {
+        const teto = Number(planBudgets[id] || planBudgets[Number(id)] || 0) || 0;
+        const gasto = Number(byPlan[id] || 0);
+        const pct = teto > 0 ? (gasto / teto * 100) : 0;
+        return { id: String(id), name: planDisplay ? planDisplay(id) : `Plano ${id}`, teto, gasto, pct };
+    }).sort((a,b)=> b.gasto - a.gasto);
+
+    // Tabela por Plano
+    let startX = 40; let y = doc.y + 6;
+    const colsPlan = [
+        { title: 'Plano', w: 250, align: 'left' },
+        { title: 'Teto',  w: 110, align: 'right' },
+        { title: 'Gasto', w: 110, align: 'right' },
+        { title: 'Uso %', w: 70,  align: 'right' },
+    ];
+    doc.fontSize(10).fillColor('#334155');
+    let x = startX;
+    colsPlan.forEach(c=>{ doc.text(c.title, x, y, { width: c.w, align: c.align }); x += c.w + 8; });
+    y += 16; doc.moveTo(startX, y).lineTo(doc.page.width-40, y).stroke('#E5E7EB'); y += 6;
+    const bottom = doc.page.height - 60; doc.fontSize(10).fillColor('#374151');
+    let totalTeto = 0, totalGasto = 0;
+    for (const r of planRows){
+        x = startX;
+        doc.text(r.name, x, y, { width: colsPlan[0].w, align: colsPlan[0].align }); x += colsPlan[0].w + 8;
+        doc.text(`R$ ${r.teto.toFixed(2)}`, x, y, { width: colsPlan[1].w, align: colsPlan[1].align }); x += colsPlan[1].w + 8;
+        doc.text(`R$ ${r.gasto.toFixed(2)}`, x, y, { width: colsPlan[2].w, align: colsPlan[2].align }); x += colsPlan[2].w + 8;
+        doc.text(`${r.pct.toFixed(1)}%`, x, y, { width: colsPlan[3].w, align: colsPlan[3].align });
+        y += 16; totalTeto += r.teto; totalGasto += r.gasto;
+
+        if (y > bottom) { doc.addPage(); y = 50; x = startX; doc.fontSize(10).fillColor('#334155'); colsPlan.forEach(c=>{ doc.text(c.title, x, y, { width: c.w, align: c.align }); x += c.w + 8; }); y += 16; doc.moveTo(startX, y).lineTo(doc.page.width-40, y).stroke('#E5E7EB'); y += 6; doc.fontSize(10).fillColor('#374151'); }
+    }
+    // Linha de totais da tabela de planos
+    const pctGeral = totalTeto>0 ? (totalGasto/totalTeto*100) : 0;
+    x = startX; doc.fontSize(10).fillColor('#1F2937');
+    doc.text('TOTAL', x, y, { width: colsPlan[0].w, align: colsPlan[0].align }); x += colsPlan[0].w + 8;
+    doc.text(`R$ ${totalTeto.toFixed(2)}`, x, y, { width: colsPlan[1].w, align: colsPlan[1].align }); x += colsPlan[1].w + 8;
+    doc.text(`R$ ${totalGasto.toFixed(2)}`, x, y, { width: colsPlan[2].w, align: colsPlan[2].align }); x += colsPlan[2].w + 8;
+    doc.text(`${pctGeral.toFixed(1)}%`, x, y, { width: colsPlan[3].w, align: colsPlan[3].align });
+    y += 24; doc.y = y;
+
+    // C) Por Categoria (Contas)
+    doc.fontSize(16).fillColor('#0F172A').text('C) Por Categoria (Contas)', 40, doc.y, { underline: true });
+    doc.y += 8; y = doc.y;
+    const accList = Object.entries(porConta||{}).sort(([,a],[,b])=> b-a);
+    const colsAcc = [ { title: 'Categoria', w: 360, align: 'left' }, { title: 'Gasto', w: 130, align: 'right' } ];
+    x = startX; doc.fontSize(10).fillColor('#334155');
+    colsAcc.forEach(c=>{ doc.text(c.title, x, y, { width: c.w, align: c.align }); x += c.w + 8; });
+    y += 16; doc.moveTo(startX, y).lineTo(doc.page.width-40, y).stroke('#E5E7EB'); y += 6;
+    doc.fontSize(10).fillColor('#374151'); let totalAcc = 0;
+    for (const [name, val] of accList){
+        x = startX;
+        doc.text(name, x, y, { width: colsAcc[0].w, align: colsAcc[0].align }); x += colsAcc[0].w + 8;
+        doc.text(`R$ ${Number(val||0).toFixed(2)}`, x, y, { width: colsAcc[1].w, align: colsAcc[1].align });
+        y += 16; totalAcc += Number(val||0);
+        if (y > bottom) { doc.addPage(); y = 50; x = startX; doc.fontSize(10).fillColor('#334155'); colsAcc.forEach(c=>{ doc.text(c.title, x, y, { width: c.w, align: c.align }); x += c.w + 8; }); y += 16; doc.moveTo(startX, y).lineTo(doc.page.width-40, y).stroke('#E5E7EB'); y += 6; doc.fontSize(10).fillColor('#374151'); }
+    }
+    // Totalizador categorias
+    x = startX; doc.fontSize(10).fillColor('#1F2937');
+    doc.text('TOTAL', x, y, { width: colsAcc[0].w, align: colsAcc[0].align }); x += colsAcc[0].w + 8;
+    doc.text(`R$ ${totalAcc.toFixed(2)}`, x, y, { width: colsAcc[1].w, align: colsAcc[1].align }); y += 24;
+
+    // Nota de consistência
+    const somaDespesas = (expenses||[]).reduce((s,e)=> s + Number(e.amount||0), 0);
+    doc.fontSize(9).fillColor('#6B7280').text(
+        `Verificação: soma por categorias = R$ ${totalAcc.toFixed(2)} • soma despesas = R$ ${somaDespesas.toFixed(2)} • diferença = R$ ${(totalAcc - somaDespesas).toFixed(2)}`,
+        40, y, { width: doc.page.width - 80 }
+    );
 }
 
 // 🧠 GERADOR DE INSIGHTS INTELIGENTES
