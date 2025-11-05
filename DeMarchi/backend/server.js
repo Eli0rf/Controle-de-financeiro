@@ -3366,14 +3366,15 @@ async function createFullExpenseListPage(doc, data){
     doc.fontSize(24).fillColor('#FFFFFF').text('📜 LISTA COMPLETA DE DESPESAS', 0, 25, { align: 'center', width: doc.page.width });
     doc.y = 100;
 
-    // Cabeçalho da tabela
+    // Cabeçalho da tabela (ajustado para caber na largura útil da página)
+    // Largura útil ~ (doc.page.width - 80). Com 5 espaçamentos de 6px = 30px, somatório das colunas deve ser <= (largura útil - 30)
     const cols = [
-        { title: 'Data', width: 70 },
-        { title: 'Conta', width: 110 },
-        { title: 'Plano', width: 150 },
-        { title: 'Tipo', width: 80 },
-        { title: 'Descrição', width: 210 },
-        { title: 'Valor (R$)', width: 80, align: 'right' }
+        { title: 'Data', width: 60 },
+        { title: 'Conta', width: 85 },
+        { title: 'Plano', width: 105 },
+        { title: 'Tipo', width: 55 },
+        { title: 'Descrição', width: 130 },
+        { title: 'Valor (R$)', width: 50, align: 'right' }
     ];
 
     const startX = 40; let y = doc.y;
@@ -3389,8 +3390,8 @@ async function createFullExpenseListPage(doc, data){
         const conta = e.account || '-';
         const plano = planDisplay ? planDisplay(e.account_plan_code) : String(e.account_plan_code||'Sem Plano');
         const tipo = e.is_business_expense ? 'Empresarial' : 'Pessoal';
-        const desc = String(e.description||'').slice(0, 60);
-        const val = (parseFloat(e.amount||0) || 0).toFixed(2);
+    const desc = String(e.description||'').slice(0, 40);
+    const val = `R$ ${(parseFloat(e.amount||0) || 0).toFixed(2)}`;
 
         x = startX;
         doc.text(date, x, y, { width: cols[0].width }); x += cols[0].width + 6;
