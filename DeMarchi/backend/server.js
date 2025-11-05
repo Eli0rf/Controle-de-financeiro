@@ -3926,6 +3926,7 @@ async function generateFallbackPDF(expenses, total, startDate, endDate, contaNom
 app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
     const userId = req.user.id;
     const { year, month, account } = req.body;
+    const periodType = (req.body && req.body.periodType) || (req.query && req.query.periodType) || 'civil'; // 'civil' | 'billing'
 
     console.log(`🎯 [INÍCIO] Relatório mensal - User: ${userId}, Ano: ${year}, Mês: ${month}, Conta: ${account || 'Todas'}`);
 
@@ -3951,7 +3952,7 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
         // Determina período vigente se por conta
         console.log(`📅 [STEP 2] Calculando período...`);
         
-        if (account && billingPeriods[account] && !billingPeriods[account].isRecurring) {
+        if (periodType === 'billing' && account && billingPeriods[account] && !billingPeriods[account].isRecurring) {
             console.log(`📊 [STEP 2.1] Usando período personalizado para conta: ${account}`);
             const { startDay, endDay } = billingPeriods[account];
             startDate = new Date(year, month - 1, startDay);
