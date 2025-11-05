@@ -676,7 +676,6 @@ app.use((err, req, res, next) => {
 const { computeMonthlyKPIs, saveMonthlySnapshot, computeTrendAnalysis, computeComparativeAnalysis, generateExecutiveReport } = require('./reporting/monthlyKpis');
 const { getRedis } = require('./utils/redisClient');
 const { detectAnomalies } = require('./analytics/anomalyDetector');
-const { detectAnomalies } = require('./analytics/anomalyDetector');
 const { initKpiScheduler } = require('./schedulers/kpiScheduler');
 app.get('/api/kpis/monthly', authenticateToken, async (req, res) => {
     try {
@@ -3500,17 +3499,19 @@ async function createFullExpenseListPage(doc, data){
 
         // Zebra stripe para legibilidade
         if (rowIndex % 2 === 1) {
-            doc.rect(startX - 2, y - 2, (cols.reduce((s,c)=> s + c.width, 0) + 5*6) + 14, rowHeight + 4).fill('#F8FAFC');
+            const usableWidth = (doc.page.width - 40) - startX; // até a margem direita (40)
+            doc.rect(startX - 2, y - 2, Math.min(usableWidth + 2, 10000), rowHeight + 4).fill('#F8FAFC');
             doc.fillColor('#374151');
         }
 
         let x = startX;
-        doc.text(date, x, y, { width: cols[0].width }); x += cols[0].width + 6;
-        doc.text(conta, x, y, { width: cols[1].width }); x += cols[1].width + 6;
-        doc.text(plano, x, y, { width: cols[2].width }); x += cols[2].width + 6;
-        doc.text(tipo, x, y, { width: cols[3].width }); x += cols[3].width + 6;
-        doc.text(desc, x, y, { width: cols[4].width }); x += cols[4].width + 6;
-        doc.text(val, x, y, { width: cols[5].width, align: 'right' });
+        const single = { lineBreak: false };
+        doc.text(date, x, y, { width: cols[0].width, ...single }); x += cols[0].width + 6;
+        doc.text(conta, x, y, { width: cols[1].width, ...single, ellipsis: true }); x += cols[1].width + 6;
+        doc.text(plano, x, y, { width: cols[2].width, ...single, ellipsis: true }); x += cols[2].width + 6;
+        doc.text(tipo, x, y, { width: cols[3].width, ...single, ellipsis: true }); x += cols[3].width + 6;
+        doc.text(desc.replace(/\r?\n/g,' '), x, y, { width: cols[4].width, ...single, ellipsis: true }); x += cols[4].width + 6;
+        doc.text(val, x, y, { width: cols[5].width, align: 'right', ...single });
         y += rowHeight; rowIndex++;
 
         if (y > bottom){
