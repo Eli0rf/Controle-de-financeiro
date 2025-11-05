@@ -676,6 +676,7 @@ app.use((err, req, res, next) => {
 const { computeMonthlyKPIs, saveMonthlySnapshot, computeTrendAnalysis, computeComparativeAnalysis, generateExecutiveReport } = require('./reporting/monthlyKpis');
 const { getRedis } = require('./utils/redisClient');
 const { detectAnomalies } = require('./analytics/anomalyDetector');
+const { detectAnomalies } = require('./analytics/anomalyDetector');
 const { initKpiScheduler } = require('./schedulers/kpiScheduler');
 app.get('/api/kpis/monthly', authenticateToken, async (req, res) => {
     try {
@@ -2972,7 +2973,7 @@ async function generateCompactMonthlyReport({
 
 // 📊 PÁGINA 1: DASHBOARD EXECUTIVO
 async function createExecutiveDashboard(doc, data) {
-    const { expenses: rawExpenses, total, totalPessoal, totalEmpresarial, startDate, endDate, contaNome, year, month } = data;
+    const { expenses: rawExpenses, total, totalPessoal, totalEmpresarial, startDate, endDate, contaNome, year, month, pool, userId, account } = data;
     const expenses = Array.isArray(rawExpenses) ? rawExpenses : [];
     
     // === CABEÇALHO EXECUTIVO MODERNO ===
@@ -3040,6 +3041,41 @@ async function createExecutiveDashboard(doc, data) {
 
     doc.y = kpiY + kpiHeight + 30;
 
+    // === COMPARATIVOS MoM/YoY (Total) ===
+    try {
+        const prevMonth = month === 1 ? 12 : month - 1;
+        const prevYear = month === 1 ? year - 1 : year;
+        const prevStart = new Date(prevYear, prevMonth - 1, 1);
+        const prevEnd = new Date(prevYear, prevMonth, 0);
+        const yoyStart = new Date(year - 1, month - 1, 1);
+        const yoyEnd = new Date(year - 1, month, 0);
+
+        const baseSql = `SELECT SUM(amount) as total FROM expenses WHERE user_id=? AND transaction_date>=? AND transaction_date<=?`;
+        const addAccount = (sql) => (account && account !== 'ALL') ? sql + ' AND account=?' : sql;
+        const runSum = async (s, a, b) => {
+            const sql = addAccount(baseSql);
+            const params = (account && account !== 'ALL') ? [userId, a, b, account] : [userId, a, b];
+            const [r] = await pool.query(sql, params);
+            return Number(r[0]?.total || 0);
+        };
+        const prevTotal = await runSum(prevStart.toISOString().slice(0,10), prevEnd.toISOString().slice(0,10));
+        const yoyTotal = await runSum(yoyStart.toISOString().slice(0,10), yoyEnd.toISOString().slice(0,10));
+        const momPct = prevTotal > 0 ? ((total - prevTotal) / prevTotal * 100) : 0;
+        const yoyPct = yoyTotal > 0 ? ((total - yoyTotal) / yoyTotal * 100) : 0;
+
+        const arrow = (v)=> v>=0 ? '↑' : '↓';
+        const momText = `MoM: ${arrow(momPct)} ${Math.abs(momPct).toFixed(1)}%`;
+        const yoyText = `YoY: ${arrow(yoyPct)} ${Math.abs(yoyPct).toFixed(1)}%`;
+
+        doc.roundedRect(40, doc.y, doc.page.width - 80, 50, 10).fill('#F8FAFC');
+        doc.fillColor('#0F172A').fontSize(12).text('📈 Comparativos', 52, doc.y + 12);
+        doc.fontSize(10).fillColor('#334155').text(
+            `${momText}  •  ${yoyText}`,
+            52, doc.y + 30, { width: doc.page.width - 100 }
+        );
+        doc.y += 65;
+    } catch {}
+
     // === INSIGHTS INTELIGENTES ===
     doc.fontSize(18).fillColor('#1F2937').text('🧠 INSIGHTS INTELIGENTES', { underline: true });
     doc.moveDown(1);
@@ -3086,7 +3122,7 @@ async function createExecutiveDashboard(doc, data) {
 
 // 📈 PÁGINA 2: ANÁLISES BI E INSIGHTS
 async function createBIAnalyticsPage(doc, data) {
-    const { expenses, total, totalPessoal, totalEmpresarial, porPlano, porConta, year, month, planBudgets, planDisplay, byPlan, planDescriptions } = data;
+    const { expenses, total, totalPessoal, totalEmpresarial, porPlano, porConta, year, month, planBudgets, planDisplay, byPlan, planDescriptions, pool, userId } = data;
     
     // Cabeçalho da página (gradiente padronizado)
     const grad = doc.linearGradient(0,0,0,80); grad.stop(0,'#0F172A').stop(1,'#0EA5E9');
@@ -3205,11 +3241,31 @@ async function createBIAnalyticsPage(doc, data) {
             });
         }
     }
+
+    // === ANOMALIAS (TOP 5) ===
+    try {
+        if (pool && userId) {
+            const res = await detectAnomalies({ pool, userId, year, month });
+            const top = (res?.anomalies || []).slice(0,5);
+            if (top.length) {
+                doc.moveDown(1);
+                doc.fontSize(18).fillColor('#0F172A').text('🔎 ANOMALIAS (Top 5)', { underline: true });
+                doc.moveDown(0.5);
+                top.forEach(a => {
+                    const label = (a.plano === 'SEM_PLANO') ? 'Sem Plano' : planDisplay ? planDisplay(a.plano) : String(a.plano);
+                    doc.roundedRect(40, doc.y, doc.page.width - 80, 40, 8).fill('#FEF2F2');
+                    doc.fillColor('#991B1B').fontSize(11).text(`⚠️ ${label}`, 52, doc.y + 10, { width: 300 });
+                    doc.fillColor('#7F1D1D').fontSize(9).text(`Z=${a.zScore} • Atual: R$ ${a.current.toFixed(2)} vs média: R$ ${a.mean.toFixed(2)} • participação: ${Number(a.share).toFixed(1)}%`, 52, doc.y + 24, { width: doc.page.width - 120 });
+                    doc.y += 50;
+                });
+            }
+        }
+    } catch {}
 }
 
 // 💰 PÁGINA 3: RESUMO DE ORÇAMENTO POR PLANO
 async function createBudgetSummaryPage(doc, data) {
-    const { planBudgets = {}, planDisplay, byPlan = {}, planDescriptions = {} } = data;
+    const { planBudgets = {}, planDisplay, byPlan = {}, planDescriptions = {}, year, month, startDate, endDate } = data;
 
     // Cabeçalho (gradiente padronizado)
     const grad = doc.linearGradient(0,0,0,80); grad.stop(0,'#0F172A').stop(1,'#0EA5E9');
@@ -3306,6 +3362,46 @@ async function createBudgetSummaryPage(doc, data) {
             doc.fontSize(10).fillColor('#374151');
         }
     }
+
+    // Projeção do orçamento (mês corrente)
+    try {
+        const now = new Date();
+        const isCurrentMonth = (now.getFullYear() === Number(year) && (now.getMonth()+1) === Number(month));
+        if (isCurrentMonth && startDate && endDate) {
+            const daysInMonth = new Date(year, month, 0).getDate();
+            const elapsedDays = Math.max(1, Math.min(daysInMonth, now.getDate()));
+            const proj = rows.map(r => {
+                const daily = r.gasto / elapsedDays;
+                const projected = daily * daysInMonth;
+                const pctProj = r.teto>0 ? (projected / r.teto * 100) : 0;
+                return { ...r, projected, pctProj };
+            }).sort((a,b)=> b.pctProj - a.pctProj).slice(0,8);
+            if (proj.length) {
+                doc.moveDown(0.5);
+                doc.fontSize(12).fillColor('#111827').text('📈 Projeção de Orçamento (Top 8 por uso projetado)', startX, doc.y);
+                y = doc.y + 6; x = startX; doc.fontSize(10).fillColor('#334155');
+                const pcols = [
+                    { title: 'Plano', w: 250, align: 'left' },
+                    { title: 'Proj.', w: 110, align: 'right' },
+                    { title: 'Teto', w: 110, align: 'right' },
+                    { title: 'Uso Proj %', w: 90, align: 'right' },
+                ];
+                pcols.forEach(c=>{ doc.text(c.title, x, y, { width: c.w, align: c.align }); x += c.w + 8; });
+                y += 16; doc.moveTo(startX, y).lineTo(doc.page.width-40, y).stroke('#E5E7EB'); y += 6; doc.fontSize(10).fillColor('#374151');
+                const bottom2 = doc.page.height - 60;
+                for (const r of proj) {
+                    x = startX;
+                    doc.text(r.name, x, y, { width: pcols[0].w, align: pcols[0].align }); x += pcols[0].w + 8;
+                    doc.text(`R$ ${r.projected.toFixed(2)}`, x, y, { width: pcols[1].w, align: pcols[1].align }); x += pcols[1].w + 8;
+                    doc.text(`R$ ${r.teto.toFixed(2)}`, x, y, { width: pcols[2].w, align: pcols[2].align }); x += pcols[2].w + 8;
+                    doc.text(`${r.pctProj.toFixed(1)}%`, x, y, { width: pcols[3].w, align: pcols[3].align });
+                    y += 16;
+                    if (y > bottom2) { doc.addPage(); y = 50; x = startX; doc.fontSize(10).fillColor('#334155'); pcols.forEach(c=>{ doc.text(c.title, x, y, { width: c.w, align: c.align }); x += c.w + 8; }); y += 16; doc.moveTo(startX, y).lineTo(doc.page.width-40, y).stroke('#E5E7EB'); y += 6; doc.fontSize(10).fillColor('#374151'); }
+                }
+                doc.y = y + 6;
+            }
+        }
+    } catch {}
 }
 
 // 📋 PÁGINA 3: DETALHAMENTO INTELIGENTE
@@ -4111,6 +4207,8 @@ app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
                     month,
                     porPlano,
                     porConta,
+                    account,
+                    pool,
                     userId,
                     planMaps: planMapsForReport,
                     planNames: planMapsForReport.names,
