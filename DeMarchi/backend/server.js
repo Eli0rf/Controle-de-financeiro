@@ -2691,8 +2691,11 @@ async function generateIntelligentBIReport(data) {
     const planBudgets = data.planBudgets || planMaps.budgets || {};
     const planTypes = data.planTypes || planMaps.types || {};
     const planDescriptions = data.planDescriptions || planMaps.descriptions || {};
-    const planDisplay = (code)=>{
-        if (code==null || code==='') return 'Sem Plano'; const id = Number(code); return planNames[id] || `Plano ${id}`;
+    const planDisplay = (code) => {
+        if (code === null || code === undefined || code === '' || code === 'SEM_PLANO') return 'Sem Plano';
+        const id = Number(code);
+        if (!Number.isFinite(id)) return String(code);
+        return planNames[id] || `Plano ${id}`;
     };
     const byPlan = {}; (Array.isArray(expenses)?expenses:[]).forEach(e=>{ const p=(e.account_plan_code!=null && e.account_plan_code!=='')? String(e.account_plan_code) : 'Sem Plano'; byPlan[p]=(byPlan[p]||0)+parseFloat(e.amount||0); });
 
@@ -3481,6 +3484,16 @@ async function createFullExpenseListPage(doc, data){
         doc.fontSize(10).fillColor('#374151');
     };
     drawHeader();
+    // Helper para truncar em uma linha com reticências
+    const fitOneLine = (str, width) => {
+        let s = String(str == null ? '' : str);
+        if (doc.widthOfString(s) <= width) return s;
+        const ell = '…';
+        while (s.length > 1 && doc.widthOfString(s + ell) > width) {
+            s = s.slice(0, -1);
+        }
+        return s + ell;
+    };
 
     // Ordenar por data desc para facilitar conferência
     const expensesSorted = (expenses||[]).slice().sort((a,b)=> new Date(b.transaction_date) - new Date(a.transaction_date));
@@ -3506,12 +3519,12 @@ async function createFullExpenseListPage(doc, data){
 
         let x = startX;
         const single = { lineBreak: false };
-        doc.text(date, x, y, { width: cols[0].width, ...single }); x += cols[0].width + 6;
-        doc.text(conta, x, y, { width: cols[1].width, ...single, ellipsis: true }); x += cols[1].width + 6;
-        doc.text(plano, x, y, { width: cols[2].width, ...single, ellipsis: true }); x += cols[2].width + 6;
-        doc.text(tipo, x, y, { width: cols[3].width, ...single, ellipsis: true }); x += cols[3].width + 6;
-        doc.text(desc.replace(/\r?\n/g,' '), x, y, { width: cols[4].width, ...single, ellipsis: true }); x += cols[4].width + 6;
-        doc.text(val, x, y, { width: cols[5].width, align: 'right', ...single });
+        doc.text(fitOneLine(date, cols[0].width), x, y, { width: cols[0].width, ...single }); x += cols[0].width + 6;
+        doc.text(fitOneLine(conta, cols[1].width), x, y, { width: cols[1].width, ...single }); x += cols[1].width + 6;
+        doc.text(fitOneLine(plano, cols[2].width), x, y, { width: cols[2].width, ...single }); x += cols[2].width + 6;
+        doc.text(fitOneLine(tipo, cols[3].width), x, y, { width: cols[3].width, ...single }); x += cols[3].width + 6;
+        doc.text(fitOneLine(desc.replace(/\r?\n/g,' '), cols[4].width), x, y, { width: cols[4].width, ...single }); x += cols[4].width + 6;
+        doc.text(fitOneLine(val, cols[5].width), x, y, { width: cols[5].width, align: 'right', ...single });
         y += rowHeight; rowIndex++;
 
         if (y > bottom){
