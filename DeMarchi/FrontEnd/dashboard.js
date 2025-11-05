@@ -6823,14 +6823,55 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Exportar PDF de Resumo Empresarial (por conta/mês)
     (function wireBusinessPdfExport(){
-        async function doExport() {
+        function openBusinessSummaryModal(){
+            // Copiar opções dos filtros principais
+            const filterYear = document.getElementById('filter-year');
+            const filterMonth = document.getElementById('filter-month');
+            const filterAccount = document.getElementById('filter-account');
+            const bsYear = document.getElementById('bs-year');
+            const bsMonth = document.getElementById('bs-month');
+            const bsAccount = document.getElementById('bs-account');
+
+            if (bsYear && filterYear) { bsYear.innerHTML = filterYear.innerHTML; bsYear.value = filterYear.value; }
+            if (bsMonth && filterMonth) { bsMonth.innerHTML = filterMonth.innerHTML; bsMonth.value = filterMonth.value; }
+            if (bsAccount && filterAccount) {
+                bsAccount.innerHTML = '';
+                for (let i=0;i<filterAccount.options.length;i++){
+                    const opt = filterAccount.options[i];
+                    const o = document.createElement('option');
+                    o.value = opt.value; o.textContent = opt.textContent; bsAccount.appendChild(o);
+                }
+                // Selecionar a mesma conta atual
+                bsAccount.value = filterAccount.value || '';
+            }
+
+            const modal = document.getElementById('business-summary-modal');
+            if (modal){
+                modal.classList.remove('hidden','opacity-0');
+                modal.classList.add('flex');
+                setTimeout(()=> modal.classList.remove('opacity-0'),10);
+                adjustModalForMobile(modal);
+            }
+        }
+
+        function closeBusinessSummaryModal(){
+            const modal = document.getElementById('business-summary-modal');
+            if (!modal) return;
+            modal.classList.add('opacity-0');
+            setTimeout(()=> modal.classList.add('hidden'), 300);
+        }
+
+        async function doExport(year, month, account) {
             try {
-                const yearEl = document.getElementById('filter-year');
-                const monthEl = document.getElementById('filter-month');
-                const accountEl = document.getElementById('filter-account');
-                const year = yearEl?.value;
-                const month = monthEl?.value;
-                const account = accountEl?.value;
+                // Se não vierem parâmetros, usar filtros globais
+                if (!year || !month || !account) {
+                    const yearEl = document.getElementById('filter-year');
+                    const monthEl = document.getElementById('filter-month');
+                    const accountEl = document.getElementById('filter-account');
+                    year = year || yearEl?.value;
+                    month = month || monthEl?.value;
+                    account = account || accountEl?.value;
+                }
 
                 if (!year || !month || !account) {
                     showNotification('Selecione Ano, Mês e Conta (filtros) para exportar o Resumo Empresarial.', 'warning');
@@ -6856,17 +6897,34 @@ document.addEventListener('DOMContentLoaded', function() {
                 document.body.appendChild(a); a.click(); a.remove();
                 window.URL.revokeObjectURL(url);
                 showNotification('Resumo Empresarial gerado com sucesso.', 'success');
+                closeBusinessSummaryModal();
             } catch (err) {
                 console.error('Erro ao exportar Resumo Empresarial:', err);
                 showNotification(err.message || 'Erro ao exportar Resumo Empresarial', 'error');
             }
         }
-        const btns = [
-            document.getElementById('export-business-pdf'),
+        // Header/Mobile: abrir modal
+        const openers = [
             document.getElementById('business-summary-btn'),
             document.getElementById('business-summary-btn-mobile')
         ].filter(Boolean);
-        btns.forEach(b => b.addEventListener('click', doExport));
+        openers.forEach(b => b.addEventListener('click', openBusinessSummaryModal));
+
+        // Aba Análise Empresarial: export direto (com filtros globais)
+        const directBtn = document.getElementById('export-business-pdf');
+        if (directBtn) directBtn.addEventListener('click', ()=> doExport());
+
+        // Modal events
+        const bsForm = document.getElementById('business-summary-form');
+        const bsCancel = document.getElementById('cancel-business-summary');
+        if (bsCancel) bsCancel.addEventListener('click', closeBusinessSummaryModal);
+        if (bsForm) bsForm.addEventListener('submit', (e)=>{
+            e.preventDefault();
+            const y = document.getElementById('bs-year')?.value;
+            const m = document.getElementById('bs-month')?.value;
+            const a = document.getElementById('bs-account')?.value;
+            doExport(y,m,a);
+        });
     })();
 
     // Exportação print-friendly do Relatório Completo (aba Relatórios)

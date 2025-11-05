@@ -2209,6 +2209,37 @@
         </div>
     </div>
 
+    <!-- Modal: Resumo Empresarial -->
+    <div id="business-summary-modal" class="modal-overlay fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-2 sm:p-4 hidden opacity-0 z-50">
+        <div class="bg-white p-4 sm:p-6 md:p-8 rounded-lg shadow-xl w-full max-w-sm sm:max-w-md md:max-w-2xl" style="max-width:95vw; max-height:90vh; overflow-y:auto;">
+            <h3 class="text-lg sm:text-xl md:text-2xl font-bold mb-4 sm:mb-6">🏢 Resumo Empresarial</h3>
+            <form id="business-summary-form">
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+                    <div>
+                        <label for="bs-year" class="block text-sm font-medium text-gray-700 mb-1">Ano</label>
+                        <select id="bs-year" class="mt-1 block w-full p-2 sm:p-3 border rounded-lg text-base"></select>
+                    </div>
+                    <div>
+                        <label for="bs-month" class="block text-sm font-medium text-gray-700 mb-1">Mês</label>
+                        <select id="bs-month" class="mt-1 block w-full p-2 sm:p-3 border rounded-lg text-base"></select>
+                    </div>
+                    <div class="col-span-1 sm:col-span-2">
+                        <label for="bs-account" class="block text-sm font-medium text-gray-700 mb-1">Conta</label>
+                        <select id="bs-account" class="mt-1 block w-full p-2 sm:p-3 border rounded-lg text-base">
+                            <option value="">Selecione uma conta</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="mt-6 sm:mt-8 flex flex-col sm:flex-row justify-end gap-3 sm:gap-4">
+                    <button type="button" id="cancel-business-summary" class="bg-gray-200 text-gray-800 px-4 py-2 sm:py-3 rounded-lg text-base font-medium">Cancelar</button>
+                    <button type="submit" class="bg-rose-600 text-white font-semibold px-4 py-2 sm:py-3 rounded-lg text-base">
+                        <span>📄 Gerar PDF</span>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <div id="interactive-report-modal" class="modal-overlay fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-2 sm:p-4 hidden opacity-0 z-50">
         <div class="bg-white p-4 sm:p-6 md:p-8 rounded-lg shadow-xl w-full max-w-sm sm:max-w-2xl md:max-w-4xl lg:max-w-6xl max-h-[90vh] overflow-y-auto">
             <h3 class="text-lg sm:text-xl md:text-2xl font-bold mb-4 sm:mb-6">Relatório Interativo</h3>
