@@ -3378,35 +3378,58 @@ async function createFullExpenseListPage(doc, data){
     ];
 
     const startX = 40; let y = doc.y;
-    doc.fontSize(11).fillColor('#1F2937');
-    let x = startX;
-    cols.forEach(c=>{ doc.text(c.title, x, y, { width: c.width, align: c.align||'left' }); x += c.width + 6; });
-    y += 18; doc.moveTo(startX, y).lineTo(doc.page.width-40, y).stroke('#E5E7EB'); y += 6;
+    const drawHeader = () => {
+        doc.fontSize(11).fillColor('#1F2937');
+        let x = startX;
+        cols.forEach(c=>{ doc.text(c.title, x, y, { width: c.width, align: c.align||'left' }); x += c.width + 6; });
+        y += 18; doc.moveTo(startX, y).lineTo(doc.page.width-40, y).stroke('#E5E7EB'); y += 6;
+        doc.fontSize(10).fillColor('#374151');
+    };
+    drawHeader();
 
-    doc.fontSize(10).fillColor('#374151');
+    // Ordenar por data desc para facilitar conferência
+    const expensesSorted = (expenses||[]).slice().sort((a,b)=> new Date(b.transaction_date) - new Date(a.transaction_date));
+
     const rowHeight = 16; const bottom = doc.page.height - 60;
-    for (const e of (expenses||[])){
+    let rowIndex = 0; let totalList = 0;
+    for (const e of expensesSorted){
         const date = new Date(e.transaction_date).toLocaleDateString('pt-BR');
         const conta = e.account || '-';
         const plano = planDisplay ? planDisplay(e.account_plan_code) : String(e.account_plan_code||'Sem Plano');
         const tipo = e.is_business_expense ? 'Empresarial' : 'Pessoal';
     const desc = String(e.description||'').slice(0, 40);
-    const val = `R$ ${(parseFloat(e.amount||0) || 0).toFixed(2)}`;
+        const amountNum = parseFloat(e.amount||0) || 0;
+        const val = `R$ ${amountNum.toFixed(2)}`;
+        totalList += amountNum;
 
-        x = startX;
+        // Zebra stripe para legibilidade
+        if (rowIndex % 2 === 1) {
+            doc.rect(startX - 2, y - 2, (cols.reduce((s,c)=> s + c.width, 0) + 5*6) + 14, rowHeight + 4).fill('#F8FAFC');
+            doc.fillColor('#374151');
+        }
+
+        let x = startX;
         doc.text(date, x, y, { width: cols[0].width }); x += cols[0].width + 6;
         doc.text(conta, x, y, { width: cols[1].width }); x += cols[1].width + 6;
         doc.text(plano, x, y, { width: cols[2].width }); x += cols[2].width + 6;
         doc.text(tipo, x, y, { width: cols[3].width }); x += cols[3].width + 6;
         doc.text(desc, x, y, { width: cols[4].width }); x += cols[4].width + 6;
         doc.text(val, x, y, { width: cols[5].width, align: 'right' });
-        y += rowHeight;
+        y += rowHeight; rowIndex++;
 
         if (y > bottom){
             doc.addPage();
             doc.y = 50; y = doc.y;
+            drawHeader();
         }
     }
+
+    // Totalizador no final da lista
+    y += 8; let x = startX;
+    doc.fontSize(10).fillColor('#1F2937');
+    doc.text('TOTAL', x, y, { width: cols[0].width + cols[1].width + cols[2].width + cols[3].width + cols[4].width + 5*6 });
+    x = startX + cols[0].width + cols[1].width + cols[2].width + cols[3].width + cols[4].width + 5*6;
+    doc.text(`R$ ${totalList.toFixed(2)}`, x, y, { width: cols[5].width, align: 'right' });
 }
 // 📊 PÁGINA 4: GRÁFICOS MODERNOS
 async function createModernChartsPage(doc, data) {
