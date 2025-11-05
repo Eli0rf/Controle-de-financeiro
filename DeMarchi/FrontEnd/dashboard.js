@@ -6908,7 +6908,7 @@ document.addEventListener('DOMContentLoaded', function() {
             document.getElementById('business-summary-btn'),
             document.getElementById('business-summary-btn-mobile')
         ].filter(Boolean);
-        openers.forEach(b => b.addEventListener('click', openBusinessSummaryModal));
+    openers.forEach(b => b.addEventListener('click', (e)=>{ e.preventDefault(); e.stopPropagation(); openBusinessSummaryModal(); }));
 
         // Aba Análise Empresarial: export direto (com filtros globais)
         const directBtn = document.getElementById('export-business-pdf');
