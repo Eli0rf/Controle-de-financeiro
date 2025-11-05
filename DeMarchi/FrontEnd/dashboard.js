@@ -6821,6 +6821,54 @@ document.addEventListener('DOMContentLoaded', function() {
     // Tornar função global para uso nos botões
     window.generatePDFReport = generatePDFReport;
 
+    // Exportar PDF de Resumo Empresarial (por conta/mês)
+    (function wireBusinessPdfExport(){
+        async function doExport() {
+            try {
+                const yearEl = document.getElementById('filter-year');
+                const monthEl = document.getElementById('filter-month');
+                const accountEl = document.getElementById('filter-account');
+                const year = yearEl?.value;
+                const month = monthEl?.value;
+                const account = accountEl?.value;
+
+                if (!year || !month || !account) {
+                    showNotification('Selecione Ano, Mês e Conta (filtros) para exportar o Resumo Empresarial.', 'warning');
+                    return;
+                }
+
+                showNotification('Gerando Resumo Empresarial (PDF)...', 'info');
+                const resp = await authenticatedFetch(`${API_BASE_URL}/api/reports/business-summary`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ year, month, account })
+                });
+                if (!resp.ok) {
+                    let msg = 'Falha ao gerar o resumo empresarial.';
+                    try { const e = await resp.json(); if (e?.message) msg = `${msg} ${e.message}`; } catch {}
+                    throw new Error(msg);
+                }
+                const blob = await resp.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `resumo-empresarial-${year}-${month}-${account}.pdf`;
+                document.body.appendChild(a); a.click(); a.remove();
+                window.URL.revokeObjectURL(url);
+                showNotification('Resumo Empresarial gerado com sucesso.', 'success');
+            } catch (err) {
+                console.error('Erro ao exportar Resumo Empresarial:', err);
+                showNotification(err.message || 'Erro ao exportar Resumo Empresarial', 'error');
+            }
+        }
+        const btns = [
+            document.getElementById('export-business-pdf'),
+            document.getElementById('business-summary-btn'),
+            document.getElementById('business-summary-btn-mobile')
+        ].filter(Boolean);
+        btns.forEach(b => b.addEventListener('click', doExport));
+    })();
+
     // Exportação print-friendly do Relatório Completo (aba Relatórios)
     function exportFullReportsPrint(){
         try {

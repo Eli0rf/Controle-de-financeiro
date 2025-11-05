@@ -5177,6 +5177,185 @@ app.get('/api/business/summary', authenticateToken, async (req, res) => {
     }
 });
 
+// --- ROTA: PDF Resumo Empresarial (por conta/mês, agrupado por plano com lista de gastos) ---
+app.post('/api/reports/business-summary', authenticateToken, async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const { year, month, account, periodType } = req.body || {};
+
+        if (!year || !month || !account) {
+            return res.status(400).json({ message: 'Ano, mês e conta são obrigatórios.' });
+        }
+
+        // Determinar período: padrão mês civil; permite modo billing quando houver configuração
+        let startDate, endDate;
+        if ((periodType === 'billing') && billingPeriods[account] && !billingPeriods[account].isRecurring) {
+            const { startDay, endDay } = billingPeriods[account];
+            startDate = new Date(year, month - 1, startDay);
+            let endMonth = Number(month);
+            let endYear = Number(year);
+            if (endDay <= startDay) {
+                endMonth++;
+                if (endMonth > 12) { endMonth = 1; endYear++; }
+            }
+            endDate = new Date(endYear, endMonth - 1, endDay);
+        } else {
+            startDate = new Date(year, month - 1, 1);
+            endDate = new Date(year, month, 0);
+        }
+
+        // Buscar despesas empresariais da conta no período (janela half-open)
+        const sql = `
+            SELECT id, transaction_date, description, amount, account, account_plan_code, invoice_path, has_invoice
+            FROM expenses
+            WHERE user_id = ? AND is_business_expense = 1 AND account = ?
+              AND transaction_date >= ? AND transaction_date < DATE_ADD(?, INTERVAL 1 DAY)
+            ORDER BY account_plan_code, transaction_date
+        `;
+        const params = [userId, account, startDate.toISOString().slice(0,10), endDate.toISOString().slice(0,10)];
+        const [rows] = await pool.query(sql, params);
+
+        // Carregar mapeamentos de planos do ADM (DB) com fallback para arquivo
+        let planNames = {}, planDescriptions = {};
+        try {
+            const coa = await loadChartOfAccountsFromDb();
+            planNames = coa?.maps?.names || {};
+            planDescriptions = coa?.maps?.descriptions || {};
+        } catch (e) {
+            const maps = accountsConfig?.asMaps ? accountsConfig.asMaps() : {};
+            planNames = maps.names || {};
+            planDescriptions = maps.descriptions || {};
+        }
+        const planDisplay = (code) => {
+            if (code === null || code === undefined || code === '' || String(code).toUpperCase() === 'SEM_PLANO') return 'Sem Plano';
+            const id = Number(code); if (!Number.isFinite(id)) return String(code);
+            return planNames[id] || `Plano ${id}`;
+        };
+
+        // Agrupar por plano
+        const groups = new Map();
+        let totalGeral = 0;
+        let totalComNfe = 0, totalSemNfe = 0, countComNfe = 0, countSemNfe = 0;
+        for (const r of rows) {
+            const code = (r.account_plan_code == null || r.account_plan_code === '') ? 'Sem Plano' : String(r.account_plan_code);
+            const amount = parseFloat(r.amount || 0) || 0;
+            totalGeral += amount;
+            const hasNfe = Boolean(r.has_invoice) || Boolean(r.invoice_path);
+            if (hasNfe) { totalComNfe += amount; countComNfe++; } else { totalSemNfe += amount; countSemNfe++; }
+            if (!groups.has(code)) {
+                groups.set(code, { code, name: planDisplay(code), total: 0, items: [] });
+            }
+            groups.get(code).total += amount;
+            groups.get(code).items.push(r);
+        }
+
+        // Montar PDF
+        const doc = new pdfkit({ margin: 30, size: 'A4' });
+        try { const f = ensurePrimaryFont(); if (f) { doc.registerFont('NotoSans', f); doc.font('NotoSans'); } } catch{}
+        try { if (!doc._font) doc.font('Helvetica'); } catch { try { doc.font('Times-Roman'); } catch {} }
+
+        // Capa
+        const grad = doc.linearGradient(0,0,0,120); grad.stop(0,'#0F172A').stop(1,'#334155');
+        doc.rect(0,0,doc.page.width,120).fill(grad);
+        const monthNames = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+        doc.fillColor('#FFFFFF').fontSize(22).text('🏢 RESUMO EMPRESARIAL', 30, 30, { width: doc.page.width-60 });
+        doc.fontSize(12).fillColor('#E2E8F0').text(`${monthNames[month-1]}/${year} • Conta: ${account}`, 30, 72);
+        doc.moveDown();
+        doc.y = 140;
+
+        // Cards resumo
+        const card = (x, title, value, color) => {
+            const w = (doc.page.width - 80) / 3; const y = doc.y; const h = 70;
+            doc.roundedRect(x, y, w, h, 10).fill(color);
+            doc.fillColor('#FFFFFF').fontSize(11).text(title, x+10, y+12, { width: w-20 });
+            doc.fontSize(18).text(value, x+10, y+35, { width: w-20 });
+            doc.fillColor('#111827');
+        };
+        card(40, 'Total Empresarial', `R$ ${totalGeral.toLocaleString('pt-BR',{minimumFractionDigits:2})}`, '#2563EB');
+        card(40 + ((doc.page.width - 80)/3) + 10, 'Com NF-e', `R$ ${totalComNfe.toLocaleString('pt-BR',{minimumFractionDigits:2})} (${countComNfe})`, '#16A34A');
+        card(40 + 2*((doc.page.width - 80)/3) + 20, 'Sem NF-e', `R$ ${totalSemNfe.toLocaleString('pt-BR',{minimumFractionDigits:2})} (${countSemNfe})`, '#DC2626');
+        doc.y += 90;
+
+        // Tabela por plano (Top 10)
+        doc.fontSize(14).fillColor('#0F172A').text('Resumo por Plano (Top 10)', 40, doc.y);
+        doc.y += 10;
+        const headerY = doc.y;
+        const cols = [
+            { title: 'Plano', w: 220 },
+            { title: 'Código', w: 80 },
+            { title: 'Total (R$)', w: 120, align: 'right' },
+            { title: 'Qtd', w: 50, align: 'right' }
+        ];
+        let x = 40; doc.fontSize(11).fillColor('#1F2937');
+        cols.forEach(c=>{ doc.text(c.title, x, headerY, { width: c.w, align: c.align||'left' }); x += c.w + 8; });
+        doc.moveTo(40, headerY + 16).lineTo(doc.page.width - 40, headerY + 16).stroke('#E5E7EB');
+        doc.y = headerY + 24; const bottom = doc.page.height - 60;
+
+        const sorted = Array.from(groups.values()).sort((a,b)=> b.total - a.total).slice(0,10);
+        for (const g of sorted) {
+            let x2 = 40; const rowY = doc.y; const items = g.items || [];
+            const label = (g.name || 'Sem Plano');
+            const codeLabel = (g.code === 'Sem Plano') ? '-' : String(g.code);
+            doc.fontSize(10).fillColor('#374151')
+               .text(label, x2, rowY, { width: cols[0].w }); x2 += cols[0].w + 8;
+            doc.text(codeLabel, x2, rowY, { width: cols[1].w }); x2 += cols[1].w + 8;
+            doc.text(`R$ ${g.total.toLocaleString('pt-BR',{minimumFractionDigits:2})}`, x2, rowY, { width: cols[2].w, align: 'right' }); x2 += cols[2].w + 8;
+            doc.text(String(items.length), x2, rowY, { width: cols[3].w, align: 'right' });
+            doc.y += 16;
+            if (doc.y > bottom) { doc.addPage(); doc.y = 50; }
+        }
+
+        // Listas detalhadas por plano (cada plano com header + tabela simples)
+        for (const g of Array.from(groups.values()).sort((a,b)=> b.total - a.total)) {
+            if (doc.y > bottom - 100) { doc.addPage(); doc.y = 50; }
+            doc.moveDown(1);
+            const desc = planDescriptions[Number(g.code)] ? String(planDescriptions[Number(g.code)]) : '';
+            doc.fontSize(12).fillColor('#0F172A').text(`${g.name} • Total: R$ ${g.total.toLocaleString('pt-BR',{minimumFractionDigits:2})}`, 40, doc.y);
+            if (desc) { doc.fontSize(9).fillColor('#4B5563').text(desc.slice(0, 160), 40, doc.y+16, { width: doc.page.width - 80 }); doc.y += 20; }
+            doc.y += 10;
+
+            // Cabeçalho itens
+            let xh = 40; const hy = doc.y;
+            const icols = [
+                { title: 'Data', w: 70 },
+                { title: 'Descrição', w: 310 },
+                { title: 'Valor (R$)', w: 90, align: 'right' },
+                { title: 'NF-e', w: 40, align: 'center' }
+            ];
+            doc.fontSize(10).fillColor('#1F2937');
+            icols.forEach(c=>{ doc.text(c.title, xh, hy, { width: c.w, align: c.align||'left' }); xh += c.w + 6; });
+            doc.moveTo(40, hy + 14).lineTo(doc.page.width - 40, hy + 14).stroke('#E5E7EB');
+            doc.y = hy + 20;
+
+            const fitOneLine = (s, w) => { let t = String(s==null?'':s).replace(/\r?\n/g,' '); if (doc.widthOfString(t) <= w) return t; const ell='…'; while (t.length>1 && doc.widthOfString(t+ell) > w) t=t.slice(0,-1); return t+ell; };
+
+            for (const it of (g.items||[])) {
+                if (doc.y > bottom - 20) { doc.addPage(); doc.y = 50; }
+                let xi = 40; const date = new Date(it.transaction_date).toLocaleDateString('pt-BR');
+                const val = `R$ ${(parseFloat(it.amount||0)||0).toFixed(2)}`;
+                const nf = (it.has_invoice || it.invoice_path) ? '✔' : '—';
+                doc.fontSize(9).fillColor('#374151');
+                doc.text(fitOneLine(date, icols[0].w), xi, doc.y, { width: icols[0].w }); xi += icols[0].w + 6;
+                doc.text(fitOneLine(String(it.description||''), icols[1].w), xi, doc.y, { width: icols[1].w }); xi += icols[1].w + 6;
+                doc.text(fitOneLine(val, icols[2].w), xi, doc.y, { width: icols[2].w, align: 'right' }); xi += icols[2].w + 6;
+                doc.text(nf, xi, doc.y, { width: icols[3].w, align: 'center' });
+                doc.y += 14;
+            }
+        }
+
+        // Rodapé
+        doc.fontSize(8).fillColor('#9CA3AF').text('Relatório gerado automaticamente', 40, doc.page.height-40, { width: doc.page.width-80, align: 'center' });
+
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename=resumo-empresarial-${year}-${month}-${account}.pdf`);
+        doc.pipe(res);
+        doc.end();
+    } catch (error) {
+        console.error('Erro ao gerar Resumo Empresarial:', error);
+        res.status(500).json({ message: 'Erro ao gerar resumo empresarial.', detail: error.message });
+    }
+});
+
 // Nova API para análise empresarial avançada com metadatabase
 app.get('/api/business/advanced-analysis', authenticateToken, async (req, res) => {
     try {
