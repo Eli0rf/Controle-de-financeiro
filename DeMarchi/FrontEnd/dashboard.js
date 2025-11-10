@@ -14,6 +14,67 @@ document.addEventListener('DOMContentLoaded', function() {
     const charts = {};
     let allExpensesCache = [];
     
+    // Configuração de eventos para Ações Rápidas
+    function setupQuickActions() {
+        // Análises Rápidas
+        document.getElementById('quick-monthly-analysis').addEventListener('click', async () => {
+            console.log('🔍 Iniciando análise mensal rápida...');
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/kpis/monthly?year=${new Date().getFullYear()}&month=${new Date().getMonth() + 1}`, {
+                    headers: { Authorization: `Bearer ${getToken()}` }
+                });
+                const data = await response.json();
+                console.log('✅ Análise mensal concluída:', data);
+                // Atualizar UI com os resultados
+                updateDashboardWithKPIs(data);
+            } catch (error) {
+                console.error('❌ Erro na análise mensal:', error);
+                showError('Erro ao realizar análise mensal');
+            }
+        });
+
+        document.getElementById('quick-anomaly-detection').addEventListener('click', async () => {
+            console.log('⚠️ Iniciando detecção de anomalias...');
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/kpis/anomaly`, {
+                    headers: { Authorization: `Bearer ${getToken()}` }
+                });
+                const data = await response.json();
+                console.log('✅ Detecção de anomalias concluída:', data);
+                // Mostrar anomalias encontradas
+                showAnomalies(data);
+            } catch (error) {
+                console.error('❌ Erro na detecção de anomalias:', error);
+                showError('Erro ao detectar anomalias');
+            }
+        });
+
+        // Relatórios Rápidos
+        document.getElementById('quick-pdf-report').addEventListener('click', () => {
+            console.log('📄 Gerando relatório PDF rápido...');
+            generateQuickPDFReport();
+        });
+
+        document.getElementById('quick-excel-export').addEventListener('click', () => {
+            console.log('📊 Exportando dados para Excel...');
+            exportToExcel();
+        });
+
+        // Ações de Gestão
+        document.getElementById('quick-add-expense').addEventListener('click', () => {
+            console.log('💰 Abrindo formulário de nova despesa...');
+            openAddExpenseModal();
+        });
+
+        document.getElementById('quick-recurring-expense').addEventListener('click', () => {
+            console.log('🔄 Abrindo gestão de despesas recorrentes...');
+            openRecurringExpensesModal();
+        });
+    }
+
+    // Inicializar ações rápidas quando o documento carregar
+    document.addEventListener('DOMContentLoaded', setupQuickActions);
+    
     // ✅ Configuração global para exibir valores nos gráficos
     const CHART_CONFIG = {
         showValues: true,          // Exibir valores nos gráficos
