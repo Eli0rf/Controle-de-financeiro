@@ -2096,7 +2096,8 @@ document.addEventListener('DOMContentLoaded', function() {
             btn.disabled = true;
             
             // Recarregar dados do gráfico de distribuição por plano
-            await fetchAndRenderGoalsPlanChart();
+            const goalsData = await fetchGoalsData(getCurrentPeriod());
+            await renderGoalsPlanChart(goalsData);
             
             showNotification('📊 Gráfico de distribuição atualizado!', 'success');
         } catch (error) {
