@@ -7,6 +7,15 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const multer = require('multer');
 
+// Função de logging personalizada
+const logOperation = (operation, details) => {
+    const timestamp = new Date().toISOString();
+    console.log(`[${timestamp}] 🔍 ${operation}`);
+    if (details) {
+        console.log('   📋 Detalhes:', typeof details === 'object' ? JSON.stringify(details, null, 2) : details);
+    }
+};
+
 // Imports com tratamento robusto de erro para Railway
 let ChartJSNodeCanvas;
 try {
@@ -54,6 +63,17 @@ require('dotenv').config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 app.use(express.json({ limit: '1mb' }));
+
+// Middleware de logging para todas as requisições
+app.use((req, res, next) => {
+    logOperation('Nova Requisição', {
+        método: req.method,
+        rota: req.path,
+        ip: req.ip,
+        userAgent: req.headers['user-agent']
+    });
+    next();
+});
 
 // CORS PRIMEIRO - antes de qualquer outro middleware
 app.use((req, res, next) => {
@@ -1283,10 +1303,16 @@ const upload = multer({ storage: storage });
 // --- 7. ROTAS PÚBLICAS (AUTENTICAÇÃO) ---
 app.post('/api/register', async (req, res) => {
     const { username, password } = req.body;
-    if (!username || !password) return res.status(400).json({ message: 'Utilizador e senha são obrigatórios.' });
+    logOperation('Tentativa de Registro', { username });
+
+    if (!username || !password) {
+        logOperation('Registro Falhou', { motivo: 'Campos obrigatórios faltando' });
+        return res.status(400).json({ message: 'Utilizador e senha são obrigatórios.' });
+    }
     try {
         const hashedPassword = await bcrypt.hash(password, 10);
         await pool.query('INSERT INTO users (username, password) VALUES (?, ?)', [username, hashedPassword]);
+        logOperation('Registro Bem-sucedido', { username });
         res.status(201).json({ message: 'Utilizador criado com sucesso!' });
     } catch (error) {
         if (error.code === 'ER_DUP_ENTRY') return res.status(409).json({ message: 'Nome de utilizador já existe.' });
@@ -1297,13 +1323,25 @@ app.post('/api/register', async (req, res) => {
 
 app.post('/api/login', async (req, res) => {
     const { username, password } = req.body;
-    if (!username || !password) return res.status(400).json({ message: 'Utilizador e senha são obrigatórios.' });
+    logOperation('Tentativa de Login', { username });
+
+    if (!username || !password) {
+        logOperation('Login Falhou', { motivo: 'Campos obrigatórios faltando' });
+        return res.status(400).json({ message: 'Utilizador e senha são obrigatórios.' });
+    }
     try {
         const [rows] = await pool.query('SELECT * FROM users WHERE username = ?', [username]);
         const user = rows[0];
-        if (!user) return res.status(404).json({ message: 'Utilizador não encontrado.' });
+        if (!user) {
+            logOperation('Login Falhou', { username, motivo: 'Usuário não encontrado' });
+            return res.status(404).json({ message: 'Utilizador não encontrado.' });
+        }
         const isPasswordCorrect = await bcrypt.compare(password, user.password);
-        if (!isPasswordCorrect) return res.status(401).json({ message: 'Senha incorreta.' });
+        if (!isPasswordCorrect) {
+            logOperation('Login Falhou', { username, motivo: 'Senha incorreta' });
+            return res.status(401).json({ message: 'Senha incorreta.' });
+        }
+        logOperation('Login Bem-sucedido', { username, userId: user.id });
         const accessToken = jwt.sign({ id: user.id, username: user.username }, process.env.JWT_SECRET || 'seu_segredo_super_secreto', { expiresIn: '8h' });
         res.json({ accessToken });
     } catch (error) {
@@ -1316,10 +1354,21 @@ app.post('/api/login', async (req, res) => {
 app.post('/api/expenses', authenticateToken, upload.single('invoice'), async (req, res) => {
     try {
         // Campos enviados pelo formulário
-    const { transaction_date, amount, description, account, account_plan_code, total_installments } = req.body;
+        const { transaction_date, amount, description, account, account_plan_code, total_installments } = req.body;
         const userId = req.user.id;
         const has_invoice = req.body.has_invoice === 'true' || req.body.has_invoice === true;
         const invoicePath = req.file ? req.file.path : null;
+
+        logOperation('Criação de Despesa', {
+            userId,
+            data: transaction_date,
+            valor: amount,
+            descricao: description,
+            conta: account,
+            planoContas: account_plan_code,
+            parcelas: total_installments,
+            temFatura: has_invoice
+        });
         // Classificação: usa tipo do plano (central) quando presente; se vazio, segue regra automática empresarial
         const explicitBusiness = req.body.is_business_expense === 'true' || req.body.is_business_expense === true;
         let finalIsBusiness = 0;
@@ -1422,6 +1471,10 @@ app.post('/api/expenses', authenticateToken, upload.single('invoice'), async (re
 
 app.get('/api/expenses', authenticateToken, async (req, res) => {
     const userId = req.user.id;
+    logOperation('Consulta de Despesas', {
+        userId,
+        filtros: req.query
+    });
     const { year, month, account, start_date, end_date, include_recurring } = req.query;
 
     try {
@@ -1823,7 +1876,14 @@ app.get('/api/dashboard', authenticateToken, async (req, res) => {
     const userId = req.user.id;
     const { year, month } = req.query;
 
+    logOperation('Acesso ao Dashboard', {
+        userId,
+        ano: year,
+        mes: month
+    });
+
     if (!year || !month) {
+        logOperation('Erro no Dashboard', { motivo: 'Ano e mês obrigatórios não fornecidos' });
         return res.status(400).json({ message: 'Ano e mês são obrigatórios.' });
     }
 
@@ -3926,7 +3986,15 @@ async function generateFallbackPDF(expenses, total, startDate, endDate, contaNom
 app.post('/api/reports/monthly', authenticateToken, async (req, res) => {
     const userId = req.user.id;
     const { year, month, account } = req.body;
-    const periodType = (req.body && req.body.periodType) || (req.query && req.query.periodType) || 'civil'; // 'civil' | 'billing'
+    const periodType = (req.body && req.body.periodType) || (req.query && req.query.periodType) || 'civil';
+
+    logOperation('Geração de Relatório Mensal', {
+        userId,
+        ano: year,
+        mes: month,
+        conta: account,
+        tipoPeriodo: periodType
+    }); // 'civil' | 'billing'
 
     console.log(`🎯 [INÍCIO] Relatório mensal - User: ${userId}, Ano: ${year}, Mês: ${month}, Conta: ${account || 'Todas'}`);
 
