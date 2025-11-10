@@ -2079,7 +2079,50 @@
                 <div class="bg-white p-6 rounded-lg shadow-lg">
                     <h3 class="text-xl font-bold text-gray-800 mb-4">🚀 Ações Rápidas</h3>
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <button id="export-detailed-report" class="bg-green-600 text-white p-4 rounded-lg hover:bg-green-700 transition">
+                        <!-- Análises Rápidas -->
+                        <div class="space-y-4">
+                            <h4 class="font-semibold text-gray-700">📊 Análises</h4>
+                            <button id="quick-monthly-analysis" class="w-full bg-blue-600 text-white p-3 rounded-lg hover:bg-blue-700 transition flex items-center justify-center gap-2">
+                                <span>📅 Análise Mensal</span>
+                            </button>
+                            <button id="quick-category-analysis" class="w-full bg-purple-600 text-white p-3 rounded-lg hover:bg-purple-700 transition flex items-center justify-center gap-2">
+                                <span>📋 Análise por Categoria</span>
+                            </button>
+                            <button id="quick-anomaly-detection" class="w-full bg-red-600 text-white p-3 rounded-lg hover:bg-red-700 transition flex items-center justify-center gap-2">
+                                <span>⚠️ Detectar Anomalias</span>
+                            </button>
+                        </div>
+
+                        <!-- Relatórios Rápidos -->
+                        <div class="space-y-4">
+                            <h4 class="font-semibold text-gray-700">📑 Relatórios</h4>
+                            <button id="quick-pdf-report" class="w-full bg-green-600 text-white p-3 rounded-lg hover:bg-green-700 transition flex items-center justify-center gap-2">
+                                <span>📄 Relatório PDF</span>
+                            </button>
+                            <button id="quick-excel-export" class="w-full bg-emerald-600 text-white p-3 rounded-lg hover:bg-emerald-700 transition flex items-center justify-center gap-2">
+                                <span>📊 Exportar Excel</span>
+                            </button>
+                            <button id="quick-summary-report" class="w-full bg-teal-600 text-white p-3 rounded-lg hover:bg-teal-700 transition flex items-center justify-center gap-2">
+                                <span>📋 Resumo Rápido</span>
+                            </button>
+                        </div>
+
+                        <!-- Ações de Gestão -->
+                        <div class="space-y-4">
+                            <h4 class="font-semibold text-gray-700">⚡ Gestão</h4>
+                            <button id="quick-add-expense" class="w-full bg-amber-600 text-white p-3 rounded-lg hover:bg-amber-700 transition flex items-center justify-center gap-2">
+                                <span>💰 Nova Despesa</span>
+                            </button>
+                            <button id="quick-recurring-expense" class="w-full bg-indigo-600 text-white p-3 rounded-lg hover:bg-indigo-700 transition flex items-center justify-center gap-2">
+                                <span>🔄 Despesa Recorrente</span>
+                            </button>
+                            <button id="quick-budget-update" class="w-full bg-cyan-600 text-white p-3 rounded-lg hover:bg-cyan-700 transition flex items-center justify-center gap-2">
+                                <span>🎯 Atualizar Metas</span>
+                            </button>
+                        </div>
+                        
+                        <!-- Botão de Relatório Detalhado Original -->
+                        <button id="export-detailed-report" class="hidden bg-green-600 text-white p-4 rounded-lg hover:bg-green-700 transition">
                             <div class="text-center">
                                 <svg class="w-8 h-8 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
