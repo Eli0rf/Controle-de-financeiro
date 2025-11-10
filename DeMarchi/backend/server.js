@@ -2853,6 +2853,7 @@ async function generateCompactMonthlyReport({
         const names = planNames || fallbackMaps.names || {};
         const byPlan = {};
         expenses.forEach(e=>{ const p = (e.account_plan_code!=null && e.account_plan_code!=='')? String(e.account_plan_code): 'Sem Plano'; byPlan[p]=(byPlan[p]||0)+parseFloat(e.amount||0); });
+        
         const usage = Object.entries(budgets).map(([p,t])=>{ const spent = byPlan[p]||0; const pct = t>0? (spent/t*100):0; return {p,spent,t,pct}; })
             .filter(o=>o.t>0).sort((a,b)=> b.pct - a.pct).slice(0,3);
         if (usage.length){
@@ -5155,6 +5156,18 @@ app.get('/api/business/summary', authenticateToken, async (req, res) => {
             const key = (item.plan_code === null || item.plan_code === undefined) ? 'Sem Plano' : String(item.plan_code);
             byPlan[key] = parseFloat(item.total);
         });
+
+        // Também retornar a lista detalhada de despesas (para tela de detalhamento)
+        let expensesQuery = `
+            SELECT id, transaction_date, description, amount, account, account_plan_code, invoice_path, has_invoice
+            FROM expenses
+            WHERE user_id = ? AND is_business_expense = 1
+        `;
+        const expensesParams = [userId];
+        if (year) { expensesQuery += ' AND YEAR(transaction_date) = ?'; expensesParams.push(year); }
+        if (month) { expensesQuery += ' AND MONTH(transaction_date) = ?'; expensesParams.push(month); }
+        expensesQuery += ' ORDER BY transaction_date DESC';
+        const [expenses] = await pool.query(expensesQuery, expensesParams);
         
         const result = {
             ...summary[0],
@@ -5167,7 +5180,9 @@ app.get('/api/business/summary', authenticateToken, async (req, res) => {
             non_invoiced_count: parseInt(summary[0]?.non_invoiced_count) || 0,
             byAccount,
             byCategory,
-            byPlan
+            byPlan,
+            // lista completa de despesas empresariais para detalhamento (frontend espera este array)
+            expenses: expenses || []
         };
         
         res.json(result);
