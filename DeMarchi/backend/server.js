@@ -683,7 +683,14 @@ async function ensureKpiView(){
 ensureKpiView();
 // Inicializa scheduler de KPIs após dependências carregadas
 setTimeout(()=>{
-    try { initKpiScheduler({ pool, computeMonthlyKPIs, saveMonthlySnapshot }); } catch(e){ console.error('Falha init scheduler', e); }
+    try { 
+        initKpiScheduler({ pool, computeMonthlyKPIs, saveMonthlySnapshot }); 
+    } catch(e){ console.error('Falha init scheduler KPI', e); }
+    try { 
+        // Inicia scheduler de processamento de gastos recorrentes
+        const { initRecurringScheduler } = require('./schedulers/recurringScheduler');
+        initRecurringScheduler({ pool });
+    } catch(e){ console.error('Falha init scheduler recorrentes', e); }
 }, 2000);
 
 // Global error handler (last middleware)
@@ -697,6 +704,7 @@ const { computeMonthlyKPIs, saveMonthlySnapshot, computeTrendAnalysis, computeCo
 const { getRedis } = require('./utils/redisClient');
 const { detectAnomalies } = require('./analytics/anomalyDetector');
 const { initKpiScheduler } = require('./schedulers/kpiScheduler');
+// recurring scheduler will be required lazily during init timeout to avoid circular ordering
 app.get('/api/kpis/monthly', authenticateToken, async (req, res) => {
     try {
     const userId = parseInt(req.user?.id || req.query.userId || 1);
